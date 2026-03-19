@@ -87,7 +87,16 @@ serviceTop:
   dnsmasq:
     nodes: ["*"]
   
-  # ==================== 第三步：安装全局工具（所有节点）====================
+  # ==================== 第三步：安装NTP服务 ====================
+  ntp_master:
+    nodes: [dw-master1]
+  
+  ntp_slave:
+    nodes: [dw-master2, dw-master3, dw-worker1, dw-worker2, dw-worker3,
+            realtime-kafka1, realtime-kafka2, realtime-kafka3,
+            realtime-es1, realtime-es2, realtime-es3]
+  
+  # ==================== 第四步：安装全局工具（所有节点）====================
   install_jdk:
     nodes: ["*"]
   
@@ -185,6 +194,15 @@ serverConfig:
     description: "安装DNS服务（所有节点）"
     vars:
       conf_dir: "/etc/dnsmasq.d"
+  
+  # ==================== NTP服务 ====================
+  ntp_master:
+    description: "NTP主服务器"
+    vars:
+      stratum: 10
+  
+  ntp_slave:
+    description: "NTP从服务器"
   
   # ==================== 基础服务 ====================
   docker:
