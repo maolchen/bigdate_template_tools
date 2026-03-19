@@ -1,81 +1,1153 @@
 #!/bin/bash
 # ============================================================
-# 服务器初始化脚本 - 全局服务示例
-# 此脚本将在所有节点执行
+# 服务器初始化脚本
+# 节点: dw-master1
+# IP: 192.168.10.10
+# Hostname: dw-master1
+# 兼容系统: CentOS 7/8/9, 麒麟, 统信UOS等RedHat系列
 # ============================================================
 
-set -e
+set -o pipefail
 
-echo "=========================================="
-echo "服务器初始化: dw-master1"
-echo "IP: 192.168.10.10"
-echo "Hostname: dw-master1"
-echo "=========================================="
+# ============================================================
+# 全局变量
+# ============================================================
+SCRIPT_NAME="server_init"
+LOG_FILE="/var/log/server_init.log"
+MARKER_FILE="/etc/.server_init_done"
 
-# 时区设置
-echo "设置时区..."
-ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
-timedatectl set-timezone Asia/Shanghai
+# 颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-# 创建用户
-echo "创建用户和组..."
-groupadd -f bigdata
-id -u bigdata &>/dev/null || useradd -g bigdata bigdata
+# ============================================================
+# 工具函数
+# ============================================================
 
-# 创建目录
-echo "创建基础目录..."
-mkdir -p /data/localization
-mkdir -p /data/bigdata
-mkdir -p /var/log/bigdata
-mkdir -p /data/tmp_install_dir
-mkdir -p /data/softwares
+log() {
+    local level=$1
+    shift
+    local msg="$@"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo -e "${timestamp} [${level}] ${msg}" | tee -a "$LOG_FILE"
+}
 
-# 设置权限
-chown -R bigdata:bigdata /data/localization
-chown -R bigdata:bigdata /data/bigdata
-chown -R bigdata:bigdata /var/log/bigdata
-chown -R bigdata:bigdata /data/tmp_install_dir
-chown -R bigdata:bigdata /data/softwares
+log_info() {
+    log "INFO" "${GREEN}[成功]${NC} $@"
+}
 
-# 系统参数优化
-echo "优化系统参数..."
-cat >> /etc/sysctl.conf << EOF
-# 大数据平台优化
-vm.swappiness = 10
-vm.dirty_ratio = 80
-vm.dirty_background_ratio = 5
-net.core.somaxconn = 65535
-net.ipv4.tcp_max_syn_backlog = 65535
-net.core.netdev_max_backlog = 65535
-net.ipv4.tcp_fin_timeout = 30
-net.ipv4.tcp_keepalive_time = 1200
-net.ipv4.tcp_keepalive_probes = 5
-net.ipv4.tcp_keepalive_intvl = 30
+log_warn() {
+    log "WARN" "${YELLOW}[警告]${NC} $@"
+}
+
+log_error() {
+    log "ERROR" "${RED}[失败]${NC} $@"
+}
+
+# 检测操作系统类型
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS_ID="${ID}"
+        OS_VERSION_ID="${VERSION_ID}"
+        OS_PRETTY_NAME="${PRETTY_NAME}"
+    elif [ -f /etc/redhat-release ]; then
+        OS_ID="centos"
+        OS_PRETTY_NAME=$(cat /etc/redhat-release)
+    else
+        OS_ID="unknown"
+        OS_PRETTY_NAME="Unknown Linux"
+    fi
+    log_info "检测到系统: ${OS_PRETTY_NAME}"
+}
+
+# 获取系统服务管理器
+get_service_manager() {
+    if command -v systemctl >/dev/null 2>&1; then
+        echo "systemd"
+    elif command -v service >/dev/null 2>&1; then
+        echo "sysvinit"
+    else
+        echo "unknown"
+    fi
+}
+
+# 检查命令是否存在
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# ============================================================
+# 1. 关闭防火墙
+# ============================================================
+disable_firewall() {
+    log_info "========== 开始关闭防火墙 =========="
+    
+    # 处理 firewalld
+    if command_exists firewall-cmd; then
+        if systemctl is-active firewalld >/dev/null 2>&1; then
+            systemctl stop firewalld && log_info "停止 firewalld 服务" || log_error "停止 firewalld 服务失败"
+        else
+            log_info "firewalld 服务已停止"
+        fi
+        if systemctl is-enabled firewalld >/dev/null 2>&1; then
+            systemctl disable firewalld && log_info "禁用 firewalld 开机自启" || log_error "禁用 firewalld 开机自启失败"
+        else
+            log_info "firewalld 已禁用开机自启"
+        fi
+    else
+        log_info "未安装 firewalld，跳过"
+    fi
+    
+    # 处理 iptables（CentOS 6/7）
+    if command_exists iptables; then
+        if systemctl is-active iptables >/dev/null 2>&1 2>/dev/null; then
+            systemctl stop iptables 2>/dev/null && log_info "停止 iptables 服务" || true
+            systemctl disable iptables 2>/dev/null && log_info "禁用 iptables 开机自启" || true
+        fi
+        if service iptables status >/dev/null 2>&1; then
+            service iptables stop && log_info "停止 iptables 服务" || true
+            chkconfig iptables off 2>/dev/null && log_info "禁用 iptables 开机自启" || true
+        fi
+    fi
+    
+    log_info "========== 防火墙配置完成 =========="
+}
+
+# ============================================================
+# 2. 关闭SELinux
+# ============================================================
+disable_selinux() {
+    log_info "========== 开始关闭SELinux =========="
+    
+    if ! command_exists getenforce; then
+        log_info "系统未安装SELinux，跳过"
+        return 0
+    fi
+    
+    local current_status=$(getenforce 2>/dev/null)
+    
+    if [ "$current_status" = "Disabled" ]; then
+        log_info "SELinux 已处于 Disabled 状态"
+    else
+        # 临时关闭
+        setenforce 0 2>/dev/null && log_info "临时关闭 SELinux" || log_warn "临时关闭 SELinux 失败（可能需要重启）"
+        
+        # 永久关闭（修改配置文件）
+        if [ -f /etc/selinux/config ]; then
+            if grep -q "^SELINUX=disabled" /etc/selinux/config; then
+                log_info "SELinux 配置文件已设置为 disabled"
+            elif grep -q "^SELINUX=" /etc/selinux/config; then
+                sed -i 's/^SELINUX=.*/SELINUX=disabled/g' /etc/selinux/config
+                log_info "修改 SELinux 配置文件为 disabled"
+            else
+                sed -i '/^SELINUX=/d' /etc/selinux/config
+                echo "SELINUX=disabled" >> /etc/selinux/config
+                log_info "添加 SELinux 配置: SELINUX=disabled"
+            fi
+        fi
+    fi
+    
+    log_info "========== SELinux配置完成 =========="
+}
+
+# ============================================================
+# 3. 关闭Swap
+# ============================================================
+disable_swap() {
+    log_info "========== 开始关闭Swap =========="
+    
+    # 临时关闭
+    local swap_count=$(swapon -s | wc -l)
+    if [ "$swap_count" -gt 0 ]; then
+        swapoff -a && log_info "临时关闭所有 swap 分区" || log_error "关闭 swap 失败"
+    else
+        log_info "Swap 已关闭"
+    fi
+    
+    # 永久关闭（注释掉 /etc/fstab 中的 swap 行）
+    if [ -f /etc/fstab ]; then
+        if grep -q "^[^#].*swap" /etc/fstab; then
+            sed -i 's/^\([^#].*swap.*\)/#\1/g' /etc/fstab
+            log_info "注释 /etc/fstab 中的 swap 配置"
+        else
+            log_info "/etc/fstab 中无 swap 配置，跳过"
+        fi
+    fi
+    
+    log_info "========== Swap配置完成 =========="
+}
+
+# ============================================================
+# 4. 加载内核模块并设置开机自动加载
+# ============================================================
+load_kernel_modules() {
+    log_info "========== 开始加载内核模块 =========="
+    local modules="ip_vs ip_vs_rr ip_vs_wrr ip_vs_sh nf_conntrack br_netfilter "
+    
+    for module in $modules; do
+        # 检查模块是否已加载
+        if lsmod | grep -q "^${module}" 2>/dev/null; then
+            log_info "内核模块已加载: $module"
+        else
+            modprobe $module && log_info "加载内核模块: $module" || log_warn "加载内核模块失败: $module（可能需要安装额外包）"
+        fi
+        
+        # 设置开机自动加载
+        local conf_file="/etc/modules-load.d/${module}.conf"
+        if [ -f "$conf_file" ] && grep -q "^${module}$" "$conf_file"; then
+            log_info "模块开机自启已配置: $module"
+        else
+            mkdir -p /etc/modules-load.d
+            echo "$module" > "$conf_file"
+            log_info "配置模块开机自启: $module"
+        fi
+    done
+    
+    # CentOS 7 需要安装 ipvsadm 才能加载 ip_vs 相关模块
+    if ! lsmod | grep -q "ip_vs" 2>/dev/null; then
+        log_warn "ip_vs 模块未加载，可能需要安装 ipvsadm 包"
+    fi
+    
+    log_info "========== 内核模块配置完成 =========="
+}
+
+# ============================================================
+# 5. 配置sysctl内核参数
+# ============================================================
+configure_sysctl() {
+    log_info "========== 开始配置sysctl参数 =========="
+    
+    local sysctl_file="/etc/sysctl.d/99-bigdata.conf"
+    mkdir -p /etc/sysctl.d
+    
+    # 如果文件不存在，创建并添加标记
+    if [ ! -f "$sysctl_file" ]; then
+        echo "# BigData Platform Kernel Parameters" > "$sysctl_file"
+        echo "# Generated by server_init script" >> "$sysctl_file"
+    fi
+    
+    # 需要先加载 br_netfilter 模块，否则 bridge-nf-call 参数可能不生效
+    modprobe br_netfilter 2>/dev/null || true
+    # 配置: fs.file-max
+    key="fs.file-max"
+    value="6553560"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: fs.nr_open
+    key="fs.nr_open"
+    value="6553560"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.bridge.bridge-nf-call-ip6tables
+    key="net.bridge.bridge-nf-call-ip6tables"
+    value="1"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.bridge.bridge-nf-call-iptables
+    key="net.bridge.bridge-nf-call-iptables"
+    value="1"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.core.netdev_max_backlog
+    key="net.core.netdev_max_backlog"
+    value="16384"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.core.somaxconn
+    key="net.core.somaxconn"
+    value="65536"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.ip_forward
+    key="net.ipv4.ip_forward"
+    value="1"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.ip_local_port_range
+    key="net.ipv4.ip_local_port_range"
+    value="1024 65535"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_fin_timeout
+    key="net.ipv4.tcp_fin_timeout"
+    value="30"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_keepalive_intvl
+    key="net.ipv4.tcp_keepalive_intvl"
+    value="30"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_keepalive_probes
+    key="net.ipv4.tcp_keepalive_probes"
+    value="5"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_keepalive_time
+    key="net.ipv4.tcp_keepalive_time"
+    value="1200"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_max_syn_backlog
+    key="net.ipv4.tcp_max_syn_backlog"
+    value="262144"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_max_tw_buckets
+    key="net.ipv4.tcp_max_tw_buckets"
+    value="65535"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_rmem
+    key="net.ipv4.tcp_rmem"
+    value="4096 87380 16777216"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_syn_retries
+    key="net.ipv4.tcp_syn_retries"
+    value="2"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_synack_retries
+    key="net.ipv4.tcp_synack_retries"
+    value="2"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_syncookies
+    key="net.ipv4.tcp_syncookies"
+    value="1"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_tw_reuse
+    key="net.ipv4.tcp_tw_reuse"
+    value="1"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: net.ipv4.tcp_wmem
+    key="net.ipv4.tcp_wmem"
+    value="4096 87380 16777216"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: vm.dirty_background_ratio
+    key="vm.dirty_background_ratio"
+    value="5"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: vm.dirty_expire_centisecs
+    key="vm.dirty_expire_centisecs"
+    value="6000"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: vm.dirty_ratio
+    key="vm.dirty_ratio"
+    value="80"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: vm.dirty_writeback_centisecs
+    key="vm.dirty_writeback_centisecs"
+    value="500"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: vm.max_map_count
+    key="vm.max_map_count"
+    value="262144"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: vm.panic_on_oom
+    key="vm.panic_on_oom"
+    value="0"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    # 配置: vm.swappiness
+    key="vm.swappiness"
+    value="0"
+    
+    if grep -q "^${key}" "$sysctl_file" 2>/dev/null; then
+        current=$(grep "^${key}" "$sysctl_file" | awk -F'=' '{print $2}' | tr -d ' ')
+        if [ "$current" = "$value" ]; then
+            log_info "sysctl 配置已正确: $key = $value"
+        else
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$sysctl_file"
+            log_info "更新 sysctl 配置: $key = $value"
+        fi
+    else
+        echo "${key}=${value}" >> "$sysctl_file"
+        log_info "添加 sysctl 配置: $key = $value"
+    fi
+    
+    # 应用配置
+    sysctl -p "$sysctl_file" >/dev/null 2>&1 && log_info "应用 sysctl 配置成功" || log_warn "部分 sysctl 配置应用失败"
+    
+    log_info "========== sysctl配置完成 =========="
+}
+
+# ============================================================
+# 6. 配置limits文件描述符限制
+# ============================================================
+configure_limits() {
+    log_info "========== 开始配置文件描述符限制 =========="
+    
+    local limits_file="/etc/security/limits.conf"
+    local limits_d_file="/etc/security/limits.d/90-nofile.conf"
+    
+    # 创建 limits.d 目录
+    mkdir -p /etc/security/limits.d
+    
+    # 备份原文件（如果需要）
+    if [ -f "$limits_file" ] && [ ! -f "${limits_file}.bak" ]; then
+        cp "$limits_file" "${limits_file}.bak"
+    fi
+    
+    # 定义limits配置数组
+    local limits_configs=(
+        "* hard memlock unlimited"
+        "* hard nofile 102400"
+        "* hard nproc 102400"
+        "* soft memlock unlimited"
+        "* soft nofile 102400"
+        "* soft nproc 102400"
+        "root hard nproc unlimited"
+        "root soft nproc unlimited"
+    )
+    
+    for config in "${limits_configs[@]}"; do
+        local pattern=$(echo "$config" | awk '{print $1" "$2}')
+        if grep -q "$pattern" "$limits_file" 2>/dev/null; then
+            log_info "limits 配置已存在: $config"
+        else
+            echo "$config" >> "$limits_file"
+            log_info "添加 limits 配置: $config"
+        fi
+    done
+    
+    # 创建 limits.d/90-nofile.conf（部分系统优先读取此文件）
+    echo "# BigData Platform Limits Configuration" > "$limits_d_file"
+    for config in "${limits_configs[@]}"; do
+        echo "$config" >> "$limits_d_file"
+    done
+    log_info "创建 $limits_d_file"
+    
+    # 确保 pam_limits.so 已启用
+    for pam_file in /etc/pam.d/login /etc/pam.d/sshd /etc/pam.d/su; do
+        if [ -f "$pam_file" ]; then
+            if ! grep -q "pam_limits.so" "$pam_file"; then
+                echo "session required pam_limits.so" >> "$pam_file"
+                log_info "添加 pam_limits.so 到 $pam_file"
+            fi
+        fi
+    done
+    
+    log_info "========== 文件描述符限制配置完成 =========="
+}
+
+# ============================================================
+# 7. 禁用透明大页
+# ============================================================
+disable_thp() {
+    log_info "========== 开始禁用透明大页 =========="
+    
+    # 检查当前状态
+    local thp_path="/sys/kernel/mm/transparent_hugepage/enabled"
+    
+    if [ -f "$thp_path" ]; then
+        local current=$(cat "$thp_path" | grep -o '\[.*\]' | tr -d '[]')
+        
+        if [ "$current" = "never" ]; then
+            log_info "透明大页已禁用"
+        else
+            # 临时禁用
+            echo never > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null && log_info "临时禁用透明大页" || log_warn "临时禁用透明大页失败"
+            echo never > /sys/kernel/mm/transparent_hugepage/defrag 2>/dev/null || true
+        fi
+    else
+        log_info "系统不支持透明大页配置"
+    fi
+    
+    # 永久禁用（通过 rc.local 或 systemd）
+    local rc_local="/etc/rc.d/rc.local"
+    local thp_cmds='
+# Disable Transparent Huge Pages
+if [ -f /sys/kernel/mm/transparent_hugepage/enabled ]; then
+    echo never > /sys/kernel/mm/transparent_hugepage/enabled
+    echo never > /sys/kernel/mm/transparent_hugepage/defrag
+fi
+'
+    
+    if [ -f "$rc_local" ]; then
+        if grep -q "transparent_hugepage" "$rc_local"; then
+            log_info "rc.local 已配置透明大页禁用"
+        else
+            echo "$thp_cmds" >> "$rc_local"
+            chmod +x "$rc_local"
+            log_info "添加透明大页禁用配置到 rc.local"
+        fi
+    else
+        # 使用 systemd 服务（CentOS 8/9, 麒麟V10等）
+        local systemd_service="/etc/systemd/system/disable-thp.service"
+        cat > "$systemd_service" << 'EOF'
+[Unit]
+Description=Disable Transparent Huge Pages (THP)
+DefaultDependencies=no
+After=sysinit.target local-fs.target
+Before=basic.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/enabled'
+ExecStart=/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/defrag'
+
+[Install]
+WantedBy=basic.target
 EOF
-sysctl -p
+        systemctl daemon-reload
+        systemctl enable disable-thp.service >/dev/null 2>&1
+        log_info "创建 systemd 服务禁用透明大页"
+    fi
+    
+    # GRUB 配置（最彻底的方式）
+    if [ -f /etc/default/grub ]; then
+        if grep -q "transparent_hugepage=never" /etc/default/grub; then
+            log_info "GRUB 已配置 transparent_hugepage=never"
+        else
+            sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="transparent_hugepage=never /g' /etc/default/grub
+            log_info "添加 GRUB 参数: transparent_hugepage=never"
+            log_warn "需要执行 grub2-mkconfig 并重启生效"
+        fi
+    fi
+    
+    log_info "========== 透明大页配置完成 =========="
+}
 
-# 文件描述符限制
-echo "设置文件描述符限制..."
-cat >> /etc/security/limits.conf << EOF
-bigdata soft nofile 65536
-bigdata hard nofile 65536
-bigdata soft nproc 65536
-bigdata hard nproc 65536
+# ============================================================
+# 8. 创建安装目录
+# ============================================================
+create_directories() {
+    log_info "========== 开始创建安装目录 =========="
+    
+    local dirs=(
+        "/data/localization"
+        "/data/bigdata"
+        "/var/log/bigdata"
+        "/data/tmp_install_dir"
+        "/data/softwares"
+    )
+    
+    for dir in "${dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            log_info "目录已存在: $dir"
+        else
+            mkdir -p "$dir" && log_info "创建目录: $dir" || log_error "创建目录失败: $dir"
+        fi
+    done
+    
+    # 设置目录权限
+    local user="bigdata"
+    local group="bigdata"
+    
+    # 创建用户和组（如果不存在）
+    if ! id "$user" >/dev/null 2>&1; then
+        groupadd -f "$group" 2>/dev/null || true
+        useradd -g "$group" -s /bin/bash "$user" && log_info "创建用户: $user" || log_warn "用户可能已存在: $user"
+    else
+        log_info "用户已存在: $user"
+    fi
+    
+    # 设置目录所有者
+    for dir in "${dirs[@]}"; do
+        chown -R "$user:$group" "$dir" 2>/dev/null && log_info "设置目录所有者: $dir -> $user:$group" || true
+    done
+    
+    log_info "========== 安装目录创建完成 =========="
+}
+
+# ============================================================
+# 9. 设置时区
+# ============================================================
+set_timezone() {
+    log_info "========== 开始设置时区 =========="
+    
+    local timezone="Asia/Shanghai"
+    local current_tz=$(timedatectl show 2>/dev/null | grep '^Timezone=' | cut -d'=' -f2)
+    
+    if [ "$current_tz" = "$timezone" ]; then
+        log_info "时区已正确设置: $timezone"
+    else
+        # 方式1: timedatectl（推荐）
+        if command_exists timedatectl; then
+            timedatectl set-timezone "$timezone" && log_info "设置时区: $timezone" || log_error "设置时区失败"
+        # 方式2: 符号链接
+        elif [ -f "/usr/share/zoneinfo/$timezone" ]; then
+            ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime
+            log_info "设置时区: $timezone"
+            # 写入 /etc/sysconfig/clock（CentOS 6/7）
+            if [ -d /etc/sysconfig ]; then
+                echo "ZONE=\"$timezone\"" > /etc/sysconfig/clock
+                echo "UTC=false" >> /etc/sysconfig/clock
+                echo "ARC=false" >> /etc/sysconfig/clock
+            fi
+        else
+            log_error "时区文件不存在: /usr/share/zoneinfo/$timezone"
+        fi
+    fi
+    
+    # 同步硬件时钟
+    if command_exists hwclock; then
+        hwclock --systohc 2>/dev/null && log_info "同步硬件时钟" || true
+    fi
+    
+    log_info "========== 时区设置完成 =========="
+}
+
+# ============================================================
+# 10. 配置/etc/hosts
+# ============================================================
+configure_hosts() {
+    log_info "========== 开始配置/etc/hosts =========="
+    
+    local hosts_file="/etc/hosts"
+    local node_ip="192.168.10.10"
+    local node_hostname="dw-master1"
+    
+    # 获取所有节点信息
+    # 添加节点: dw-master1
+    entry="192.168.10.10 dw-master1 dw-master1"
+    if grep -q "192.168.10.10" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: dw-master1"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: dw-master1"
+    fi
+    # 添加节点: dw-master2
+    entry="192.168.10.11 dw-master2 dw-master2"
+    if grep -q "192.168.10.11" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: dw-master2"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: dw-master2"
+    fi
+    # 添加节点: dw-master3
+    entry="192.168.10.12 dw-master3 dw-master3"
+    if grep -q "192.168.10.12" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: dw-master3"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: dw-master3"
+    fi
+    # 添加节点: dw-worker1
+    entry="192.168.10.13 dw-worker1 dw-worker1"
+    if grep -q "192.168.10.13" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: dw-worker1"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: dw-worker1"
+    fi
+    # 添加节点: dw-worker2
+    entry="192.168.10.14 dw-worker2 dw-worker2"
+    if grep -q "192.168.10.14" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: dw-worker2"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: dw-worker2"
+    fi
+    # 添加节点: dw-worker3
+    entry="192.168.10.15 dw-worker3 dw-worker3"
+    if grep -q "192.168.10.15" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: dw-worker3"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: dw-worker3"
+    fi
+    # 添加节点: realtime-es1
+    entry="192.168.10.16 realtime-es1 realtime-es1"
+    if grep -q "192.168.10.16" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: realtime-es1"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: realtime-es1"
+    fi
+    # 添加节点: realtime-es2
+    entry="192.168.10.17 realtime-es2 realtime-es2"
+    if grep -q "192.168.10.17" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: realtime-es2"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: realtime-es2"
+    fi
+    # 添加节点: realtime-es3
+    entry="192.168.10.18 realtime-es3 realtime-es3"
+    if grep -q "192.168.10.18" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: realtime-es3"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: realtime-es3"
+    fi
+    # 添加节点: realtime-kafka1
+    entry="192.168.10.13 realtime-kafka1 realtime-kafka1"
+    if grep -q "192.168.10.13" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: realtime-kafka1"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: realtime-kafka1"
+    fi
+    # 添加节点: realtime-kafka2
+    entry="192.168.10.14 realtime-kafka2 realtime-kafka2"
+    if grep -q "192.168.10.14" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: realtime-kafka2"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: realtime-kafka2"
+    fi
+    # 添加节点: realtime-kafka3
+    entry="192.168.10.15 realtime-kafka3 realtime-kafka3"
+    if grep -q "192.168.10.15" "$hosts_file" 2>/dev/null; then
+        log_info "hosts 已存在节点: realtime-kafka3"
+    else
+        echo "$entry" >> "$hosts_file"
+        log_info "添加 hosts 条目: realtime-kafka3"
+    fi
+    
+    # 确保本机解析正确
+    if grep -q "^${node_ip}" "$hosts_file"; then
+        if ! grep -q "^${node_ip}.*${node_hostname}" "$hosts_file"; then
+            sed -i "/^${node_ip}/d" "$hosts_file"
+            echo "${node_ip} ${node_hostname}" >> "$hosts_file"
+            log_info "更新本机 hosts 解析: ${node_hostname}"
+        fi
+    fi
+    
+    log_info "========== /etc/hosts配置完成 =========="
+}
+
+# ============================================================
+# 11. 优化journald日志存储（改为磁盘存储）
+# ============================================================
+optimize_journald() {
+    log_info "========== 开始优化journald配置 =========="
+    
+    local journald_conf="/etc/systemd/journald.conf"
+    local journald_conf_d="/etc/systemd/journald.conf.d"
+    
+    if [ ! -f "$journald_conf" ]; then
+        log_info "journald 配置文件不存在，跳过"
+        return 0
+    fi
+    
+    # 创建 journald.conf.d 目录
+    mkdir -p "$journald_conf_d"
+    
+    # 创建自定义配置文件
+    local custom_conf="$journald_conf_d/99-bigdata.conf"
+    
+    # 存储方式改为磁盘
+    if grep -q "^Storage=auto" "$custom_conf" 2>/dev/null; then
+        log_info "journald Storage 已配置为 auto"
+    else
+        cat > "$custom_conf" << 'EOF'
+[Journal]
+# 存储方式：auto（自动选择，优先持久化存储）
+Storage=auto
+# 压缩：启用
+Compress=yes
+# 日志最大大小
+SystemMaxUse=2G
+# 单个日志文件最大大小
+SystemMaxFileSize=100M
+# 日志保留天数
+MaxRetentionSec=7day
 EOF
+        log_info "创建 journald 优化配置: $custom_conf"
+    fi
+    
+    # 重启 journald 服务
+    if command_exists systemctl; then
+        systemctl restart systemd-journald 2>/dev/null && log_info "重启 journald 服务" || log_warn "重启 journald 服务失败"
+    fi
+    
+    log_info "========== journald配置完成 =========="
+}
 
-# 关闭防火墙
-echo "关闭防火墙..."
-systemctl stop firewalld 2>/dev/null || true
-systemctl disable firewalld 2>/dev/null || true
+# ============================================================
+# 12. 配置crontab权限
+# ============================================================
+configure_cron() {
+    log_info "========== 开始配置crontab权限 =========="
+    
+    local cron_allow="/etc/cron.allow"
+    local cron_deny="/etc/cron.deny"
+    
+    # 如果存在 cron.deny，需要处理
+    if [ -f "$cron_deny" ]; then
+        # 备份
+        mv "$cron_deny" "${cron_deny}.bak" 2>/dev/null
+        log_info "备份 cron.deny -> cron.deny.bak"
+    fi
+    
+    # 创建 cron.allow 文件
+    if [ ! -f "$cron_allow" ]; then
+        touch "$cron_allow"
+        chmod 600 "$cron_allow"
+        log_info "创建 cron.allow 文件"
+    fi
+    
+    # 添加允许的用户
+    local cron_users="root bigdata "
+    
+    for user in $cron_users; do
+        if grep -q "^${user}$" "$cron_allow" 2>/dev/null; then
+            log_info "用户已有 crontab 权限: $user"
+        else
+            echo "$user" >> "$cron_allow"
+            log_info "添加 crontab 权限: $user"
+        fi
+    done
+    
+    # 确保 crond 服务运行
+    if command_exists systemctl; then
+        if ! systemctl is-active crond >/dev/null 2>&1; then
+            systemctl start crond && log_info "启动 crond 服务" || log_warn "启动 crond 服务失败"
+        fi
+        if ! systemctl is-enabled crond >/dev/null 2>&1; then
+            systemctl enable crond && log_info "设置 crond 开机自启" || true
+        fi
+    fi
+    
+    log_info "========== crontab权限配置完成 =========="
+}
 
-# 关闭SELinux
-echo "关闭SELinux..."
-setenforce 0 2>/dev/null || true
-sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config
+# ============================================================
+# 主函数
+# ============================================================
+main() {
+    log_info "============================================"
+    log_info "服务器初始化开始"
+    log_info "节点: dw-master1"
+    log_info "IP: 192.168.10.10"
+    log_info "系统: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'=' -f2 | tr -d '\"')"
+    log_info "============================================"
+    
+    # 检测操作系统
+    detect_os
+    
+    # 执行初始化步骤
+    disable_firewall
+    disable_selinux
+    disable_swap
+    load_kernel_modules
+    configure_sysctl
+    configure_limits
+    disable_thp
+    create_directories
+    set_timezone
+    configure_hosts
+    optimize_journald
+    configure_cron
+    
+    # 创建完成标记
+    touch "$MARKER_FILE"
+    
+    log_info "============================================"
+    log_info "服务器初始化完成！"
+    log_info "日志文件: $LOG_FILE"
+    log_info "标记文件: $MARKER_FILE"
+    log_info "============================================"
+    
+    echo ""
+    echo "================================================================"
+    echo "重要提示："
+    echo "1. SELinux 配置已修改，建议重启系统以完全生效"
+    echo "2. 透明大页已禁用，建议执行 'grub2-mkconfig -o /boot/grub2/grub.cfg' 并重启"
+    echo "3. 文件描述符限制已配置，新登录会话生效"
+    echo "================================================================"
+}
 
-# SSH免密设置提示
-echo "=========================================="
-echo "提示: 请确保已配置SSH免密登录"
-echo "=========================================="
-
-echo "服务器初始化完成: dw-master1"
+# 执行主函数
+main "$@"

@@ -1,14 +1,4 @@
 # ============================================================
-# 大数据平台配置清单 - v5 通用版（无硬编码）
-# ============================================================
-# 特性：
-# 1. 完全无硬编码 - 所有服务配置化
-# 2. 支持节点复用 - 一个IP可对应多个节点别名
-# 3. 支持全局服务 - 使用 "*" 表示所有节点
-# 4. ID推导配置化 - 字段名和格式均可配置
-# ============================================================
-
-# ============================================================
 # 全局配置
 # ============================================================
 global:
@@ -18,11 +8,12 @@ global:
   log_base_dir: "/var/log/bigdata"
   temp_dir: "/data/tmp_install_dir"
   software_dir: "/data/softwares"
+  pkg_pro_dir: "/data/20251027-yuwq-cdtest"
   
   # JDK配置
   jdk_version: "1.8.0_65"
   jdk_path: "/data/jdk"
-  java_home: "/data/jdk/jdk1.8.0_65"
+  java_home: "/data/jdk/"
   
   # 系统用户
   user: "bigdata"
@@ -31,10 +22,6 @@ global:
 
 # ============================================================
 # 节点池（支持一个IP对应多个节点别名）
-# ============================================================
-# 说明：
-# - 节点别名可以根据业务语义命名
-# - 同一个IP可以有多个节点别名（节点复用）
 # ============================================================
 nodes:
   # ==================== Master节点 ====================
@@ -51,8 +38,6 @@ nodes:
     hostname: "dw-master3"
   
   # ==================== Worker节点 ====================
-  # 节点复用示例：以下两个节点别名指向同一个IP
-  # realtime-kafka1 和 dw-worker1 共用一台物理机
   dw-worker1:
     ip: "192.168.10.13"
     hostname: "dw-worker1"
@@ -66,17 +51,16 @@ nodes:
     hostname: "dw-worker3"
   
   # ==================== Kafka专用节点（复用worker机器）====================
-  # 节点复用：这些节点与上面的worker共用物理机
   realtime-kafka1:
-    ip: "192.168.10.13"  # 与dw-worker1共用IP
+    ip: "192.168.10.13"
     hostname: "realtime-kafka1"
   
   realtime-kafka2:
-    ip: "192.168.10.14"  # 与dw-worker2共用IP
+    ip: "192.168.10.14"
     hostname: "realtime-kafka2"
   
   realtime-kafka3:
-    ip: "192.168.10.15"  # 与dw-worker3共用IP
+    ip: "192.168.10.15"
     hostname: "realtime-kafka3"
   
   # ==================== ES专用节点 ====================
@@ -95,23 +79,14 @@ nodes:
 # ============================================================
 # 服务拓扑（服务部署位置）
 # ============================================================
-# 说明：
-# - nodes: 使用节点别名列表，支持 ["*"] 表示所有节点
-# - id_auto_derive: 是否自动推导ID（配合serverConfig中的id_field使用）
-# - 交付顺序：从上到下执行（全局服务 → 基础服务 → 中间件 → 应用）
-# ============================================================
 serviceTop:
   # ==================== 第一步：服务器初始化（所有节点）====================
   server_init:
-    nodes: ["*"]  # 所有节点执行
-    # 这是全局服务，不需要id_auto_derive
+    nodes: ["*"]
   
   # ==================== 第二步：安装全局工具（所有节点）====================
   install_jdk:
-    nodes: ["*"]  # 所有节点执行
-  
-  # install_docker:
-  #   nodes: ["*"]  # 如果需要Docker
+    nodes: ["*"]
   
   # ==================== 第三步：基础服务 ====================
   zookeeper:
@@ -155,28 +130,67 @@ serviceTop:
   
   dolphinscheduler_api:
     nodes: [dw-master1]
-  
-  # ==================== 第七步：业务应用（示例）====================
-  # myapp:
-  #   nodes: [dw-master2, dw-worker1]
-  #   id_auto_derive: true
 
 # ============================================================
 # 服务配置（完全配置化，无硬编码）
 # ============================================================
-# 说明：
-# - vars: 该服务的配置参数
-# - id_field: 自动推导时的字段名（如myid、broker_id）
-# - id_format: ID格式化模板（支持 {index} 占位符）
-#   - "index+1": 索引+1，适用于zookeeper myid
-#   - "nn{index+1}": 格式化，适用于namenode_id
-# ============================================================
 serverConfig:
   # ==================== 全局服务 ====================
   server_init:
-    type: "global"  # 全局服务标识
+    type: "global"
     description: "服务器初始化（所有节点）"
-    # 全局服务不需要ID字段
+    vars:
+      # 内核模块列表
+      kernelModules:
+        - ip_vs
+        - ip_vs_rr
+        - ip_vs_wrr
+        - ip_vs_sh
+        - nf_conntrack
+        - br_netfilter
+      # sysctl内核参数
+      sysctlSettings:
+        net.ipv4.ip_forward: 1
+        net.core.somaxconn: 65536
+        net.ipv4.tcp_max_syn_backlog: 262144
+        net.core.netdev_max_backlog: 16384
+        net.ipv4.tcp_tw_reuse: 1
+        net.ipv4.tcp_fin_timeout: 30
+        net.ipv4.tcp_keepalive_time: 1200
+        net.ipv4.tcp_keepalive_probes: 5
+        net.ipv4.tcp_keepalive_intvl: 30
+        net.ipv4.tcp_max_tw_buckets: 65535
+        net.ipv4.tcp_syncookies: 1
+        net.ipv4.tcp_synack_retries: 2
+        net.ipv4.tcp_syn_retries: 2
+        net.ipv4.tcp_wmem: "4096 87380 16777216"
+        net.ipv4.tcp_rmem: "4096 87380 16777216"
+        net.ipv4.ip_local_port_range: "1024 65535"
+        vm.swappiness: 0
+        vm.panic_on_oom: 0
+        vm.max_map_count: 262144
+        vm.dirty_background_ratio: 5
+        vm.dirty_ratio: 80
+        vm.dirty_expire_centisecs: 6000
+        vm.dirty_writeback_centisecs: 500
+        fs.file-max: 6553560
+        fs.nr_open: 6553560
+        net.bridge.bridge-nf-call-iptables: 1
+        net.bridge.bridge-nf-call-ip6tables: 1
+      # 文件描述符限制
+      limitsSettings:
+        '* soft nofile': '102400'
+        '* hard nofile': '102400'
+        '* soft nproc': '102400'
+        '* hard nproc': '102400'
+        '* soft memlock': 'unlimited'
+        '* hard memlock': 'unlimited'
+        'root soft nproc': 'unlimited'
+        'root hard nproc': 'unlimited'
+      # crontab允许的用户
+      cronAllowUsers:
+        - root
+        - bigdata
   
   install_jdk:
     type: "global"
@@ -184,8 +198,8 @@ serverConfig:
   
   # ==================== 基础服务 ====================
   zookeeper:
-    id_field: "myid"           # 注入字段名
-    id_format: "index+1"       # 格式：1, 2, 3...
+    id_field: "myid"
+    id_format: "index+1"
     vars:
       version: "3.8.3"
       client_port: 2181
@@ -197,7 +211,7 @@ serverConfig:
   
   kafka:
     id_field: "broker_id"
-    id_format: "index+1"       # 格式：1, 2, 3...
+    id_format: "index+1"
     vars:
       version: "3.5.1"
       scala_version: "2.13"
@@ -209,14 +223,13 @@ serverConfig:
   # ==================== Hadoop生态 ====================
   hadoop_namenode:
     id_field: "namenode_id"
-    id_format: "nn{index+1}"   # 格式：nn1, nn2...
+    id_format: "nn{index+1}"
     vars:
       version: "3.3.6"
       namenode_port: 9820
       http_port: 9870
   
   hadoop_datanode:
-    # 不需要ID
     vars:
       version: "3.3.6"
       data_port: 9866
@@ -272,39 +285,8 @@ serverConfig:
     vars:
       version: "3.1.9"
       api_port: 12345
-  
-  # ==================== 扩展示例 ====================
-  # doris_fe:
-  #   id_field: "fe_id"
-  #   id_format: "index+1"
-  #   vars:
-  #     version: "2.0.3"
-  #     http_port: 8030
-  #     query_port: 9030
-  #
-  # doris_be:
-  #   vars:
-  #     version: "2.0.3"
-  #     be_port: 9060
-  #
-  # nginx:
-  #   vars:
-  #     version: "1.24.0"
-  #     http_port: 80
-  #
-  # myapp:
-  #   id_field: "instance_id"
-  #   id_format: "index+1"
-  #   vars:
-  #     version: "1.0.0"
-  #     port: 8080
 
 # ============================================================
-# 节点特化配置（可选，用于覆盖默认值）
+# 节点特化配置（可选）
 # ============================================================
-nodeOverrides:
-  # 示例：dw-worker3内存更大，提高Spark Worker配置
-  # dw-worker3:
-  #   spark_worker:
-  #     memory: "8g"
-  #     cores: 8
+nodeOverrides: {}

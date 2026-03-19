@@ -226,6 +226,8 @@ func RenderTemplate(tmplPath string, ctx Context, cfg *Config) (string, error) {
 		// =============== 基础函数 ===============
 		"toUpper": strings.ToUpper,
 		"toLower": strings.ToLower,
+		"trim":    strings.TrimSpace,
+		"replace": strings.ReplaceAll,
 		"default": func(def, val interface{}) interface{} {
 			if val == nil || val == "" {
 				return def
