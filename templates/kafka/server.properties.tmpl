@@ -1,22 +1,22 @@
 # ============================================================
 # Kafka 配置文件
 # 主机: {{ .Hostname }} ({{ .IP }})
+# 节点: {{ .NodeName }} (索引: {{ .NodeIndex }}, broker_id: {{ .AutoID }})
 # ============================================================
 
-# Broker ID
-broker.id={{ .HostVars.broker_id }}
+# Broker ID（自动推导）
+broker.id={{ .AutoID }}
 
 # 监听地址
 listeners=PLAINTEXT://{{ .IP }}:{{ .ServiceVars.broker_port }}
 advertised.listeners=PLAINTEXT://{{ .IP }}:{{ .ServiceVars.broker_port }}
 
-# 日志目录（使用全局变量）
+# 日志目录
 log.dirs={{ globalVar "install_base_dir" }}/kafka/logs
 
 # ============================================================
-# Zookeeper 配置
+# Zookeeper 配置（自动生成连接串）
 # ============================================================
-# ZK连接串（自动从全局配置生成）
 zookeeper.connect={{ .Derived.zk_connect_string }}
 zookeeper.connection.timeout.ms=6000
 
@@ -26,8 +26,6 @@ zookeeper.connection.timeout.ms=6000
 num.partitions={{ .ServiceVars.num_partitions }}
 default.replication.factor={{ .ServiceVars.default_replication_factor }}
 log.retention.hours={{ .ServiceVars.log_retention_hours }}
-
-# 日志文件大小
 log.segment.bytes=1073741824
 log.retention.check.interval.ms=300000
 

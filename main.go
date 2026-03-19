@@ -2,69 +2,58 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"text/template"
-	"log"
 
 	"gopkg.in/yaml.v3"
 )
 
 // ============================================================
-// 配置结构 - 完全动态，不硬编码任何服务名
+// 配置结构 - 极简版
 // ============================================================
 
 // Config 根配置
 type Config struct {
-	All     AllConfig               `yaml:"all"`
-	Services map[string]ServiceConfig `yaml:",inline"` // 动态解析所有服务
+	Global        GlobalConfig            `yaml:"global"`
+	Nodes         map[string]NodeConfig   `yaml:"nodes"`
+	Services      map[string]ServiceConfig `yaml:"services"`
+	NodeOverrides map[string]map[string]interface{} `yaml:"node_overrides"`
 }
 
-// AllConfig 全局配置
-type AllConfig struct {
-	Vars map[string]interface{} `yaml:"vars"`
+// GlobalConfig 全局配置
+type GlobalConfig map[string]interface{}
+
+// NodeConfig 节点配置
+type NodeConfig struct {
+	IP       string `yaml:"ip"`
+	Hostname string `yaml:"hostname"`
 }
 
 // ServiceConfig 服务配置
 type ServiceConfig struct {
-	Vars  map[string]interface{} `yaml:"vars"`
-	Hosts map[string]HostConfig  `yaml:"hosts"`
+	Nodes        []string                 `yaml:"nodes"`
+	IDAutoDerive bool                     `yaml:"id_auto_derive"`
+	Vars         map[string]interface{}   `yaml:"vars"`
 }
-
-// HostConfig 主机配置
-type HostConfig map[string]interface{}
-
-// ============================================================
-// 渲染上下文 - 为模板提供结构化数据
-// ============================================================
 
 // RenderContext 模板渲染上下文
 type RenderContext struct {
-	// 全局变量
-	Vars map[string]interface{}
-	
-	// 当前服务名称
-	Service string
-	
-	// 当前服务级变量
-	ServiceVars map[string]interface{}
-	
-	// 当前主机IP
-	IP string
-	
-	// 当前主机配置（主机级变量）
-	HostVars map[string]interface{}
-	
-	// 当前主机名
-	Hostname string
-	
-	// 所有服务配置（用于跨服务引用）
-	AllServices map[string]ServiceConfig
-	
-	// 衍生变量（自动计算）
-	Derived map[string]interface{}
+	Global       map[string]interface{}
+	Service      string
+	ServiceVars  map[string]interface{}
+	IP           string
+	Hostname     string
+	NodeName     string  // 节点别名（如node1）
+	NodeIndex    int     // 节点在该服务中的索引（用于自动推导ID）
+	AutoID       int     // 自动推导的ID（索引+1）
+	HostVars     map[string]interface{}
+	Derived      map[string]interface{}
+	AllServices  map[string]ServiceConfig
+	AllNodes     map[string]NodeConfig
 }
 
 // ============================================================
@@ -72,7 +61,6 @@ type RenderContext struct {
 // ============================================================
 
 func main() {
-	// 初始化日志
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	logFile, err := os.Create("run.log")
 	if err != nil {
@@ -82,34 +70,34 @@ func main() {
 	log.SetOutput(logFile)
 	
 	log.Println("========================================")
-	log.Println("大数据平台配置生成器 v2.0 - 精简版")
+	log.Println("大数据平台配置生成器 v3.0 - 极简版")
 	log.Println("========================================")
 
 	// 1. 加载配置
 	config, err := loadConfig("config.yaml")
 	if err != nil {
-		log.Fatalf("加载配置失败: %v", err)
+		log.Fatalf("❌ 加载配置失败: %v", err)
 	}
-	log.Printf("✅ 配置加载成功")
+	log.Printf("✅ 配置加载成功: %d 个节点, %d 个服务", len(config.Nodes), len(config.Services))
 
-	// 2. 扫描模板目录
+	// 2. 扫描模板
 	templates, err := scanTemplates("templates")
 	if err != nil {
-		log.Fatalf("扫描模板失败: %v", err)
+		log.Fatalf("❌ 扫描模板失败: %v", err)
 	}
 	log.Printf("✅ 发现 %d 个模板文件", len(templates))
 
-	// 3. 构建主机-服务映射（每个IP部署了哪些服务）
+	// 3. 构建主机-服务映射
 	hostServices := buildHostServiceMap(config)
 	log.Printf("✅ 构建主机-服务映射完成，共 %d 台主机", len(hostServices))
 
-	// 4. 预计算所有衍生变量
+	// 5. 计算衍生变量
 	derived := computeDerivedVars(config)
 	log.Printf("✅ 衍生变量计算完成")
 
-	// 5. 为每台主机生成配置
-	for ip, services := range hostServices {
-		log.Printf("\n📦 处理主机: %s (部署 %d 个服务)", ip, len(services))
+	// 6. 为每台主机生成配置
+	for ip, serviceList := range hostServices {
+		log.Printf("\n📦 处理主机: %s (部署 %d 个服务)", ip, len(serviceList))
 		
 		outputDir := filepath.Join("output", ip)
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -117,37 +105,73 @@ func main() {
 			continue
 		}
 
-		// 为该主机的每个服务生成配置
-		for _, serviceName := range services {
+		for _, svc := range serviceList {
+			serviceName := svc.ServiceName
+			nodeName := svc.NodeName
+			nodeIndex := svc.NodeIndex
+			autoID := svc.AutoID
+
 			serviceConfig, exists := config.Services[serviceName]
 			if !exists {
 				log.Printf("⚠️ 服务 %s 未定义，跳过", serviceName)
 				continue
 			}
 
-			hostConfig, exists := serviceConfig.Hosts[ip]
+			nodeConfig, exists := config.Nodes[nodeName]
 			if !exists {
-				log.Printf("⚠️ 主机 %s 不在服务 %s 中，跳过", ip, serviceName)
+				log.Printf("⚠️ 节点 %s 未定义，跳过", nodeName)
 				continue
+			}
+
+			// 构建主机变量（包含自动推导的ID）
+			hostVars := make(map[string]interface{})
+			
+			// 应用节点特化配置
+			if config.NodeOverrides != nil {
+				if nodeOverrides, ok := config.NodeOverrides[nodeName]; ok {
+					if svcOverrides, ok := nodeOverrides[serviceName].(map[string]interface{}); ok {
+						for k, v := range svcOverrides {
+							hostVars[k] = v
+						}
+					}
+				}
+			}
+
+			// 如果开启自动推导ID，注入到hostVars
+			if serviceConfig.IDAutoDerive {
+				hostVars["auto_id"] = autoID
+				// 根据服务类型设置特定的ID字段名
+				switch serviceName {
+				case "zookeeper":
+					hostVars["myid"] = autoID
+				case "kafka":
+					hostVars["broker_id"] = autoID
+				case "hadoop_namenode":
+					hostVars["namenode_id"] = fmt.Sprintf("nn%d", autoID)
+				case "doris_fe":
+					hostVars["fe_id"] = autoID
+				default:
+					hostVars["instance_id"] = autoID
+				}
 			}
 
 			// 构建渲染上下文
 			ctx := RenderContext{
-				Vars:        config.All.Vars,
+				Global:      config.Global,
 				Service:     serviceName,
 				ServiceVars: serviceConfig.Vars,
-				IP:          ip,
-				HostVars:    hostConfig,
-				AllServices: config.Services,
+				IP:          nodeConfig.IP,
+				Hostname:    nodeConfig.Hostname,
+				NodeName:    nodeName,
+				NodeIndex:   nodeIndex,
+				AutoID:      autoID,
+				HostVars:    hostVars,
 				Derived:     derived,
+				AllServices: config.Services,
+				AllNodes:    config.Nodes,
 			}
 
-			// 提取主机名
-			if hostname, ok := hostConfig["hostname"].(string); ok {
-				ctx.Hostname = hostname
-			}
-
-			// 渲染该服务的所有模板
+			// 渲染模板
 			for _, tmpl := range templates {
 				if tmpl.ServiceName != serviceName {
 					continue
@@ -163,12 +187,20 @@ func main() {
 		}
 	}
 
-	// 6. 生成总览文件
+	// 7. 生成总览
 	generateOverview(config, hostServices)
 
 	log.Println("\n========================================")
 	log.Println("🎉 配置生成完成！")
 	log.Println("========================================")
+}
+
+// HostServiceInfo 主机-服务映射信息
+type HostServiceInfo struct {
+	ServiceName string
+	NodeName    string
+	NodeIndex   int
+	AutoID      int
 }
 
 // ============================================================
@@ -181,54 +213,15 @@ func loadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("读取配置文件失败: %w", err)
 	}
 
-	// 先解析为通用map，提取all和services
-	var rawConfig map[string]interface{}
-	if err := yaml.Unmarshal(data, &rawConfig); err != nil {
-		return nil, fmt.Errorf("解析配置文件失败: %w", err)
-	}
-
 	config := &Config{
-		Services: make(map[string]ServiceConfig),
+		Global:        make(GlobalConfig),
+		Nodes:         make(map[string]NodeConfig),
+		Services:      make(map[string]ServiceConfig),
+		NodeOverrides: make(map[string]map[string]interface{}),
 	}
 
-	// 解析all字段
-	if all, ok := rawConfig["all"].(map[string]interface{}); ok {
-		if vars, ok := all["vars"].(map[string]interface{}); ok {
-			config.All.Vars = vars
-		}
-	}
-
-	// 解析其他字段作为服务
-	for key, value := range rawConfig {
-		if key == "all" {
-			continue
-		}
-
-		serviceMap, ok := value.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		service := ServiceConfig{
-			Vars:  make(map[string]interface{}),
-			Hosts: make(map[string]HostConfig),
-		}
-
-		// 解析vars
-		if vars, ok := serviceMap["vars"].(map[string]interface{}); ok {
-			service.Vars = vars
-		}
-
-		// 解析hosts
-		if hosts, ok := serviceMap["hosts"].(map[string]interface{}); ok {
-			for ip, hostConfig := range hosts {
-				if hc, ok := hostConfig.(map[string]interface{}); ok {
-					service.Hosts[ip] = hc
-				}
-			}
-		}
-
-		config.Services[key] = service
+	if err := yaml.Unmarshal(data, config); err != nil {
+		return nil, fmt.Errorf("解析配置文件失败: %w", err)
 	}
 
 	return config, nil
@@ -239,32 +232,22 @@ func loadConfig(path string) (*Config, error) {
 // ============================================================
 
 type TemplateInfo struct {
-	ServiceName string
+	ServiceName  string
 	TemplatePath string
-	OutputName  string
+	OutputName   string
 }
 
 func scanTemplates(root string) ([]TemplateInfo, error) {
 	var templates []TemplateInfo
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".tmpl") {
 			return nil
 		}
 
-		// 只处理.tmpl文件
-		if !strings.HasSuffix(path, ".tmpl") {
-			return nil
-		}
-
-		// 提取服务名：templates/Zookeeper/zoo.cfg.tmpl -> Zookeeper
 		relPath, err := filepath.Rel(root, path)
 		if err != nil {
-			return err
+			return nil
 		}
 
 		parts := strings.Split(relPath, string(filepath.Separator))
@@ -272,15 +255,11 @@ func scanTemplates(root string) ([]TemplateInfo, error) {
 			return nil
 		}
 
-		serviceName := parts[0]
-		outputName := strings.TrimSuffix(parts[len(parts)-1], ".tmpl")
-
 		templates = append(templates, TemplateInfo{
-			ServiceName: serviceName,
+			ServiceName:  parts[0],
 			TemplatePath: path,
-			OutputName:  outputName,
+			OutputName:   strings.TrimSuffix(parts[len(parts)-1], ".tmpl"),
 		})
-
 		return nil
 	})
 
@@ -291,12 +270,23 @@ func scanTemplates(root string) ([]TemplateInfo, error) {
 // 主机-服务映射
 // ============================================================
 
-func buildHostServiceMap(config *Config) map[string][]string {
-	hostServices := make(map[string][]string)
+func buildHostServiceMap(config *Config) map[string][]HostServiceInfo {
+	hostServices := make(map[string][]HostServiceInfo)
 
 	for serviceName, serviceConfig := range config.Services {
-		for ip := range serviceConfig.Hosts {
-			hostServices[ip] = append(hostServices[ip], serviceName)
+		for idx, nodeName := range serviceConfig.Nodes {
+			nodeConfig, exists := config.Nodes[nodeName]
+			if !exists {
+				continue
+			}
+
+			autoID := idx + 1
+			hostServices[nodeConfig.IP] = append(hostServices[nodeConfig.IP], HostServiceInfo{
+				ServiceName: serviceName,
+				NodeName:    nodeName,
+				NodeIndex:   idx,
+				AutoID:      autoID,
+			})
 		}
 	}
 
@@ -310,110 +300,110 @@ func buildHostServiceMap(config *Config) map[string][]string {
 func computeDerivedVars(config *Config) map[string]interface{} {
 	derived := make(map[string]interface{})
 
-	// 1. 为每个服务自动提取节点列表（排序后）
+	// 为每个服务提取节点信息
 	for serviceName, serviceConfig := range config.Services {
-		var nodes []string
-		for ip := range serviceConfig.Hosts {
-			nodes = append(nodes, ip)
-		}
-		// 排序节点列表，保证顺序一致
-		sort.Strings(nodes)
-		derived[serviceName+"_nodes"] = nodes
+		var ips []string
+		var hostnames []string
+		var nodes []map[string]interface{}
 
-		// 2. 如果服务有port变量，生成节点:port列表
-		if port, ok := serviceConfig.Vars["port"].(int); ok {
-			var nodesWithPort []string
-			for _, ip := range nodes {
-				nodesWithPort = append(nodesWithPort, fmt.Sprintf("%s:%d", ip, port))
+		for idx, nodeName := range serviceConfig.Nodes {
+			nodeConfig, exists := config.Nodes[nodeName]
+			if !exists {
+				continue
 			}
-			derived[serviceName+"_nodes_with_port"] = nodesWithPort
+			ips = append(ips, nodeConfig.IP)
+			hostnames = append(hostnames, nodeConfig.Hostname)
+			nodes = append(nodes, map[string]interface{}{
+				"name":     nodeName,
+				"ip":       nodeConfig.IP,
+				"hostname": nodeConfig.Hostname,
+				"index":    idx,
+				"auto_id":  idx + 1,
+			})
 		}
 
-		// 3. 如果有client_port变量
+		derived[serviceName+"_nodes"] = nodes
+		derived[serviceName+"_ips"] = ips
+		derived[serviceName+"_hostnames"] = hostnames
+
+		// 生成节点:port列表
 		if clientPort, ok := serviceConfig.Vars["client_port"].(int); ok {
 			var nodesWithPort []string
-			for _, ip := range nodes {
+			for _, ip := range ips {
 				nodesWithPort = append(nodesWithPort, fmt.Sprintf("%s:%d", ip, clientPort))
 			}
-			derived[serviceName+"_nodes_with_client_port"] = nodesWithPort
+			derived[serviceName+"_connect_string"] = strings.Join(nodesWithPort, ",")
+		}
+
+		if brokerPort, ok := serviceConfig.Vars["broker_port"].(int); ok {
+			var brokers []string
+			for _, ip := range ips {
+				brokers = append(brokers, fmt.Sprintf("%s:%d", ip, brokerPort))
+			}
+			derived[serviceName+"_brokers"] = strings.Join(brokers, ",")
 		}
 	}
 
-	// 4. 特殊处理：Zookeeper连接串
-	if zkNodes, ok := derived["zookeeper_nodes"].([]string); ok {
+	// 特殊处理：ZK连接串
+	if zkNodes, ok := derived["zookeeper_nodes"].([]map[string]interface{}); ok {
 		zkService, exists := config.Services["zookeeper"]
 		if exists {
-			clientPort := 2181 // 默认端口
+			clientPort := 2181
 			if cp, ok := zkService.Vars["client_port"].(int); ok {
 				clientPort = cp
 			}
 			var zkConnect []string
-			for _, ip := range zkNodes {
-				zkConnect = append(zkConnect, fmt.Sprintf("%s:%d", ip, clientPort))
+			for _, node := range zkNodes {
+				zkConnect = append(zkConnect, fmt.Sprintf("%s:%d", node["ip"], clientPort))
 			}
 			derived["zk_connect_string"] = strings.Join(zkConnect, ",")
 		}
 	}
 
-	// 5. 特殊处理：Kafka Broker列表
-	if kafkaNodes, ok := derived["kafka_nodes"].([]string); ok {
-		kafkaService, exists := config.Services["kafka"]
-		if exists {
-			brokerPort := 9092 // 默认端口
-			if bp, ok := kafkaService.Vars["broker_port"].(int); ok {
-				brokerPort = bp
-			}
-			var brokers []string
-			for _, ip := range kafkaNodes {
-				brokers = append(brokers, fmt.Sprintf("%s:%d", ip, brokerPort))
-			}
-			derived["kafka_brokers"] = strings.Join(brokers, ",")
-		}
+	// 特殊处理：Kafka Brokers
+	if kafkaBrokers, ok := derived["kafka_brokers"].(string); ok {
+		derived["kafka_broker_list"] = kafkaBrokers
 	}
 
-	// 6. 特殊处理：HDFS NameNode RPC地址
-	if nnNodes, ok := derived["hadoop_namenode_nodes"].([]string); ok {
-		hdfsService, exists := config.Services["hadoop_namenode"]
+	// 特殊处理：HDFS NameNode地址
+	if nnNodes, ok := derived["hadoop_namenode_nodes"].([]map[string]interface{}); ok {
+		nnService, exists := config.Services["hadoop_namenode"]
 		if exists {
-			rpcPort := 9820 // 默认端口
-			if rp, ok := hdfsService.Vars["namenode_port"].(int); ok {
+			rpcPort := 9820
+			if rp, ok := nnService.Vars["namenode_port"].(int); ok {
 				rpcPort = rp
 			}
 			var nnAddresses []string
-			for _, ip := range nnNodes {
-				nnAddresses = append(nnAddresses, fmt.Sprintf("%s:%d", ip, rpcPort))
+			for _, node := range nnNodes {
+				nnAddresses = append(nnAddresses, fmt.Sprintf("%s:%d", node["ip"], rpcPort))
 			}
 			derived["namenode_rpc_addresses"] = strings.Join(nnAddresses, ",")
 		}
 	}
 
-	// 7. 特殊处理：Spark Master URL
-	if sparkNodes, ok := derived["spark_master_nodes"].([]string); ok {
+	// 特殊处理：Spark Master URL
+	if sparkNodes, ok := derived["spark_master_nodes"].([]map[string]interface{}); ok {
 		sparkService, exists := config.Services["spark_master"]
-		if exists {
-			masterPort := 7077 // 默认端口
+		if exists && len(sparkNodes) > 0 {
+			masterPort := 7077
 			if mp, ok := sparkService.Vars["master_port"].(int); ok {
 				masterPort = mp
 			}
-			var masterURLs []string
-			for _, ip := range sparkNodes {
-				masterURLs = append(masterURLs, fmt.Sprintf("spark://%s:%d", ip, masterPort))
-			}
-			derived["spark_master_url"] = strings.Join(masterURLs, ",")
+			derived["spark_master_url"] = fmt.Sprintf("spark://%s:%d", sparkNodes[0]["ip"], masterPort)
 		}
 	}
 
-	// 8. 特殊处理：ES种子节点
-	if esNodes, ok := derived["elasticsearch_nodes"].([]string); ok {
+	// 特殊处理：ES种子节点
+	if esNodes, ok := derived["elasticsearch_nodes"].([]map[string]interface{}); ok {
 		esService, exists := config.Services["elasticsearch"]
 		if exists {
-			transportPort := 9300 // 默认端口
+			transportPort := 9300
 			if tp, ok := esService.Vars["transport_port"].(int); ok {
 				transportPort = tp
 			}
 			var seedHosts []string
-			for _, ip := range esNodes {
-				seedHosts = append(seedHosts, fmt.Sprintf("%s:%d", ip, transportPort))
+			for _, node := range esNodes {
+				seedHosts = append(seedHosts, fmt.Sprintf("%s:%d", node["ip"], transportPort))
 			}
 			derived["es_seed_hosts"] = strings.Join(seedHosts, ",")
 		}
@@ -427,17 +417,16 @@ func computeDerivedVars(config *Config) map[string]interface{} {
 // ============================================================
 
 func renderTemplate(tmplInfo TemplateInfo, outputPath string, ctx RenderContext) error {
-	// 读取模板文件
 	tmplContent, err := os.ReadFile(tmplInfo.TemplatePath)
 	if err != nil {
 		return fmt.Errorf("读取模板文件失败: %w", err)
 	}
 
-	// 创建模板函数
 	funcMap := template.FuncMap{
 		"join":      strings.Join,
 		"add":       func(a, b int) int { return a + b },
 		"sub":       func(a, b int) int { return a - b },
+		"mul":       func(a, b int) int { return a * b },
 		"lower":     strings.ToLower,
 		"upper":     strings.ToUpper,
 		"replace":   strings.ReplaceAll,
@@ -447,12 +436,22 @@ func renderTemplate(tmplInfo TemplateInfo, outputPath string, ctx RenderContext)
 			}
 			return val
 		},
-		// 字符串拼接
 		"printf":    fmt.Sprintf,
+		// 获取全局变量
+		"globalVar": func(varName string) interface{} {
+			return ctx.Global[varName]
+		},
 		// 获取服务节点列表
-		"serviceNodes": func(serviceName string) []string {
-			if nodes, ok := ctx.Derived[serviceName+"_nodes"].([]string); ok {
+		"serviceNodes": func(serviceName string) []map[string]interface{} {
+			if nodes, ok := ctx.Derived[serviceName+"_nodes"].([]map[string]interface{}); ok {
 				return nodes
+			}
+			return nil
+		},
+		// 获取服务IP列表
+		"serviceIPs": func(serviceName string) []string {
+			if ips, ok := ctx.Derived[serviceName+"_ips"].([]string); ok {
+				return ips
 			}
 			return nil
 		},
@@ -463,41 +462,40 @@ func renderTemplate(tmplInfo TemplateInfo, outputPath string, ctx RenderContext)
 			}
 			return nil
 		},
-		// 获取全局变量
-		"globalVar": func(varName string) interface{} {
-			return ctx.Vars[varName]
+		// 获取节点配置
+		"nodeConfig": func(nodeName string) map[string]interface{} {
+			if node, exists := ctx.AllNodes[nodeName]; exists {
+				return map[string]interface{}{
+					"ip":       node.IP,
+					"hostname": node.Hostname,
+				}
+			}
+			return nil
 		},
 	}
 
-	// 创建模板
 	tmpl, err := template.New(tmplInfo.OutputName).Funcs(funcMap).Parse(string(tmplContent))
 	if err != nil {
 		return fmt.Errorf("模板解析失败: %w", err)
 	}
 
-	// 确保输出目录存在
 	outputDir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("创建输出目录失败: %w", err)
 	}
 
-	// 创建输出文件
 	f, err := os.Create(outputPath)
 	if err != nil {
 		return fmt.Errorf("创建输出文件失败: %w", err)
 	}
 	defer f.Close()
 
-	// 渲染模板
 	if err := tmpl.Execute(f, ctx); err != nil {
 		return fmt.Errorf("模板渲染失败: %w", err)
 	}
 
-	// 如果是shell脚本，设置可执行权限
 	if strings.HasSuffix(outputPath, ".sh") {
-		if err := os.Chmod(outputPath, 0755); err != nil {
-			return fmt.Errorf("设置权限失败: %w", err)
-		}
+		os.Chmod(outputPath, 0755)
 	}
 
 	return nil
@@ -507,50 +505,76 @@ func renderTemplate(tmplInfo TemplateInfo, outputPath string, ctx RenderContext)
 // 生成总览文件
 // ============================================================
 
-func generateOverview(config *Config, hostServices map[string][]string) {
+func generateOverview(config *Config, hostServices map[string][]HostServiceInfo) {
 	var content strings.Builder
 	
 	content.WriteString("# 大数据平台部署总览\n\n")
-	content.WriteString(fmt.Sprintf("生成时间: %s\n\n", "2025-01-XX"))
+	content.WriteString("## 节点列表\n\n")
+	content.WriteString("| 节点名 | IP | 主机名 |\n")
+	content.WriteString("|---|---|---|\n")
 	
-	content.WriteString("## 全局变量\n\n")
-	content.WriteString("| 变量名 | 值 |\n")
-	content.WriteString("|---|---|\n")
-	for k, v := range config.All.Vars {
-		content.WriteString(fmt.Sprintf("| %s | %v |\n", k, v))
+	// 按节点名排序
+	var nodeNames []string
+	for name := range config.Nodes {
+		nodeNames = append(nodeNames, name)
+	}
+	sort.Strings(nodeNames)
+	
+	for _, name := range nodeNames {
+		node := config.Nodes[name]
+		content.WriteString(fmt.Sprintf("| %s | %s | %s |\n", name, node.IP, node.Hostname))
 	}
 	
-	content.WriteString("\n## 集群拓扑\n\n")
+	content.WriteString("\n## 服务拓扑\n\n")
+	content.WriteString("| 服务名 | 节点数 | 部署节点 | 自动ID |\n")
+	content.WriteString("|---|---|---|---|\n")
+	
+	var serviceNames []string
+	for name := range config.Services {
+		serviceNames = append(serviceNames, name)
+	}
+	sort.Strings(serviceNames)
+	
+	for _, name := range serviceNames {
+		svc := config.Services[name]
+		nodeList := strings.Join(svc.Nodes, ", ")
+		idStatus := "否"
+		if svc.IDAutoDerive {
+			idStatus = "✅"
+		}
+		content.WriteString(fmt.Sprintf("| %s | %d | %s | %s |\n", name, len(svc.Nodes), nodeList, idStatus))
+	}
+	
+	content.WriteString("\n## 主机部署明细\n\n")
 	content.WriteString("| IP | 主机名 | 部署服务 |\n")
 	content.WriteString("|---|---|---|\n")
 	
-	for ip, services := range hostServices {
-		hostname := "N/A"
-		// 尝试从任一服务获取主机名
-		for _, svc := range services {
-			if svcConfig, exists := config.Services[svc]; exists {
-				if hostConfig, exists := svcConfig.Hosts[ip]; exists {
-					if hn, ok := hostConfig["hostname"].(string); ok {
-						hostname = hn
-						break
-					}
+	// 按IP排序
+	var ips []string
+	for ip := range hostServices {
+		ips = append(ips, ip)
+	}
+	sort.Strings(ips)
+	
+	for _, ip := range ips {
+		services := hostServices[ip]
+		var serviceNames []string
+		var hostname string
+		for _, s := range services {
+			serviceNames = append(serviceNames, s.ServiceName)
+			if hostname == "" {
+				if node, exists := config.Nodes[s.NodeName]; exists {
+					hostname = node.Hostname
 				}
 			}
 		}
-		content.WriteString(fmt.Sprintf("| %s | %s | %s |\n", ip, hostname, strings.Join(services, ", ")))
+		content.WriteString(fmt.Sprintf("| %s | %s | %s |\n", ip, hostname, strings.Join(serviceNames, ", ")))
 	}
 	
-	content.WriteString("\n## 服务统计\n\n")
-	content.WriteString("| 服务名 | 节点数 | 节点列表 |\n")
-	content.WriteString("|---|---|---|\n")
-	
-	for serviceName, serviceConfig := range config.Services {
-		nodes := make([]string, 0, len(serviceConfig.Hosts))
-		for ip := range serviceConfig.Hosts {
-			nodes = append(nodes, ip)
-		}
-		content.WriteString(fmt.Sprintf("| %s | %d | %s |\n", serviceName, len(nodes), strings.Join(nodes, ", ")))
-	}
+	content.WriteString("\n## 交付步骤\n\n")
+	content.WriteString("1. 将 `output/<ip>` 目录上传到对应主机\n")
+	content.WriteString("2. 在每台主机上执行各服务的 `install.sh`\n")
+	content.WriteString("3. 启动服务\n")
 	
 	os.WriteFile("output/README.md", []byte(content.String()), 0644)
 }

@@ -1,3 +1,4 @@
 # Zookeeper myid
-# 主机: {{ .Hostname }} ({{ .IP }})
-{{ .HostVars.myid }}
+# 节点: {{ .NodeName }} ({{ .IP }})
+# 自动推导: {{ .AutoID }}
+{{ .AutoID }}
