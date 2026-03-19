@@ -1,0 +1,37 @@
+# ============================================================
+# Zookeeper 配置文件
+# 主机: {{ .Hostname }} ({{ .IP }})
+# ============================================================
+
+# 心跳时间（毫秒）
+tickTime={{ .ServiceVars.tick_time }}
+
+# 初始化同步阶段能容忍的心跳数
+initLimit={{ .ServiceVars.init_limit }}
+
+# 请求响应阶段能容忍的心跳数
+syncLimit={{ .ServiceVars.sync_limit }}
+
+# 数据目录（使用全局变量data_base_dir）
+dataDir={{ globalVar "data_base_dir" }}/zookeeper/data
+
+# 客户端端口
+clientPort={{ .ServiceVars.client_port }}
+
+# 最大客户端连接数
+# maxClientCnxns=60
+
+# 自动清理配置
+# autopurge.snapRetainCount=3
+# autopurge.purgeInterval=1
+
+# ============================================================
+# 服务器列表（自动从全局配置生成）
+# 格式：server.<myid>=<ip>:<server_port>:<election_port>
+# ============================================================
+{{- $servers := serviceNodes "zookeeper" }}
+{{- $serverPort := .ServiceVars.server_port }}
+{{- $electionPort := .ServiceVars.election_port }}
+{{- range $idx, $ip := $servers }}
+server.{{ add $idx 1 }}={{ $ip }}:{{ $serverPort }}:{{ $electionPort }}
+{{- end }}

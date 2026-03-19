@@ -1,0 +1,312 @@
+# ============================================================
+# 大数据平台配置清单 - Ansible Inventory 风格
+# ============================================================
+# 特点：
+# 1. all.vars - 全局变量（所有服务共享）
+# 2. <service>.vars - 服务级变量（该服务的所有节点共享）
+# 3. <service>.hosts - 服务主机列表（自动提取节点信息，无需重复定义）
+# 4. 支持任意增加/删除服务和字段，代码不硬编码
+# ============================================================
+
+# 全局变量
+all:
+  vars:
+    # JDK 配置
+    jdk_version: "1.8.0_65"
+    jdk_path: "/data/jdk"
+    java_home: "/data/jdk/jdk1.8.0_65"
+    
+    # 基础目录
+    install_base_dir: "/data/localization"
+    data_base_dir: "/data/bigdata"
+    log_base_dir: "/var/log/bigdata"
+    
+    # 系统用户
+    user: "bigdata"
+    group: "bigdata"
+    
+    # 临时目录
+    temp_dir: "/data/tmp_install_dir"
+    
+    # 软件包路径
+    software_dir: "/data/softwares"
+    
+    # 时区
+    timezone: "Asia/Shanghai"
+
+# ============================================================
+# 基础服务
+# ============================================================
+
+# Zookeeper 服务
+zookeeper:
+  vars:
+    version: "3.8.3"
+    client_port: 2181
+    server_port: 2888
+    election_port: 3888
+    data_dir: "DATA_BASE_DIR/zookeeper/data"
+    log_dir: "DATA_BASE_DIR/zookeeper/logs"
+    tick_time: 2000
+    init_limit: 10
+    sync_limit: 5
+  hosts:
+    192.168.10.10:
+      hostname: node1
+      myid: 1
+    192.168.10.11:
+      hostname: node2
+      myid: 2
+    192.168.10.12:
+      hostname: node3
+      myid: 3
+
+# Kafka 服务
+kafka:
+  vars:
+    version: "3.5.1"
+    scala_version: "2.13"
+    broker_port: 9092
+    log_dirs: "LOG_BASE_DIR/kafka/logs"
+    num_partitions: 3
+    default_replication_factor: 2
+    log_retention_hours: 168
+  hosts:
+    192.168.10.13:
+      hostname: node4
+      broker_id: 1
+    192.168.10.14:
+      hostname: node5
+      broker_id: 2
+    192.168.10.15:
+      hostname: node6
+      broker_id: 3
+
+# ============================================================
+# Hadoop 生态
+# ============================================================
+
+# HDFS NameNode
+hadoop_namenode:
+  vars:
+    version: "3.3.6"
+    namenode_port: 9820
+    http_port: 9870
+    data_dir: "{{ .Vars.data_base_dir }}/hadoop/namenode"
+  hosts:
+    192.168.10.10:
+      hostname: node1
+      namenode_id: nn1
+    192.168.10.11:
+      hostname: node2
+      namenode_id: nn2
+
+# HDFS DataNode
+hadoop_datanode:
+  vars:
+    version: "3.3.6"
+    data_port: 9866
+    http_port: 9864
+    data_dir: "{{ .Vars.data_base_dir }}/hadoop/datanode"
+  hosts:
+    192.168.10.12:
+      hostname: node3
+    192.168.10.13:
+      hostname: node4
+    192.168.10.14:
+      hostname: node5
+    192.168.10.15:
+      hostname: node6
+
+# Spark Master
+spark_master:
+  vars:
+    version: "3.5.0"
+    hadoop_version: "3"
+    master_port: 7077
+    webui_port: 8080
+    install_dir: "{{ .Vars.install_base_dir }}/spark"
+  hosts:
+    192.168.10.10:
+      hostname: node1
+
+# Spark Worker
+spark_worker:
+  vars:
+    version: "3.5.0"
+    webui_port: 8081
+    cores: 4
+    memory: "4g"
+    install_dir: "{{ .Vars.install_base_dir }}/spark"
+  hosts:
+    192.168.10.12:
+      hostname: node3
+    192.168.10.13:
+      hostname: node4
+      memory: "8g"  # 该节点内存更大
+      cores: 8
+    192.168.10.14:
+      hostname: node5
+    192.168.10.15:
+      hostname: node6
+
+# Flink JobManager
+flink_jobmanager:
+  vars:
+    version: "1.18.0"
+    scala_version: "2.12"
+    rpc_port: 6123
+    web_port: 8081
+    install_dir: "{{ .Vars.install_base_dir }}/flink"
+  hosts:
+    192.168.10.10:
+      hostname: node1
+
+# Flink TaskManager
+flink_taskmanager:
+  vars:
+    version: "1.18.0"
+    task_slots: 4
+    memory: "2g"
+    install_dir: "{{ .Vars.install_base_dir }}/flink"
+  hosts:
+    192.168.10.12:
+      hostname: node3
+    192.168.10.13:
+      hostname: node4
+    192.168.10.14:
+      hostname: node5
+    192.168.10.15:
+      hostname: node6
+
+# ============================================================
+# 数据存储
+# ============================================================
+
+# Elasticsearch
+elasticsearch:
+  vars:
+    version: "8.11.1"
+    cluster_name: "bigdata-cluster"
+    http_port: 9200
+    transport_port: 9300
+    data_dir: "{{ .Vars.data_base_dir }}/elasticsearch/data"
+    log_dir: "{{ .Vars.log_base_dir }}/elasticsearch"
+  hosts:
+    192.168.10.16:
+      hostname: node7
+      node_master: true
+      node_data: true
+    192.168.10.17:
+      hostname: node8
+      node_master: true
+      node_data: true
+    192.168.10.18:
+      hostname: node9
+      node_master: false
+      node_data: true
+
+# ============================================================
+# 调度系统
+# ============================================================
+
+# DolphinScheduler Master
+dolphinscheduler_master:
+  vars:
+    version: "3.1.9"
+    master_port: 5678
+    install_dir: "{{ .Vars.install_base_dir }}/dolphinscheduler"
+  hosts:
+    192.168.10.10:
+      hostname: node1
+
+# DolphinScheduler Worker
+dolphinscheduler_worker:
+  vars:
+    version: "3.1.9"
+    worker_port: 1234
+    install_dir: "{{ .Vars.install_base_dir }}/dolphinscheduler"
+  hosts:
+    192.168.10.12:
+      hostname: node3
+    192.168.10.13:
+      hostname: node4
+    192.168.10.14:
+      hostname: node5
+    192.168.10.15:
+      hostname: node6
+
+# DolphinScheduler API
+dolphinscheduler_api:
+  vars:
+    version: "3.1.9"
+    api_port: 12345
+    install_dir: "{{ .Vars.install_base_dir }}/dolphinscheduler"
+  hosts:
+    192.168.10.10:
+      hostname: node1
+
+# ============================================================
+# 示例：如何扩展新服务（Doris、DataX、Nginx等）
+# ============================================================
+
+# Doris FE (Frontend)
+# doris_fe:
+#   vars:
+#     version: "2.0.3"
+#     http_port: 8030
+#     rpc_port: 9020
+#     query_port: 9030
+#     edit_log_port: 9010
+#   hosts:
+#     192.168.10.10:
+#       hostname: node1
+#       fe_id: 1
+
+# Doris BE (Backend)
+# doris_be:
+#   vars:
+#     version: "2.0.3"
+#     be_port: 9060
+#     webserver_port: 8040
+#     heartbeat_service_port: 9050
+#   hosts:
+#     192.168.10.12:
+#       hostname: node3
+#     192.168.10.13:
+#       hostname: node4
+#     192.168.10.14:
+#       hostname: node5
+
+# DataX
+# datax:
+#   vars:
+#     version: "3.0.0"
+#     install_dir: "{{ .Vars.install_base_dir }}/datax"
+#   hosts:
+#     192.168.10.10:
+#       hostname: node1
+
+# Nginx
+# nginx:
+#   vars:
+#     version: "1.24.0"
+#     http_port: 80
+#     https_port: 443
+#   hosts:
+#     192.168.10.10:
+#       hostname: node1
+
+# 业务应用示例
+# myapp:
+#   vars:
+#     version: "1.0.0"
+#     port: 8080
+#     deploy_dir: "{{ .Vars.install_base_dir }}/myapp"
+#   hosts:
+#     192.168.10.11:
+#       hostname: node2
+#       instance_id: 1
+#     192.168.10.12:
+#       hostname: node3
+#       instance_id: 2
