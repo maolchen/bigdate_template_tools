@@ -100,7 +100,13 @@ serviceTop:
   install_jdk:
     nodes: ["*"]
   
-  # ==================== 第四步：基础服务 ====================
+  # ==================== 第五步：安装Scala（大数据节点）====================
+  scala:
+    nodes: [dw-master1, dw-master2, dw-master3,
+            dw-worker1, dw-worker2, dw-worker3,
+            realtime-kafka1, realtime-kafka2, realtime-kafka3]
+  
+  # ==================== 第六步：基础服务 ====================
   docker:
     nodes: [dw-master3, dw-worker1]
   
@@ -191,12 +197,20 @@ serverConfig:
       package_subdir: "realtime-new-doris/realtime/kafka"
       pkg_name: "jdk-8u202-linux-x64.tar.gz"
   
+  # ==================== Scala ====================
+  scala:
+    description: "安装Scala（大数据节点）"
+    vars:
+      version: "2.11.6"
+      install_dir: "/data/scala"
+      package_subdir: "realtime-new-doris/realtime/kafka"
+  
   # ==================== DNS服务 ====================
   dnsmasq:
     type: "global"
     description: "安装DNS服务（所有节点）"
     vars:
-      conf_dir: "/etc/dnsmasq.d"  
+      conf_dir: "/etc/dnsmasq.d"
   
   # ==================== NTP服务 ====================
   ntp_master:
