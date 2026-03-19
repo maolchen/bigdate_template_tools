@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================
 # 服务器初始化脚本
-# 节点: dw-worker2
+# 节点: realtime-kafka2
 # IP: 192.168.10.14
-# Hostname: dw-worker2
+# Hostname: realtime-kafka2
 # 兼容系统: CentOS 7/8/9, 麒麟, 统信UOS等RedHat系列
 # ============================================================
 
@@ -389,13 +389,29 @@ EOF
 # ============================================================
 create_directories() {
     log_info "========== 开始创建安装目录 =========="
+
+    local user="bigdata"
+    local group="bigdata"
+
+    # 创建用户和组（如果不存在）
+    if ! id "$user" >/dev/null 2>&1; then
+        groupadd -f "$group" 2>/dev/null || true
+        useradd -g "$group" -s /bin/bash "$user" && log_info "创建用户: $user" || log_warn "用户可能已存在: $user"
+    else
+        log_info "用户已存在: $user"
+    fi
+    
     
     local dirs=(
         "/data/localization"
-        "/data/bigdata"
         "/data/tmp_install_dir"
-        "/data/softwares"
     )
+    local data_dir=/data 
+
+
+    
+    setfacl -R -m u:$user:rwx $data_dir
+
     
     for dir in "${dirs[@]}"; do
         if [ -d "$dir" ]; then
@@ -405,18 +421,7 @@ create_directories() {
         fi
     done
     
-    # 设置目录权限
-    local user="bigdata"
-    local group="bigdata"
-    
-    # 创建用户和组（如果不存在）
-    if ! id "$user" >/dev/null 2>&1; then
-        groupadd -f "$group" 2>/dev/null || true
-        useradd -g "$group" -s /bin/bash "$user" && log_info "创建用户: $user" || log_warn "用户可能已存在: $user"
-    else
-        log_info "用户已存在: $user"
-    fi
-    
+
     # 设置目录所有者
     for dir in "${dirs[@]}"; do
         chown -R "$user:$group" "$dir" 2>/dev/null && log_info "设置目录所有者: $dir -> $user:$group" || true
@@ -598,7 +603,7 @@ configure_cron() {
 main() {
     log_info "============================================"
     log_info "服务器初始化开始"
-    log_info "节点: dw-worker2"
+    log_info "节点: realtime-kafka2"
     log_info "IP: 192.168.10.14"
     log_info "系统: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'=' -f2 | tr -d '\"')"
     log_info "============================================"

@@ -4,7 +4,7 @@
 global:
   # 基础目录
   install_base_dir: "/data/localization"
-  data_base_dir: "/data/bigdata"
+  data_base_dir: "/data"
   temp_dir: "/data/tmp_install_dir"
   software_dir: "/data/softwares"
   pkg_pro_dir: "/data/20251027-yuwq-cdtest"
@@ -88,6 +88,9 @@ serviceTop:
     nodes: ["*"]
   
   # ==================== 第三步：基础服务 ====================
+  docker:
+    nodes: [dw-master3, dw-worker1]
+  
   zookeeper:
     nodes: [dw-master1, dw-master2, dw-master3]
     id_auto_derive: true
@@ -173,6 +176,12 @@ serverConfig:
     description: "安装JDK（所有节点）"
   
   # ==================== 基础服务 ====================
+  docker:
+    vars:
+      version: "26.1.3"
+      bin_path: "/usr/local/bin"
+      package_subdir: "realtime-new-doris/realtime/web_all/docker"
+  
   zookeeper:
     id_field: "myid"
     id_format: "index+1"
