@@ -1,12 +1,17 @@
-# 大数据平台离线配置生成器 v5.0 - 通用版（无硬编码）
+# 大数据平台离线配置生成器 v5.1 - 通用版（零硬编码）
 
-## 一、v5核心改进
+## 一、核心特性
 
-### 🎯 完全无硬编码
+### 🎯 完全零硬编码
 
-**v4问题**：main.go中仍硬编码了zookeeper、kafka、hadoop_namenode等服务，扩展性受限。
+**代码中不包含任何服务名、端口或连接串的硬编码**，所有配置都通过模板函数动态获取：
 
-**v5改进**：所有服务配置化，代码零硬编码，可轻松扩展任意服务。
+| 对比项 | 传统方式 | 本工具 |
+|--------|----------|--------|
+| 服务名 | 代码中硬编码 | 配置文件定义 |
+| 端口号 | 代码中硬编码 | 配置文件定义 |
+| 连接串 | 代码中拼接 | 模板函数动态生成 |
+| ID推导 | 代码中写死规则 | 配置格式化模板 |
 
 ### 🆕 新增特性
 
@@ -278,13 +283,36 @@ serviceTop:
 | `.Instance.Node.Hostname` | 主机名 | `dw-master1` |
 | `.Instance.Vars` | 服务参数 | `.Instance.Vars.client_port` |
 | `.Instance.AutoID` | 自动推导的ID | `1` 或 `nn1` |
-| `.ZKConnect` | ZK连接串（衍生变量） | `192.168.10.10:2181,...` |
-| `.KafkaBrokers` | Kafka Brokers（衍生变量） | `192.168.10.13:9092,...` |
+| `.AllInstances` | 所有服务实例 | 用于模板函数 |
 
-### 4.2 模板函数
+### 4.2 通用模板函数（零硬编码）
 
+**核心设计**：通过模板函数动态获取任意服务的端点，而非硬编码在代码中。
+
+#### 端点生成函数
+
+| 函数 | 说明 | 示例 |
+|------|------|------|
+| `serviceEndpoints "服务名" "端口字段"` | 获取服务的端点列表 `[]string` | `["192.168.1.10:2181", "192.168.1.11:2181"]` |
+| `serviceEndpointsJoin "服务名" "端口字段"` | 获取端点连接串（逗号分隔） | `"192.168.1.10:2181,192.168.1.11:2181"` |
+| `serviceNodes "服务名"` | 获取服务的所有实例 | 用于遍历生成配置 |
+
+#### 使用示例
+
+**获取ZooKeeper连接串**：
 ```gotemplate
-{{/* 获取同一服务的所有节点 */}}
+{{/* 不需要硬编码zookeeper，通过函数动态获取 */}}
+zookeeper.connect={{serviceEndpointsJoin "zookeeper" "client_port"}}
+```
+
+**获取Kafka Brokers**：
+```gotemplate
+{{/* 不需要硬编码kafka，通过函数动态获取 */}}
+bootstrap.servers={{serviceEndpointsJoin "kafka" "broker_port"}}
+```
+
+**遍历服务节点生成配置**：
+```gotemplate
 {{range $idx, $node := serviceNodes "zookeeper"}}
 server.{{$node.AutoID}}={{$node.Node.IP}}:2888:3888
 {{end}}
@@ -292,20 +320,18 @@ server.{{$node.AutoID}}={{$node.Node.IP}}:2888:3888
 
 ### 4.3 模板示例
 
-**ZooKeeper配置模板**：
+**Kafka配置模板（使用模板函数获取ZK连接）**：
 
 ```gotemplate
-# templates/zookeeper/zoo.cfg.tmpl
-tickTime={{.Instance.Vars.tick_time}}
-clientPort={{.Instance.Vars.client_port}}
-dataDir={{.Global.data_base_dir}}/zookeeper/data
+# templates/kafka/server.properties.tmpl
+broker.id={{.Instance.AutoID}}
+listeners=PLAINTEXT://{{.Instance.Node.IP}}:{{.Instance.Vars.broker_port}}
 
-# 服务器列表（自动生成）
-{{- $serverPort := .Instance.Vars.server_port }}
-{{- $electionPort := .Instance.Vars.election_port }}
-{{- range $idx, $node := serviceNodes "zookeeper" }}
-server.{{$node.AutoID}}={{$node.Node.IP}}:{{$serverPort}}:{{$electionPort}}
-{{- end }}
+# ⭐ ZK连接串通过模板函数动态获取，无需硬编码
+zookeeper.connect={{serviceEndpointsJoin "zookeeper" "client_port"}}
+
+log.dirs={{.Global.data_base_dir}}/kafka/logs
+num.partitions={{.Instance.Vars.num_partitions}}
 ```
 
 **全局服务模板**：
@@ -400,13 +426,20 @@ output/
 
 ## 六、版本对比
 
-| 特性 | v4版本 | v5版本 |
-|------|--------|--------|
+| 特性 | v4版本 | v5.1版本 |
+|------|--------|----------|
 | 服务扩展 | 需修改代码 | **无需修改代码** |
 | 全局服务 | 不支持 | **支持 `nodes: ["*"]`** |
 | 节点复用 | 支持 | **支持（完整示例）** |
 | ID格式 | 固定规则 | **配置化 `id_format`** |
+| 衍生变量 | 代码硬编码 | **模板函数动态生成** |
 | 代码复杂度 | 中（有硬编码） | **低（零硬编码）** |
+
+### 关键改进（v5.1）
+
+**移除硬编码的衍生变量计算**：
+- ❌ 旧版：代码中硬编码 `zk_connect`、`kafka_brokers`
+- ✅ 新版：通过 `serviceEndpointsJoin` 模板函数动态获取任意服务的端点
 
 ---
 
@@ -459,6 +492,6 @@ serviceTop:
 
 ---
 
-**版本**: v5.0 通用版  
-**核心特性**: 零硬编码 + 全局服务 + 节点复用 + ID格式配置化  
+**版本**: v5.1 通用版  
+**核心特性**: 零硬编码 + 模板函数动态生成端点 + 全局服务 + 节点复用  
 **维护效率**: 添加新服务无需修改代码，只需配置+模板

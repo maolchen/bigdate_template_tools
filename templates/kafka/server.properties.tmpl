@@ -15,9 +15,11 @@ advertised.listeners=PLAINTEXT://{{.Instance.Node.IP}}:{{.Instance.Vars.broker_p
 # 日志目录
 log.dirs={{.Global.data_base_dir}}/kafka/logs
 
-# Zookeeper连接
-# 注意：zk_connect 为衍生变量，在运行时根据 zookeeper 服务拓扑自动计算
-zookeeper.connect={{.ZKConnect}}
+# ============================================================
+# Zookeeper连接（通过模板函数动态获取）
+# 使用 serviceEndpointsJoin 函数获取 zookeeper 服务的所有端点
+# ============================================================
+zookeeper.connect={{serviceEndpointsJoin "zookeeper" "client_port"}}
 
 # 分区数量
 num.partitions={{.Instance.Vars.num_partitions}}

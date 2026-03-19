@@ -11,7 +11,7 @@ import (
 )
 
 // ============================================================
-// 配置结构定义（通用、无硬编码）
+// 配置结构定义（完全通用、零硬编码）
 // ============================================================
 
 // Global 全局配置
@@ -28,8 +28,8 @@ type Nodes map[string]Node
 
 // ServiceTopo 服务拓扑配置
 type ServiceTopo struct {
-	Nodes         []string `yaml:"nodes"`          // 节点别名列表，支持 ["*"]
-	IDAutoDerive  bool     `yaml:"id_auto_derive"` // 是否自动推导ID
+	Nodes        []string `yaml:"nodes"`          // 节点别名列表，支持 ["*"]
+	IDAutoDerive bool     `yaml:"id_auto_derive"` // 是否自动推导ID
 }
 
 // ServiceTopos 服务拓扑列表
@@ -55,7 +55,7 @@ type Config struct {
 	Global        Global         `yaml:"global"`
 	Nodes         Nodes          `yaml:"nodes"`
 	ServiceTop    ServiceTopos   `yaml:"serviceTop"`
-	ServerConfig   ServiceConfigs `yaml:"serverConfig"`
+	ServerConfig  ServiceConfigs `yaml:"serverConfig"`
 	NodeOverrides NodeOverrides  `yaml:"nodeOverrides"`
 }
 
@@ -79,19 +79,16 @@ type ServiceInstance struct {
 	AutoID      interface{}            // 自动推导的ID
 }
 
-// Context 模板上下文
+// Context 模板上下文（零硬编码，不包含任何特定服务字段）
 type Context struct {
-	Global        Global
-	Nodes         Nodes
-	Instance      ServiceInstance
-	AllInstances  []ServiceInstance // 所有服务实例，用于在模板中访问其他节点
-	// 衍生变量（在运行时计算）
-	ZKConnect     string // ZooKeeper连接串
-	KafkaBrokers  string // Kafka Brokers列表
+	Global       Global
+	Nodes        Nodes
+	Instance     ServiceInstance
+	AllInstances []ServiceInstance // 所有服务实例
 }
 
 // ============================================================
-// ID格式化器
+// ID格式化器（通用）
 // ============================================================
 
 // FormatID 根据格式模板生成ID
@@ -118,63 +115,6 @@ func FormatID(format string, index int) interface{} {
 
 	// 格式化模板
 	return result
-}
-
-// ============================================================
-// 衍生变量计算器
-// ============================================================
-
-// DeriveVars 计算衍生变量
-func DeriveVars(cfg *Config) map[string]interface{} {
-	derived := make(map[string]interface{})
-
-	// 遍历所有服务配置
-	for serviceName, serviceConfig := range cfg.ServerConfig {
-		switch serviceName {
-		case "zookeeper":
-			// 计算ZK连接串
-			if topo, exists := cfg.ServiceTop[serviceName]; exists {
-				var servers []string
-				for _, nodeName := range topo.Nodes {
-					if node, ok := cfg.Nodes[nodeName]; ok {
-						// 获取client_port
-						clientPort := 2181
-						if port, ok := serviceConfig.Vars["client_port"].(int); ok {
-							clientPort = port
-						}
-						servers = append(servers, fmt.Sprintf("%s:%d", node.IP, clientPort))
-					}
-				}
-				if len(servers) > 0 {
-					derived["zk_connect"] = strings.Join(servers, ",")
-				}
-			}
-
-		case "kafka":
-			// 计算Kafka Brokers
-			if topo, exists := cfg.ServiceTop[serviceName]; exists {
-				var brokers []string
-				for _, nodeName := range topo.Nodes {
-					if node, ok := cfg.Nodes[nodeName]; ok {
-						// 获取broker_port
-						brokerPort := 9092
-						if port, ok := serviceConfig.Vars["broker_port"].(int); ok {
-							brokerPort = port
-						}
-						brokers = append(brokers, fmt.Sprintf("%s:%d", node.IP, brokerPort))
-					}
-				}
-				if len(brokers) > 0 {
-					derived["kafka_brokers"] = strings.Join(brokers, ",")
-				}
-			}
-
-		// 可以继续添加其他服务的衍生变量计算逻辑
-		// 或者完全通过模板函数在模板中计算
-		}
-	}
-
-	return derived
 }
 
 // ============================================================
@@ -270,20 +210,20 @@ func BuildServiceInstances(cfg *Config) []ServiceInstance {
 }
 
 // ============================================================
-// 模板渲染
+// 模板渲染（零硬编码，通过模板函数实现通用性）
 // ============================================================
 
 // RenderTemplate 渲染模板
-func RenderTemplate(tmplPath string, ctx Context) (string, error) {
+func RenderTemplate(tmplPath string, ctx Context, cfg *Config) (string, error) {
 	// 读取模板文件
 	tmplContent, err := os.ReadFile(tmplPath)
 	if err != nil {
 		return "", fmt.Errorf("读取模板失败: %w", err)
 	}
 
-	// 创建模板，添加自定义函数
+	// 创建模板，添加通用模板函数（不包含任何特定服务逻辑）
 	tmpl, err := template.New("config").Funcs(template.FuncMap{
-		// 可以添加自定义模板函数
+		// =============== 基础函数 ===============
 		"toUpper": strings.ToUpper,
 		"toLower": strings.ToLower,
 		"default": func(def, val interface{}) interface{} {
@@ -292,6 +232,8 @@ func RenderTemplate(tmplPath string, ctx Context) (string, error) {
 			}
 			return val
 		},
+
+		// =============== 服务节点相关函数 ===============
 		// 获取同一服务的所有节点实例
 		"serviceNodes": func(serviceName string) []ServiceInstance {
 			var result []ServiceInstance
@@ -301,6 +243,79 @@ func RenderTemplate(tmplPath string, ctx Context) (string, error) {
 				}
 			}
 			return result
+		},
+
+		// 获取服务的端点列表（IP:Port格式）
+		// serviceName: 服务名
+		// portField: 端口字段名（如 "client_port", "broker_port"）
+		"serviceEndpoints": func(serviceName, portField string) []string {
+			var endpoints []string
+			for _, inst := range ctx.AllInstances {
+				if inst.ServiceName == serviceName {
+					// 获取端口值
+					port := 0
+					if p, ok := inst.Vars[portField].(int); ok {
+						port = p
+					}
+					if port > 0 {
+						endpoints = append(endpoints, fmt.Sprintf("%s:%d", inst.Node.IP, port))
+					}
+				}
+			}
+			return endpoints
+		},
+
+		// 获取服务的端点连接串（用逗号连接）
+		"serviceEndpointsJoin": func(serviceName, portField string) string {
+			endpoints := make([]string, 0)
+			for _, inst := range ctx.AllInstances {
+				if inst.ServiceName == serviceName {
+					port := 0
+					if p, ok := inst.Vars[portField].(int); ok {
+						port = p
+					}
+					if port > 0 {
+						endpoints = append(endpoints, fmt.Sprintf("%s:%d", inst.Node.IP, port))
+					}
+				}
+			}
+			return strings.Join(endpoints, ",")
+		},
+
+		// 获取服务的所有IP列表
+		"serviceIPs": func(serviceName string) []string {
+			var ips []string
+			for _, inst := range ctx.AllInstances {
+				if inst.ServiceName == serviceName {
+					ips = append(ips, inst.Node.IP)
+				}
+			}
+			return ips
+		},
+
+		// 获取服务的所有主机名列表
+		"serviceHostnames": func(serviceName string) []string {
+			var hostnames []string
+			for _, inst := range ctx.AllInstances {
+				if inst.ServiceName == serviceName {
+					hostnames = append(hostnames, inst.Node.Hostname)
+				}
+			}
+			return hostnames
+		},
+
+		// =============== 配置访问函数 ===============
+		// 获取服务配置
+		"serviceConfig": func(serviceName string) ServiceConfig {
+			return cfg.ServerConfig[serviceName]
+		},
+
+		// 获取节点信息
+		"nodeInfo": func(nodeName string) *Node {
+			if node, ok := cfg.Nodes[nodeName]; ok {
+				return &node
+			}
+			return nil
 		},
 	}).Parse(string(tmplContent))
 	if err != nil {
@@ -322,9 +337,6 @@ func RenderTemplate(tmplPath string, ctx Context) (string, error) {
 
 // GenerateOutputs 生成所有配置文件和脚本
 func GenerateOutputs(cfg *Config, instances []ServiceInstance, outputDir string) error {
-	// 计算衍生变量
-	derived := DeriveVars(cfg)
-
 	// 创建输出目录
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("创建输出目录失败: %w", err)
@@ -358,9 +370,7 @@ func GenerateOutputs(cfg *Config, instances []ServiceInstance, outputDir string)
 				Global:       cfg.Global,
 				Nodes:        cfg.Nodes,
 				Instance:     inst,
-				AllInstances: instances, // 传入所有实例
-				ZKConnect:    derived["zk_connect"].(string),
-				KafkaBrokers: derived["kafka_brokers"].(string),
+				AllInstances: instances,
 			}
 
 			// 查找模板文件
@@ -371,7 +381,7 @@ func GenerateOutputs(cfg *Config, instances []ServiceInstance, outputDir string)
 
 			for _, tmplFile := range tmplFiles {
 				// 渲染模板
-				content, err := RenderTemplate(tmplFile, ctx)
+				content, err := RenderTemplate(tmplFile, ctx, cfg)
 				if err != nil {
 					return fmt.Errorf("渲染模板 %s 失败: %w", tmplFile, err)
 				}

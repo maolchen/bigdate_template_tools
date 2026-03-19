@@ -7,8 +7,8 @@
 set -e
 
 echo "=========================================="
-echo "安装JDK: realtime-es2"
-echo "IP: 192.168.10.17"
+echo "安装JDK: dw-master1"
+echo "IP: 192.168.10.10"
 echo "=========================================="
 
 # JDK安装目录
@@ -55,6 +55,6 @@ export PATH=$JAVA_HOME/bin:$PATH
 java -version
 
 echo "=========================================="
-echo "JDK安装完成: realtime-es2"
+echo "JDK安装完成: dw-master1"
 echo "JAVA_HOME: $JAVA_HOME"
 echo "=========================================="

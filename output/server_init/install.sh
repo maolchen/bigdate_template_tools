@@ -7,9 +7,9 @@
 set -e
 
 echo "=========================================="
-echo "服务器初始化: realtime-es1"
-echo "IP: 192.168.10.16"
-echo "Hostname: realtime-es1"
+echo "服务器初始化: realtime-es3"
+echo "IP: 192.168.10.18"
+echo "Hostname: realtime-es3"
 echo "=========================================="
 
 # 时区设置
@@ -78,4 +78,4 @@ echo "=========================================="
 echo "提示: 请确保已配置SSH免密登录"
 echo "=========================================="
 
-echo "服务器初始化完成: realtime-es1"
+echo "服务器初始化完成: realtime-es3"
