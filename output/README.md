@@ -4,46 +4,46 @@
 
 | 节点名 | IP | 主机名 |
 |---|---|---|
-| node1 | 192.168.10.10 | master01 |
-| node2 | 192.168.10.11 | master02 |
-| node3 | 192.168.10.12 | master03 |
-| node4 | 192.168.10.13 | worker01 |
-| node5 | 192.168.10.14 | worker02 |
-| node6 | 192.168.10.15 | worker03 |
-| node7 | 192.168.10.16 | es01 |
-| node8 | 192.168.10.17 | es02 |
-| node9 | 192.168.10.18 | es03 |
+| realtime-dw1 | 192.168.10.10 | realtime-dw1 |
+| realtime-dw2 | 192.168.10.11 | realtime-dw2 |
+| realtime-dw3 | 192.168.10.12 | realtime-dw3 |
+| realtime-es1 | 192.168.10.16 | realtime-es1 |
+| realtime-es2 | 192.168.10.17 | realtime-es2 |
+| realtime-es3 | 192.168.10.18 | realtime-es3 |
+| realtime-kafka1 | 192.168.10.13 | realtime-kafka1 |
+| realtime-kafka2 | 192.168.10.14 | realtime-kafka2 |
+| realtime-kafka3 | 192.168.10.15 | realtime-kafka3 |
 
 ## 服务拓扑
 
 | 服务名 | 节点数 | 部署节点 | 自动ID |
 |---|---|---|---|
-| dolphinscheduler_api | 1 | node1 | 否 |
-| dolphinscheduler_master | 1 | node1 | 否 |
-| dolphinscheduler_worker | 4 | node3, node4, node5, node6 | 否 |
-| elasticsearch | 3 | node7, node8, node9 | 否 |
-| flink_jobmanager | 1 | node1 | 否 |
-| flink_taskmanager | 4 | node3, node4, node5, node6 | 否 |
-| hadoop_datanode | 4 | node3, node4, node5, node6 | 否 |
-| hadoop_namenode | 2 | node1, node2 | ✅ |
-| kafka | 3 | node4, node5, node6 | ✅ |
-| spark_master | 1 | node1 | 否 |
-| spark_worker | 4 | node3, node4, node5, node6 | 否 |
-| zookeeper | 3 | node1, node2, node3 | ✅ |
+| dolphinscheduler_api | 1 | realtime-dw1 | 否 |
+| dolphinscheduler_master | 1 | realtime-dw1 | 否 |
+| dolphinscheduler_worker | 3 | realtime-dw1, realtime-dw2, realtime-dw3 | 否 |
+| elasticsearch | 3 | realtime-es1, realtime-es2, realtime-es3 | 否 |
+| flink_jobmanager | 1 | realtime-dw1 | 否 |
+| flink_taskmanager | 3 | realtime-dw1, realtime-dw2, realtime-dw3 | 否 |
+| hadoop_datanode | 3 | realtime-dw1, realtime-dw2, realtime-dw3 | 否 |
+| hadoop_namenode | 2 | realtime-dw1, realtime-dw2 | ✅ |
+| kafka | 3 | realtime-kafka1, realtime-kafka2, realtime-kafka3 | ✅ |
+| spark_master | 1 | realtime-dw1 | 否 |
+| spark_worker | 3 | realtime-dw1, realtime-dw2, realtime-dw3 | 否 |
+| zookeeper | 3 | realtime-dw1, realtime-dw2, realtime-dw3 | ✅ |
 
 ## 主机部署明细
 
 | IP | 主机名 | 部署服务 |
 |---|---|---|
-| 192.168.10.10 | master01 | spark_master, flink_jobmanager, dolphinscheduler_master, zookeeper, hadoop_namenode, dolphinscheduler_api |
-| 192.168.10.11 | master02 | zookeeper, hadoop_namenode |
-| 192.168.10.12 | master03 | hadoop_datanode, dolphinscheduler_worker, zookeeper, spark_worker, flink_taskmanager |
-| 192.168.10.13 | worker01 | kafka, hadoop_datanode, dolphinscheduler_worker, spark_worker, flink_taskmanager |
-| 192.168.10.14 | worker02 | kafka, hadoop_datanode, dolphinscheduler_worker, spark_worker, flink_taskmanager |
-| 192.168.10.15 | worker03 | kafka, hadoop_datanode, dolphinscheduler_worker, spark_worker, flink_taskmanager |
-| 192.168.10.16 | es01 | elasticsearch |
-| 192.168.10.17 | es02 | elasticsearch |
-| 192.168.10.18 | es03 | elasticsearch |
+| 192.168.10.10 | realtime-dw1 | zookeeper, flink_jobmanager, dolphinscheduler_master, hadoop_namenode, hadoop_datanode, spark_master, spark_worker, flink_taskmanager, dolphinscheduler_worker, dolphinscheduler_api |
+| 192.168.10.11 | realtime-dw2 | zookeeper, hadoop_namenode, hadoop_datanode, spark_worker, flink_taskmanager, dolphinscheduler_worker |
+| 192.168.10.12 | realtime-dw3 | zookeeper, hadoop_datanode, spark_worker, flink_taskmanager, dolphinscheduler_worker |
+| 192.168.10.13 | realtime-kafka1 | kafka |
+| 192.168.10.14 | realtime-kafka2 | kafka |
+| 192.168.10.15 | realtime-kafka3 | kafka |
+| 192.168.10.16 | realtime-es1 | elasticsearch |
+| 192.168.10.17 | realtime-es2 | elasticsearch |
+| 192.168.10.18 | realtime-es3 | elasticsearch |
 
 ## 交付步骤
 

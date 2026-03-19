@@ -13,19 +13,17 @@ import (
 )
 
 // ============================================================
-// 配置结构 - 极简版
+// 配置结构 - v4 拓扑配置分离版
 // ============================================================
 
 // Config 根配置
 type Config struct {
-	Global        GlobalConfig            `yaml:"global"`
-	Nodes         map[string]NodeConfig   `yaml:"nodes"`
-	Services      map[string]ServiceConfig `yaml:"services"`
-	NodeOverrides map[string]map[string]interface{} `yaml:"node_overrides"`
+	Global        map[string]interface{}            `yaml:"global"`
+	Nodes         map[string]NodeConfig             `yaml:"nodes"`
+	ServiceTop    map[string]ServiceTopConfig       `yaml:"serviceTop"`
+	ServerConfig  map[string]map[string]interface{} `yaml:"serverConfig"`
+	NodeOverrides map[string]map[string]interface{} `yaml:"nodeOverrides"`
 }
-
-// GlobalConfig 全局配置
-type GlobalConfig map[string]interface{}
 
 // NodeConfig 节点配置
 type NodeConfig struct {
@@ -33,11 +31,10 @@ type NodeConfig struct {
 	Hostname string `yaml:"hostname"`
 }
 
-// ServiceConfig 服务配置
-type ServiceConfig struct {
-	Nodes        []string                 `yaml:"nodes"`
-	IDAutoDerive bool                     `yaml:"id_auto_derive"`
-	Vars         map[string]interface{}   `yaml:"vars"`
+// ServiceTopConfig 服务拓扑配置
+type ServiceTopConfig struct {
+	Nodes        []string `yaml:"nodes"`
+	IDAutoDerive bool     `yaml:"id_auto_derive"`
 }
 
 // RenderContext 模板渲染上下文
@@ -47,12 +44,13 @@ type RenderContext struct {
 	ServiceVars  map[string]interface{}
 	IP           string
 	Hostname     string
-	NodeName     string  // 节点别名（如node1）
-	NodeIndex    int     // 节点在该服务中的索引（用于自动推导ID）
-	AutoID       int     // 自动推导的ID（索引+1）
+	NodeName     string
+	NodeIndex    int
+	AutoID       int
 	HostVars     map[string]interface{}
 	Derived      map[string]interface{}
-	AllServices  map[string]ServiceConfig
+	ServiceTop   map[string]ServiceTopConfig
+	ServerConfig map[string]map[string]interface{}
 	AllNodes     map[string]NodeConfig
 }
 
@@ -70,7 +68,7 @@ func main() {
 	log.SetOutput(logFile)
 	
 	log.Println("========================================")
-	log.Println("大数据平台配置生成器 v3.0 - 极简版")
+	log.Println("大数据平台配置生成器 v4.0 - 拓扑配置分离版")
 	log.Println("========================================")
 
 	// 1. 加载配置
@@ -78,7 +76,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("❌ 加载配置失败: %v", err)
 	}
-	log.Printf("✅ 配置加载成功: %d 个节点, %d 个服务", len(config.Nodes), len(config.Services))
+	log.Printf("✅ 配置加载成功: %d 个节点, %d 个服务拓扑", len(config.Nodes), len(config.ServiceTop))
 
 	// 2. 扫描模板
 	templates, err := scanTemplates("templates")
@@ -91,11 +89,11 @@ func main() {
 	hostServices := buildHostServiceMap(config)
 	log.Printf("✅ 构建主机-服务映射完成，共 %d 台主机", len(hostServices))
 
-	// 5. 计算衍生变量
+	// 4. 计算衍生变量
 	derived := computeDerivedVars(config)
 	log.Printf("✅ 衍生变量计算完成")
 
-	// 6. 为每台主机生成配置
+	// 5. 为每台主机生成配置
 	for ip, serviceList := range hostServices {
 		log.Printf("\n📦 处理主机: %s (部署 %d 个服务)", ip, len(serviceList))
 		
@@ -111,19 +109,27 @@ func main() {
 			nodeIndex := svc.NodeIndex
 			autoID := svc.AutoID
 
-			serviceConfig, exists := config.Services[serviceName]
+			// 获取服务拓扑配置
+			serviceTop, exists := config.ServiceTop[serviceName]
 			if !exists {
-				log.Printf("⚠️ 服务 %s 未定义，跳过", serviceName)
+				log.Printf("⚠️ 服务 %s 未定义拓扑，跳过", serviceName)
 				continue
 			}
 
+			// 获取节点配置
 			nodeConfig, exists := config.Nodes[nodeName]
 			if !exists {
 				log.Printf("⚠️ 节点 %s 未定义，跳过", nodeName)
 				continue
 			}
 
-			// 构建主机变量（包含自动推导的ID）
+			// 获取服务配置
+			serviceVars := make(map[string]interface{})
+			if serverConfig, exists := config.ServerConfig[serviceName]; exists {
+				serviceVars = serverConfig
+			}
+
+			// 构建主机变量
 			hostVars := make(map[string]interface{})
 			
 			// 应用节点特化配置
@@ -138,9 +144,8 @@ func main() {
 			}
 
 			// 如果开启自动推导ID，注入到hostVars
-			if serviceConfig.IDAutoDerive {
+			if serviceTop.IDAutoDerive {
 				hostVars["auto_id"] = autoID
-				// 根据服务类型设置特定的ID字段名
 				switch serviceName {
 				case "zookeeper":
 					hostVars["myid"] = autoID
@@ -157,18 +162,19 @@ func main() {
 
 			// 构建渲染上下文
 			ctx := RenderContext{
-				Global:      config.Global,
-				Service:     serviceName,
-				ServiceVars: serviceConfig.Vars,
-				IP:          nodeConfig.IP,
-				Hostname:    nodeConfig.Hostname,
-				NodeName:    nodeName,
-				NodeIndex:   nodeIndex,
-				AutoID:      autoID,
-				HostVars:    hostVars,
-				Derived:     derived,
-				AllServices: config.Services,
-				AllNodes:    config.Nodes,
+				Global:       config.Global,
+				Service:      serviceName,
+				ServiceVars:  serviceVars,
+				IP:           nodeConfig.IP,
+				Hostname:     nodeConfig.Hostname,
+				NodeName:     nodeName,
+				NodeIndex:    nodeIndex,
+				AutoID:       autoID,
+				HostVars:     hostVars,
+				Derived:      derived,
+				ServiceTop:   config.ServiceTop,
+				ServerConfig: config.ServerConfig,
+				AllNodes:     config.Nodes,
 			}
 
 			// 渲染模板
@@ -187,7 +193,7 @@ func main() {
 		}
 	}
 
-	// 7. 生成总览
+	// 6. 生成总览
 	generateOverview(config, hostServices)
 
 	log.Println("\n========================================")
@@ -214,9 +220,10 @@ func loadConfig(path string) (*Config, error) {
 	}
 
 	config := &Config{
-		Global:        make(GlobalConfig),
+		Global:        make(map[string]interface{}),
 		Nodes:         make(map[string]NodeConfig),
-		Services:      make(map[string]ServiceConfig),
+		ServiceTop:    make(map[string]ServiceTopConfig),
+		ServerConfig:  make(map[string]map[string]interface{}),
 		NodeOverrides: make(map[string]map[string]interface{}),
 	}
 
@@ -273,8 +280,8 @@ func scanTemplates(root string) ([]TemplateInfo, error) {
 func buildHostServiceMap(config *Config) map[string][]HostServiceInfo {
 	hostServices := make(map[string][]HostServiceInfo)
 
-	for serviceName, serviceConfig := range config.Services {
-		for idx, nodeName := range serviceConfig.Nodes {
+	for serviceName, serviceTop := range config.ServiceTop {
+		for idx, nodeName := range serviceTop.Nodes {
 			nodeConfig, exists := config.Nodes[nodeName]
 			if !exists {
 				continue
@@ -301,12 +308,12 @@ func computeDerivedVars(config *Config) map[string]interface{} {
 	derived := make(map[string]interface{})
 
 	// 为每个服务提取节点信息
-	for serviceName, serviceConfig := range config.Services {
+	for serviceName, serviceTop := range config.ServiceTop {
 		var ips []string
 		var hostnames []string
 		var nodes []map[string]interface{}
 
-		for idx, nodeName := range serviceConfig.Nodes {
+		for idx, nodeName := range serviceTop.Nodes {
 			nodeConfig, exists := config.Nodes[nodeName]
 			if !exists {
 				continue
@@ -326,8 +333,14 @@ func computeDerivedVars(config *Config) map[string]interface{} {
 		derived[serviceName+"_ips"] = ips
 		derived[serviceName+"_hostnames"] = hostnames
 
+		// 获取服务配置
+		serviceConfig, hasConfig := config.ServerConfig[serviceName]
+		if !hasConfig {
+			serviceConfig = make(map[string]interface{})
+		}
+
 		// 生成节点:port列表
-		if clientPort, ok := serviceConfig.Vars["client_port"].(int); ok {
+		if clientPort, ok := serviceConfig["client_port"].(int); ok {
 			var nodesWithPort []string
 			for _, ip := range ips {
 				nodesWithPort = append(nodesWithPort, fmt.Sprintf("%s:%d", ip, clientPort))
@@ -335,7 +348,7 @@ func computeDerivedVars(config *Config) map[string]interface{} {
 			derived[serviceName+"_connect_string"] = strings.Join(nodesWithPort, ",")
 		}
 
-		if brokerPort, ok := serviceConfig.Vars["broker_port"].(int); ok {
+		if brokerPort, ok := serviceConfig["broker_port"].(int); ok {
 			var brokers []string
 			for _, ip := range ips {
 				brokers = append(brokers, fmt.Sprintf("%s:%d", ip, brokerPort))
@@ -346,10 +359,10 @@ func computeDerivedVars(config *Config) map[string]interface{} {
 
 	// 特殊处理：ZK连接串
 	if zkNodes, ok := derived["zookeeper_nodes"].([]map[string]interface{}); ok {
-		zkService, exists := config.Services["zookeeper"]
-		if exists {
+		serviceConfig, hasConfig := config.ServerConfig["zookeeper"]
+		if hasConfig {
 			clientPort := 2181
-			if cp, ok := zkService.Vars["client_port"].(int); ok {
+			if cp, ok := serviceConfig["client_port"].(int); ok {
 				clientPort = cp
 			}
 			var zkConnect []string
@@ -367,10 +380,10 @@ func computeDerivedVars(config *Config) map[string]interface{} {
 
 	// 特殊处理：HDFS NameNode地址
 	if nnNodes, ok := derived["hadoop_namenode_nodes"].([]map[string]interface{}); ok {
-		nnService, exists := config.Services["hadoop_namenode"]
-		if exists {
+		serviceConfig, hasConfig := config.ServerConfig["hadoop_namenode"]
+		if hasConfig {
 			rpcPort := 9820
-			if rp, ok := nnService.Vars["namenode_port"].(int); ok {
+			if rp, ok := serviceConfig["namenode_port"].(int); ok {
 				rpcPort = rp
 			}
 			var nnAddresses []string
@@ -383,10 +396,10 @@ func computeDerivedVars(config *Config) map[string]interface{} {
 
 	// 特殊处理：Spark Master URL
 	if sparkNodes, ok := derived["spark_master_nodes"].([]map[string]interface{}); ok {
-		sparkService, exists := config.Services["spark_master"]
-		if exists && len(sparkNodes) > 0 {
+		serviceConfig, hasConfig := config.ServerConfig["spark_master"]
+		if hasConfig && len(sparkNodes) > 0 {
 			masterPort := 7077
-			if mp, ok := sparkService.Vars["master_port"].(int); ok {
+			if mp, ok := serviceConfig["master_port"].(int); ok {
 				masterPort = mp
 			}
 			derived["spark_master_url"] = fmt.Sprintf("spark://%s:%d", sparkNodes[0]["ip"], masterPort)
@@ -395,10 +408,10 @@ func computeDerivedVars(config *Config) map[string]interface{} {
 
 	// 特殊处理：ES种子节点
 	if esNodes, ok := derived["elasticsearch_nodes"].([]map[string]interface{}); ok {
-		esService, exists := config.Services["elasticsearch"]
-		if exists {
+		serviceConfig, hasConfig := config.ServerConfig["elasticsearch"]
+		if hasConfig {
 			transportPort := 9300
-			if tp, ok := esService.Vars["transport_port"].(int); ok {
+			if tp, ok := serviceConfig["transport_port"].(int); ok {
 				transportPort = tp
 			}
 			var seedHosts []string
@@ -437,32 +450,27 @@ func renderTemplate(tmplInfo TemplateInfo, outputPath string, ctx RenderContext)
 			return val
 		},
 		"printf":    fmt.Sprintf,
-		// 获取全局变量
 		"globalVar": func(varName string) interface{} {
 			return ctx.Global[varName]
 		},
-		// 获取服务节点列表
 		"serviceNodes": func(serviceName string) []map[string]interface{} {
 			if nodes, ok := ctx.Derived[serviceName+"_nodes"].([]map[string]interface{}); ok {
 				return nodes
 			}
 			return nil
 		},
-		// 获取服务IP列表
 		"serviceIPs": func(serviceName string) []string {
 			if ips, ok := ctx.Derived[serviceName+"_ips"].([]string); ok {
 				return ips
 			}
 			return nil
 		},
-		// 获取服务变量
 		"serviceVar": func(serviceName, varName string) interface{} {
-			if svc, exists := ctx.AllServices[serviceName]; exists {
-				return svc.Vars[varName]
+			if config, exists := ctx.ServerConfig[serviceName]; exists {
+				return config[varName]
 			}
 			return nil
 		},
-		// 获取节点配置
 		"nodeConfig": func(nodeName string) map[string]interface{} {
 			if node, exists := ctx.AllNodes[nodeName]; exists {
 				return map[string]interface{}{
@@ -513,7 +521,6 @@ func generateOverview(config *Config, hostServices map[string][]HostServiceInfo)
 	content.WriteString("| 节点名 | IP | 主机名 |\n")
 	content.WriteString("|---|---|---|\n")
 	
-	// 按节点名排序
 	var nodeNames []string
 	for name := range config.Nodes {
 		nodeNames = append(nodeNames, name)
@@ -530,26 +537,25 @@ func generateOverview(config *Config, hostServices map[string][]HostServiceInfo)
 	content.WriteString("|---|---|---|---|\n")
 	
 	var serviceNames []string
-	for name := range config.Services {
+	for name := range config.ServiceTop {
 		serviceNames = append(serviceNames, name)
 	}
 	sort.Strings(serviceNames)
 	
 	for _, name := range serviceNames {
-		svc := config.Services[name]
-		nodeList := strings.Join(svc.Nodes, ", ")
+		top := config.ServiceTop[name]
+		nodeList := strings.Join(top.Nodes, ", ")
 		idStatus := "否"
-		if svc.IDAutoDerive {
+		if top.IDAutoDerive {
 			idStatus = "✅"
 		}
-		content.WriteString(fmt.Sprintf("| %s | %d | %s | %s |\n", name, len(svc.Nodes), nodeList, idStatus))
+		content.WriteString(fmt.Sprintf("| %s | %d | %s | %s |\n", name, len(top.Nodes), nodeList, idStatus))
 	}
 	
 	content.WriteString("\n## 主机部署明细\n\n")
 	content.WriteString("| IP | 主机名 | 部署服务 |\n")
 	content.WriteString("|---|---|---|\n")
 	
-	// 按IP排序
 	var ips []string
 	for ip := range hostServices {
 		ips = append(ips, ip)

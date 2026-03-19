@@ -1,8 +1,8 @@
 #!/bin/bash
 # ============================================================
 # Kafka 安装脚本
-# 主机: worker03 (192.168.10.15)
-# 节点: node6
+# 主机: realtime-kafka3 (192.168.10.15)
+# 节点: realtime-kafka3
 # broker_id: 3 (自动推导)
 # ============================================================
 
@@ -23,12 +23,13 @@ INSTALL_DIR="${INSTALL_BASE}/kafka"
 LOG_DIR="${INSTALL_BASE}/kafka/logs"
 BROKER_ID="3"
 BROKER_PORT="9092"
-HOSTNAME="worker03"
+HOSTNAME="realtime-kafka3"
 IP="192.168.10.15"
 
 log_info "=========================================="
 log_info "开始安装 Kafka"
 log_info "主机: ${HOSTNAME} (${IP})"
+log_info "节点: realtime-kafka3"
 log_info "broker_id: ${BROKER_ID} (自动推导)"
 log_info "=========================================="
 
@@ -62,16 +63,7 @@ cd ${INSTALL_DIR}
 START_EOF
 chmod +x "${INSTALL_DIR}/start.sh"
 
-# 创建停止脚本
-cat > "${INSTALL_DIR}/stop.sh" << STOP_EOF
-#!/bin/bash
-cd ${INSTALL_DIR}
-./bin/kafka-server-stop.sh
-STOP_EOF
-chmod +x "${INSTALL_DIR}/stop.sh"
-
 log_info "=========================================="
 log_info "Kafka 安装完成！"
 log_info "启动命令: ${INSTALL_DIR}/start.sh"
-log_info "停止命令: ${INSTALL_DIR}/stop.sh"
 log_info "=========================================="

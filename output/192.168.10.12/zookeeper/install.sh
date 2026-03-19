@@ -1,8 +1,8 @@
 #!/bin/bash
 # ============================================================
 # Zookeeper 安装脚本
-# 主机: master03 (192.168.10.12)
-# 节点: node3
+# 主机: realtime-dw3 (192.168.10.12)
+# 节点: realtime-dw3
 # myid: 3 (自动推导)
 # ============================================================
 
@@ -23,12 +23,13 @@ DATA_BASE="/data/bigdata"
 INSTALL_DIR="${INSTALL_BASE}/zookeeper"
 DATA_DIR="${DATA_BASE}/zookeeper/data"
 MYID="3"
-HOSTNAME="master03"
+HOSTNAME="realtime-dw3"
 IP="192.168.10.12"
 
 log_info "=========================================="
 log_info "开始安装 Zookeeper"
 log_info "主机: ${HOSTNAME} (${IP})"
+log_info "节点: realtime-dw3"
 log_info "myid: ${MYID} (自动推导)"
 log_info "=========================================="
 
@@ -67,16 +68,7 @@ cd ${INSTALL_DIR}
 START_EOF
 chmod +x "${INSTALL_DIR}/start.sh"
 
-# 创建停止脚本
-cat > "${INSTALL_DIR}/stop.sh" << STOP_EOF
-#!/bin/bash
-cd ${INSTALL_DIR}
-./bin/zkServer.sh stop
-STOP_EOF
-chmod +x "${INSTALL_DIR}/stop.sh"
-
 log_info "=========================================="
 log_info "Zookeeper 安装完成！"
 log_info "启动命令: ${INSTALL_DIR}/start.sh"
-log_info "停止命令: ${INSTALL_DIR}/stop.sh"
 log_info "=========================================="
