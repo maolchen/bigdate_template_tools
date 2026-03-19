@@ -1,15 +1,15 @@
 # ============================================================
-# 大数据平台配置清单 - v4 拓扑配置分离版
+# 大数据平台配置清单 - v5 通用版（无硬编码）
 # ============================================================
-# 结构说明：
-# - global:      全局参数（基础目录、JDK、用户等）
-# - nodes:       IP和hostname映射（允许节点复用）
-# - serviceTop:  服务部署拓扑（修改部署位置只需看这里）
-# - serverConfig: 服务配置参数（一般不需要修改）
+# 特性：
+# 1. 完全无硬编码 - 所有服务配置化
+# 2. 支持节点复用 - 一个IP可对应多个节点别名
+# 3. 支持全局服务 - 使用 "*" 表示所有节点
+# 4. ID推导配置化 - 字段名和格式均可配置
 # ============================================================
 
 # ============================================================
-# 全局配置（几乎不需要修改）
+# 全局配置
 # ============================================================
 global:
   # 基础目录
@@ -30,36 +30,56 @@ global:
   timezone: "Asia/Shanghai"
 
 # ============================================================
-# 节点池（IP和hostname映射，允许节点复用）
+# 节点池（支持一个IP对应多个节点别名）
 # ============================================================
-# 说明：一个物理IP可以对应多个节点别名（节点复用场景）
-# 格式：节点别名: {ip, hostname}
+# 说明：
+# - 节点别名可以根据业务语义命名
+# - 同一个IP可以有多个节点别名（节点复用）
 # ============================================================
 nodes:
-  realtime-dw1:
+  # ==================== Master节点 ====================
+  dw-master1:
     ip: "192.168.10.10"
-    hostname: "realtime-dw1"
+    hostname: "dw-master1"
   
-  realtime-dw2:
+  dw-master2:
     ip: "192.168.10.11"
-    hostname: "realtime-dw2"
+    hostname: "dw-master2"
   
-  realtime-dw3:
+  dw-master3:
     ip: "192.168.10.12"
-    hostname: "realtime-dw3"
+    hostname: "dw-master3"
   
-  realtime-kafka1:
+  # ==================== Worker节点 ====================
+  # 节点复用示例：以下两个节点别名指向同一个IP
+  # realtime-kafka1 和 dw-worker1 共用一台物理机
+  dw-worker1:
     ip: "192.168.10.13"
+    hostname: "dw-worker1"
+  
+  dw-worker2:
+    ip: "192.168.10.14"
+    hostname: "dw-worker2"
+  
+  dw-worker3:
+    ip: "192.168.10.15"
+    hostname: "dw-worker3"
+  
+  # ==================== Kafka专用节点（复用worker机器）====================
+  # 节点复用：这些节点与上面的worker共用物理机
+  realtime-kafka1:
+    ip: "192.168.10.13"  # 与dw-worker1共用IP
     hostname: "realtime-kafka1"
   
   realtime-kafka2:
-    ip: "192.168.10.14"
+    ip: "192.168.10.14"  # 与dw-worker2共用IP
     hostname: "realtime-kafka2"
   
   realtime-kafka3:
-    ip: "192.168.10.15"
+    ip: "192.168.10.15"  # 与dw-worker3共用IP
     hostname: "realtime-kafka3"
   
+  # ==================== ES专用节点 ====================
   realtime-es1:
     ip: "192.168.10.16"
     hostname: "realtime-es1"
@@ -73,145 +93,218 @@ nodes:
     hostname: "realtime-es3"
 
 # ============================================================
-# 服务拓扑（服务部署位置，修改部署只需看这里）
+# 服务拓扑（服务部署位置）
 # ============================================================
 # 说明：
-# - 使用节点别名列表指定部署位置
-# - id_auto_derive: true 表示自动推导ID（myid/broker_id等）
-# - ID推导规则：节点在列表中的索引 + 1
+# - nodes: 使用节点别名列表，支持 ["*"] 表示所有节点
+# - id_auto_derive: 是否自动推导ID（配合serverConfig中的id_field使用）
+# - 交付顺序：从上到下执行（全局服务 → 基础服务 → 中间件 → 应用）
 # ============================================================
 serviceTop:
-  # ==================== 基础服务 ====================
+  # ==================== 第一步：服务器初始化（所有节点）====================
+  server_init:
+    nodes: ["*"]  # 所有节点执行
+    # 这是全局服务，不需要id_auto_derive
+  
+  # ==================== 第二步：安装全局工具（所有节点）====================
+  install_jdk:
+    nodes: ["*"]  # 所有节点执行
+  
+  # install_docker:
+  #   nodes: ["*"]  # 如果需要Docker
+  
+  # ==================== 第三步：基础服务 ====================
   zookeeper:
-    nodes: [realtime-dw1, realtime-dw2, realtime-dw3]
+    nodes: [dw-master1, dw-master2, dw-master3]
     id_auto_derive: true
   
   kafka:
     nodes: [realtime-kafka1, realtime-kafka2, realtime-kafka3]
     id_auto_derive: true
   
-  # ==================== Hadoop生态 ====================
+  # ==================== 第四步：Hadoop生态 ====================
   hadoop_namenode:
-    nodes: [realtime-dw1, realtime-dw2]
+    nodes: [dw-master1, dw-master2]
     id_auto_derive: true
   
   hadoop_datanode:
-    nodes: [realtime-dw1, realtime-dw2, realtime-dw3]
+    nodes: [dw-worker1, dw-worker2, dw-worker3]
   
   spark_master:
-    nodes: [realtime-dw1]
+    nodes: [dw-master1]
   
   spark_worker:
-    nodes: [realtime-dw1, realtime-dw2, realtime-dw3]
+    nodes: [dw-worker1, dw-worker2, dw-worker3]
   
   flink_jobmanager:
-    nodes: [realtime-dw1]
+    nodes: [dw-master1]
   
   flink_taskmanager:
-    nodes: [realtime-dw1, realtime-dw2, realtime-dw3]
+    nodes: [dw-worker1, dw-worker2, dw-worker3]
   
-  # ==================== 数据存储 ====================
+  # ==================== 第五步：数据存储 ====================
   elasticsearch:
     nodes: [realtime-es1, realtime-es2, realtime-es3]
   
-  # ==================== 调度系统 ====================
+  # ==================== 第六步：调度系统 ====================
   dolphinscheduler_master:
-    nodes: [realtime-dw1]
+    nodes: [dw-master1]
   
   dolphinscheduler_worker:
-    nodes: [realtime-dw1, realtime-dw2, realtime-dw3]
+    nodes: [dw-worker1, dw-worker2, dw-worker3]
   
   dolphinscheduler_api:
-    nodes: [realtime-dw1]
+    nodes: [dw-master1]
+  
+  # ==================== 第七步：业务应用（示例）====================
+  # myapp:
+  #   nodes: [dw-master2, dw-worker1]
+  #   id_auto_derive: true
 
 # ============================================================
-# 服务配置（服务参数，一般不需要修改）
+# 服务配置（完全配置化，无硬编码）
 # ============================================================
 # 说明：
-# - 这里的配置通常不需要修改，除非有特殊需求
 # - vars: 该服务的配置参数
+# - id_field: 自动推导时的字段名（如myid、broker_id）
+# - id_format: ID格式化模板（支持 {index} 占位符）
+#   - "index+1": 索引+1，适用于zookeeper myid
+#   - "nn{index+1}": 格式化，适用于namenode_id
 # ============================================================
 serverConfig:
+  # ==================== 全局服务 ====================
+  server_init:
+    type: "global"  # 全局服务标识
+    description: "服务器初始化（所有节点）"
+    # 全局服务不需要ID字段
+  
+  install_jdk:
+    type: "global"
+    description: "安装JDK（所有节点）"
+  
   # ==================== 基础服务 ====================
   zookeeper:
-    version: "3.8.3"
-    client_port: 2181
-    server_port: 2888
-    election_port: 3888
-    tick_time: 2000
-    init_limit: 10
-    sync_limit: 5
+    id_field: "myid"           # 注入字段名
+    id_format: "index+1"       # 格式：1, 2, 3...
+    vars:
+      version: "3.8.3"
+      client_port: 2181
+      server_port: 2888
+      election_port: 3888
+      tick_time: 2000
+      init_limit: 10
+      sync_limit: 5
   
   kafka:
-    version: "3.5.1"
-    scala_version: "2.13"
-    broker_port: 9092
-    num_partitions: 3
-    default_replication_factor: 2
-    log_retention_hours: 168
+    id_field: "broker_id"
+    id_format: "index+1"       # 格式：1, 2, 3...
+    vars:
+      version: "3.5.1"
+      scala_version: "2.13"
+      broker_port: 9092
+      num_partitions: 3
+      default_replication_factor: 2
+      log_retention_hours: 168
   
   # ==================== Hadoop生态 ====================
   hadoop_namenode:
-    version: "3.3.6"
-    namenode_port: 9820
-    http_port: 9870
+    id_field: "namenode_id"
+    id_format: "nn{index+1}"   # 格式：nn1, nn2...
+    vars:
+      version: "3.3.6"
+      namenode_port: 9820
+      http_port: 9870
   
   hadoop_datanode:
-    version: "3.3.6"
-    data_port: 9866
-    http_port: 9864
+    # 不需要ID
+    vars:
+      version: "3.3.6"
+      data_port: 9866
+      http_port: 9864
   
   spark_master:
-    version: "3.5.0"
-    hadoop_version: "3"
-    master_port: 7077
-    webui_port: 8080
+    vars:
+      version: "3.5.0"
+      hadoop_version: "3"
+      master_port: 7077
+      webui_port: 8080
   
   spark_worker:
-    version: "3.5.0"
-    webui_port: 8081
-    cores: 4
-    memory: "4g"
+    vars:
+      version: "3.5.0"
+      webui_port: 8081
+      cores: 4
+      memory: "4g"
   
   flink_jobmanager:
-    version: "1.18.0"
-    scala_version: "2.12"
-    rpc_port: 6123
-    web_port: 8081
+    vars:
+      version: "1.18.0"
+      scala_version: "2.12"
+      rpc_port: 6123
+      web_port: 8081
   
   flink_taskmanager:
-    version: "1.18.0"
-    task_slots: 4
-    memory: "2g"
+    vars:
+      version: "1.18.0"
+      task_slots: 4
+      memory: "2g"
   
   # ==================== 数据存储 ====================
   elasticsearch:
-    version: "8.11.1"
-    cluster_name: "bigdata-cluster"
-    http_port: 9200
-    transport_port: 9300
+    vars:
+      version: "8.11.1"
+      cluster_name: "bigdata-cluster"
+      http_port: 9200
+      transport_port: 9300
   
   # ==================== 调度系统 ====================
   dolphinscheduler_master:
-    version: "3.1.9"
-    master_port: 5678
+    vars:
+      version: "3.1.9"
+      master_port: 5678
   
   dolphinscheduler_worker:
-    version: "3.1.9"
-    worker_port: 1234
+    vars:
+      version: "3.1.9"
+      worker_port: 1234
   
   dolphinscheduler_api:
-    version: "3.1.9"
-    api_port: 12345
+    vars:
+      version: "3.1.9"
+      api_port: 12345
+  
+  # ==================== 扩展示例 ====================
+  # doris_fe:
+  #   id_field: "fe_id"
+  #   id_format: "index+1"
+  #   vars:
+  #     version: "2.0.3"
+  #     http_port: 8030
+  #     query_port: 9030
+  #
+  # doris_be:
+  #   vars:
+  #     version: "2.0.3"
+  #     be_port: 9060
+  #
+  # nginx:
+  #   vars:
+  #     version: "1.24.0"
+  #     http_port: 80
+  #
+  # myapp:
+  #   id_field: "instance_id"
+  #   id_format: "index+1"
+  #   vars:
+  #     version: "1.0.0"
+  #     port: 8080
 
 # ============================================================
 # 节点特化配置（可选，用于覆盖默认值）
 # ============================================================
-# 说明：只有当某个节点需要特殊配置时才定义
-# ============================================================
 nodeOverrides:
-  # 示例：realtime-dw3内存更大，可以提高Spark Worker配置
-  # realtime-dw3:
+  # 示例：dw-worker3内存更大，提高Spark Worker配置
+  # dw-worker3:
   #   spark_worker:
   #     memory: "8g"
   #     cores: 8

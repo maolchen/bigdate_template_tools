@@ -1,30 +1,31 @@
 # ============================================================
 # Zookeeper 配置文件
-# 主机: {{ .Hostname }} ({{ .IP }})
-# 节点: {{ .NodeName }} (索引: {{ .NodeIndex }}, myid: {{ .AutoID }})
+# 主机: {{.Instance.Node.Hostname}} ({{.Instance.Node.IP}})
+# 节点别名: {{.Instance.NodeName}}
+# myid: {{.Instance.AutoID}}
 # ============================================================
 
 # 心跳时间（毫秒）
-tickTime={{ .ServiceVars.tick_time }}
+tickTime={{.Instance.Vars.tick_time}}
 
 # 初始化同步阶段能容忍的心跳数
-initLimit={{ .ServiceVars.init_limit }}
+initLimit={{.Instance.Vars.init_limit}}
 
 # 请求响应阶段能容忍的心跳数
-syncLimit={{ .ServiceVars.sync_limit }}
+syncLimit={{.Instance.Vars.sync_limit}}
 
 # 数据目录
-dataDir={{ globalVar "data_base_dir" }}/zookeeper/data
+dataDir={{.Global.data_base_dir}}/zookeeper/data
 
 # 客户端端口
-clientPort={{ .ServiceVars.client_port }}
+clientPort={{.Instance.Vars.client_port}}
 
 # ============================================================
 # 服务器列表（自动生成）
 # 格式：server.<myid>=<ip>:<server_port>:<election_port>
 # ============================================================
-{{- $serverPort := .ServiceVars.server_port }}
-{{- $electionPort := .ServiceVars.election_port }}
-{{- range serviceNodes "zookeeper" }}
-server.{{ .auto_id }}={{ .ip }}:{{ $serverPort }}:{{ $electionPort }}
+{{- $serverPort := .Instance.Vars.server_port }}
+{{- $electionPort := .Instance.Vars.election_port }}
+{{- range $idx, $node := serviceNodes "zookeeper" }}
+server.{{$node.AutoID}}={{$node.Node.IP}}:{{$serverPort}}:{{$electionPort}}
 {{- end }}

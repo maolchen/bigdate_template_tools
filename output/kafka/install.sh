@@ -1,28 +1,28 @@
 #!/bin/bash
 # ============================================================
 # Kafka 安装脚本
-# 节点: {{.Instance.NodeName}}
-# IP: {{.Instance.Node.IP}}
-# broker.id: {{.Instance.AutoID}}
+# 节点: realtime-kafka3
+# IP: 192.168.10.15
+# broker.id: 3
 # ============================================================
 
 set -e
 
 echo "=========================================="
 echo "安装 Kafka"
-echo "节点: {{.Instance.NodeName}}"
-echo "IP: {{.Instance.Node.IP}}"
-echo "broker.id: {{.Instance.AutoID}}"
+echo "节点: realtime-kafka3"
+echo "IP: 192.168.10.15"
+echo "broker.id: 3"
 echo "=========================================="
 
 # 变量定义
-KAFKA_VERSION="{{.Instance.Vars.version}}"
-SCALA_VERSION="{{.Instance.Vars.scala_version}}"
-KAFKA_INSTALL_DIR="{{.Global.install_base_dir}}/kafka"
-KAFKA_DATA_DIR="{{.Global.data_base_dir}}/kafka/logs"
-KAFKA_LOG_DIR="{{.Global.log_base_dir}}/kafka"
-KAFKA_USER="{{.Global.user}}"
-KAFKA_TAR="{{.Global.temp_dir}}/kafka_${SCALA_VERSION}-${KAFKA_VERSION}.tgz"
+KAFKA_VERSION="3.5.1"
+SCALA_VERSION="2.13"
+KAFKA_INSTALL_DIR="/data/localization/kafka"
+KAFKA_DATA_DIR="/data/bigdata/kafka/logs"
+KAFKA_LOG_DIR="/var/log/bigdata/kafka"
+KAFKA_USER="bigdata"
+KAFKA_TAR="/data/tmp_install_dir/kafka_${SCALA_VERSION}-${KAFKA_VERSION}.tgz"
 
 # 检查安装包
 if [ ! -f "$KAFKA_TAR" ]; then
@@ -37,13 +37,13 @@ mkdir -p "$KAFKA_LOG_DIR"
 
 # 解压安装
 echo "解压 Kafka..."
-cd "{{.Global.install_base_dir}}"
+cd "/data/localization"
 tar -xzf "$KAFKA_TAR"
 mv kafka_${SCALA_VERSION}-${KAFKA_VERSION} kafka
 
 # 复制配置文件
 echo "复制配置文件..."
-cp {{.Instance.NodeName}}_server.properties "$KAFKA_INSTALL_DIR/config/server.properties"
+cp realtime-kafka3_server.properties "$KAFKA_INSTALL_DIR/config/server.properties"
 
 # 设置权限
 chown -R $KAFKA_USER:$KAFKA_USER "$KAFKA_INSTALL_DIR"
@@ -54,10 +54,10 @@ chown -R $KAFKA_USER:$KAFKA_USER "$KAFKA_LOG_DIR"
 echo "创建启动脚本..."
 cat > "$KAFKA_INSTALL_DIR/bin/start.sh" << 'EOF'
 #!/bin/bash
-export JAVA_HOME={{.Global.java_home}}
+export JAVA_HOME=/data/jdk/jdk1.8.0_65
 export KAFKA_HEAP_OPTS="-Xmx2G -Xms2G"
-export KAFKA_LOG_DIR={{.Global.log_base_dir}}/kafka
-cd {{.Global.install_base_dir}}/kafka
+export KAFKA_LOG_DIR=/var/log/bigdata/kafka
+cd /data/localization/kafka
 ./bin/kafka-server-start.sh -daemon config/server.properties
 EOF
 chmod +x "$KAFKA_INSTALL_DIR/bin/start.sh"
@@ -65,7 +65,7 @@ chmod +x "$KAFKA_INSTALL_DIR/bin/start.sh"
 # 创建停止脚本
 cat > "$KAFKA_INSTALL_DIR/bin/stop.sh" << 'EOF'
 #!/bin/bash
-cd {{.Global.install_base_dir}}/kafka
+cd /data/localization/kafka
 ./bin/kafka-server-stop.sh
 EOF
 chmod +x "$KAFKA_INSTALL_DIR/bin/stop.sh"
@@ -74,5 +74,5 @@ echo "=========================================="
 echo "Kafka 安装完成"
 echo "安装目录: $KAFKA_INSTALL_DIR"
 echo "数据目录: $KAFKA_DATA_DIR"
-echo "broker.id: {{.Instance.AutoID}}"
+echo "broker.id: 3"
 echo "=========================================="

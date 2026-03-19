@@ -1,0 +1,81 @@
+#!/bin/bash
+# ============================================================
+# 服务器初始化脚本 - 全局服务示例
+# 此脚本将在所有节点执行
+# ============================================================
+
+set -e
+
+echo "=========================================="
+echo "服务器初始化: {{.Instance.NodeName}}"
+echo "IP: {{.Instance.Node.IP}}"
+echo "Hostname: {{.Instance.Node.Hostname}}"
+echo "=========================================="
+
+# 时区设置
+echo "设置时区..."
+ln -sf /usr/share/zoneinfo/{{.Global.timezone}} /etc/localtime
+timedatectl set-timezone {{.Global.timezone}}
+
+# 创建用户
+echo "创建用户和组..."
+groupadd -f {{.Global.group}}
+id -u {{.Global.user}} &>/dev/null || useradd -g {{.Global.group}} {{.Global.user}}
+
+# 创建目录
+echo "创建基础目录..."
+mkdir -p {{.Global.install_base_dir}}
+mkdir -p {{.Global.data_base_dir}}
+mkdir -p {{.Global.log_base_dir}}
+mkdir -p {{.Global.temp_dir}}
+mkdir -p {{.Global.software_dir}}
+
+# 设置权限
+chown -R {{.Global.user}}:{{.Global.group}} {{.Global.install_base_dir}}
+chown -R {{.Global.user}}:{{.Global.group}} {{.Global.data_base_dir}}
+chown -R {{.Global.user}}:{{.Global.group}} {{.Global.log_base_dir}}
+chown -R {{.Global.user}}:{{.Global.group}} {{.Global.temp_dir}}
+chown -R {{.Global.user}}:{{.Global.group}} {{.Global.software_dir}}
+
+# 系统参数优化
+echo "优化系统参数..."
+cat >> /etc/sysctl.conf << EOF
+# 大数据平台优化
+vm.swappiness = 10
+vm.dirty_ratio = 80
+vm.dirty_background_ratio = 5
+net.core.somaxconn = 65535
+net.ipv4.tcp_max_syn_backlog = 65535
+net.core.netdev_max_backlog = 65535
+net.ipv4.tcp_fin_timeout = 30
+net.ipv4.tcp_keepalive_time = 1200
+net.ipv4.tcp_keepalive_probes = 5
+net.ipv4.tcp_keepalive_intvl = 30
+EOF
+sysctl -p
+
+# 文件描述符限制
+echo "设置文件描述符限制..."
+cat >> /etc/security/limits.conf << EOF
+{{.Global.user}} soft nofile 65536
+{{.Global.user}} hard nofile 65536
+{{.Global.user}} soft nproc 65536
+{{.Global.user}} hard nproc 65536
+EOF
+
+# 关闭防火墙
+echo "关闭防火墙..."
+systemctl stop firewalld 2>/dev/null || true
+systemctl disable firewalld 2>/dev/null || true
+
+# 关闭SELinux
+echo "关闭SELinux..."
+setenforce 0 2>/dev/null || true
+sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config
+
+# SSH免密设置提示
+echo "=========================================="
+echo "提示: 请确保已配置SSH免密登录"
+echo "=========================================="
+
+echo "服务器初始化完成: {{.Instance.NodeName}}"
