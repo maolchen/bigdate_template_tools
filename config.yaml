@@ -187,13 +187,16 @@ serverConfig:
   install_jdk:
     type: "global"
     description: "安装JDK（所有节点）"
+    vars:
+      package_subdir: "realtime-new-doris/realtime/kafka"
+      pkg_name: "jdk-8u202-linux-x64.tar.gz"
   
   # ==================== DNS服务 ====================
   dnsmasq:
     type: "global"
     description: "安装DNS服务（所有节点）"
     vars:
-      conf_dir: "/etc/dnsmasq.d"
+      conf_dir: "/etc/dnsmasq.d"  
   
   # ==================== NTP服务 ====================
   ntp_master:
