@@ -100,7 +100,11 @@ serviceTop:
   install_jdk:
     nodes: ["*"]
   
-  # ==================== 第五步：安装Scala（大数据节点）====================
+  # ==================== 第五步：安装Python3（所有节点）====================
+  python3:
+    nodes: ["*"]
+  
+  # ==================== 第六步：安装Scala（大数据节点）====================
   scala:
     nodes: [dw-master1, dw-master2, dw-master3,
             dw-worker1, dw-worker2, dw-worker3,
@@ -196,6 +200,17 @@ serverConfig:
     vars:
       package_subdir: "realtime-new-doris/realtime/kafka"
       pkg_name: "jdk-8u202-linux-x64.tar.gz"
+  
+  # ==================== Python3 ====================
+  python3:
+    type: "global"
+    description: "安装Python3（所有节点）"
+    vars:
+      version: "3.6.8"
+      version_setuptools: "40.0.0"
+      version_pip: "18.0"
+      package_subdir: "realtime-new-doris/realtime/python3"
+      pkg_name: "Python-3.6.8.tar.xz"
   
   # ==================== Scala ====================
   scala:
