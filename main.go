@@ -332,39 +332,48 @@ func RenderTemplate(tmplPath string, ctx Context, cfg *Config) (string, error) {
 }
 
 // ============================================================
-// 输出生成
+// 输出生成（按节点组织目录）
 // ============================================================
 
 // GenerateOutputs 生成所有配置文件和脚本
+// 输出结构：output/<IP>/<服务名>/<配置文件>
 func GenerateOutputs(cfg *Config, instances []ServiceInstance, outputDir string) error {
 	// 创建输出目录
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("创建输出目录失败: %w", err)
 	}
 
-	// 按服务分组
-	serviceInstances := make(map[string][]ServiceInstance)
+	// 按节点IP分组
+	nodeInstances := make(map[string][]ServiceInstance)
 	for _, inst := range instances {
-		serviceInstances[inst.ServiceName] = append(serviceInstances[inst.ServiceName], inst)
+		nodeInstances[inst.Node.IP] = append(nodeInstances[inst.Node.IP], inst)
 	}
 
-	// 为每个服务生成配置
-	for serviceName, svcs := range serviceInstances {
-		// 创建服务目录
-		serviceDir := filepath.Join(outputDir, serviceName)
-		if err := os.MkdirAll(serviceDir, 0755); err != nil {
-			return fmt.Errorf("创建服务目录失败: %w", err)
+	// 为每个节点生成配置
+	for nodeIP, svcs := range nodeInstances {
+		// 创建节点目录（以IP命名）
+		nodeDir := filepath.Join(outputDir, nodeIP)
+		if err := os.MkdirAll(nodeDir, 0755); err != nil {
+			return fmt.Errorf("创建节点目录失败: %w", err)
 		}
 
-		// 检查模板目录是否存在
-		tmplDir := filepath.Join("templates", serviceName)
-		if _, err := os.Stat(tmplDir); os.IsNotExist(err) {
-			fmt.Printf("提示: 服务 %s 没有模板目录，跳过模板渲染\n", serviceName)
-			continue
-		}
-
-		// 为每个实例生成配置
+		// 为该节点上的每个服务生成配置
 		for _, inst := range svcs {
+			serviceName := inst.ServiceName
+
+			// 检查模板目录是否存在
+			tmplDir := filepath.Join("templates", serviceName)
+			if _, err := os.Stat(tmplDir); os.IsNotExist(err) {
+				fmt.Printf("提示: 节点 %s 的服务 %s 没有模板目录，跳过\n", nodeIP, serviceName)
+				continue
+			}
+
+			// 创建服务目录
+			serviceDir := filepath.Join(nodeDir, serviceName)
+			if err := os.MkdirAll(serviceDir, 0755); err != nil {
+				return fmt.Errorf("创建服务目录失败: %w", err)
+			}
+
 			// 构建上下文
 			ctx := Context{
 				Global:       cfg.Global,
@@ -386,14 +395,9 @@ func GenerateOutputs(cfg *Config, instances []ServiceInstance, outputDir string)
 					return fmt.Errorf("渲染模板 %s 失败: %w", tmplFile, err)
 				}
 
-				// 生成输出文件名
+				// 生成输出文件名（不再需要节点前缀，因为已经按节点分目录）
 				baseName := filepath.Base(tmplFile)
 				outputName := strings.TrimSuffix(baseName, ".tmpl")
-
-				// 为节点特定配置添加节点名前缀
-				if !strings.Contains(outputName, "install") {
-					outputName = fmt.Sprintf("%s_%s", inst.NodeName, outputName)
-				}
 
 				// 写入文件
 				outputPath := filepath.Join(serviceDir, outputName)

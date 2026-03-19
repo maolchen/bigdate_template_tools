@@ -403,41 +403,69 @@ go run main.go
 ============================================
 ```
 
-### 5.3 输出目录结构
+### 5.3 输出目录结构（按节点IP组织）
+
+**设计理念**：运维人员可直接将对应IP目录拷贝到目标服务器执行部署。
 
 ```
 output/
-├── server_init/
-│   └── install.sh  # 每个节点一个
-├── install_jdk/
-│   └── install.sh
-├── zookeeper/
-│   ├── dw-master1_myid         # 内容: 1
-│   ├── dw-master1_zoo.cfg
-│   ├── dw-master1_install.sh
-│   └── ...
-└── kafka/
-    ├── realtime-kafka1_server.properties  # broker.id=1
-    ├── realtime-kafka1_install.sh
-    └── ...
+├── 192.168.10.10/                    # 节点目录（以IP命名）
+│   ├── server_init/                  # 服务器初始化脚本
+│   │   └── install.sh
+│   ├── install_jdk/                  # JDK安装脚本
+│   │   └── install.sh
+│   └── zookeeper/                    # 该节点上的ZK服务
+│       ├── install.sh
+│       ├── myid                      # myid=1
+│       └── zoo.cfg
+├── 192.168.10.11/
+│   ├── server_init/
+│   ├── install_jdk/
+│   └── zookeeper/
+│       ├── myid                      # myid=2
+│       └── ...
+├── 192.168.10.13/                    # 节点复用示例：同时部署Kafka和全局服务
+│   ├── server_init/
+│   ├── install_jdk/
+│   └── kafka/
+│       ├── install.sh
+│       └── server.properties         # broker.id=1
+└── ...
+```
+
+**部署方式**：
+```bash
+# 将对应IP目录拷贝到目标服务器
+scp -r output/192.168.10.10/* root@192.168.10.10:/data/deploy/
+
+# 在目标服务器上执行
+cd /data/deploy
+./server_init/install.sh
+./install_jdk/install.sh
+./zookeeper/install.sh
 ```
 
 ---
 
 ## 六、版本对比
 
-| 特性 | v4版本 | v5.1版本 |
+| 特性 | v4版本 | v5.2版本 |
 |------|--------|----------|
 | 服务扩展 | 需修改代码 | **无需修改代码** |
 | 全局服务 | 不支持 | **支持 `nodes: ["*"]`** |
 | 节点复用 | 支持 | **支持（完整示例）** |
 | ID格式 | 固定规则 | **配置化 `id_format`** |
 | 衍生变量 | 代码硬编码 | **模板函数动态生成** |
+| 输出目录 | 按服务分目录 | **按节点IP分目录** ✨ |
 | 代码复杂度 | 中（有硬编码） | **低（零硬编码）** |
 
-### 关键改进（v5.1）
+### 关键改进（v5.2）
 
-**移除硬编码的衍生变量计算**：
+**1. 输出目录按节点组织**：
+- ❌ 旧版：`output/zookeeper/dw-master1_zoo.cfg`（按服务分，难以下发）
+- ✅ 新版：`output/192.168.10.10/zookeeper/zoo.cfg`（按节点分，直接拷贝）
+
+**2. 移除硬编码的衍生变量计算**：
 - ❌ 旧版：代码中硬编码 `zk_connect`、`kafka_brokers`
 - ✅ 新版：通过 `serviceEndpointsJoin` 模板函数动态获取任意服务的端点
 
@@ -492,6 +520,6 @@ serviceTop:
 
 ---
 
-**版本**: v5.1 通用版  
-**核心特性**: 零硬编码 + 模板函数动态生成端点 + 全局服务 + 节点复用  
+**版本**: v5.2 通用版  
+**核心特性**: 零硬编码 + 按节点输出 + 模板函数动态生成 + 全局服务 + 节点复用  
 **维护效率**: 添加新服务无需修改代码，只需配置+模板
