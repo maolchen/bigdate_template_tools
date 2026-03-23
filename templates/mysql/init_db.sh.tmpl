@@ -1,0 +1,8 @@
+#!/bin/bash
+# ============================================================
+# MySQL初始化脚本 - 设置时区
+# 服务: mysql
+# 节点: {{ .Instance.Node.NodeName }} ({{ .Instance.Node.IP }})
+# ============================================================
+
+/usr/local/bin/docker exec {{ .Instance.Vars.container_name }} bash -c "ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime"
