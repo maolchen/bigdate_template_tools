@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================
 # 服务器初始化脚本
-# 节点: dw-worker2
+# 节点: realtime-kafka2
 # IP: 192.168.10.14
-# Hostname: dw-worker2
+# Hostname: realtime-kafka2
 # 兼容系统: CentOS 7/8/9, 麒麟, 统信UOS等RedHat系列
 # ============================================================
 
@@ -489,6 +489,7 @@ configure_hosts() {
         echo "192.168.10.13 dw-worker1 dw-worker1" >> "$hosts_file"
         echo "192.168.10.14 dw-worker2 dw-worker2" >> "$hosts_file"
         echo "192.168.10.15 dw-worker3 dw-worker3" >> "$hosts_file"
+        echo "192.168.10.20 etl-ssdb etl-ssdb" >> "$hosts_file"
         echo "192.168.10.16 realtime-es1 realtime-es1" >> "$hosts_file"
         echo "192.168.10.17 realtime-es2 realtime-es2" >> "$hosts_file"
         echo "192.168.10.18 realtime-es3 realtime-es3" >> "$hosts_file"
@@ -604,7 +605,7 @@ configure_cron() {
 main() {
     log_info "============================================"
     log_info "服务器初始化开始"
-    log_info "节点: dw-worker2"
+    log_info "节点: realtime-kafka2"
     log_info "IP: 192.168.10.14"
     log_info "系统: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'=' -f2 | tr -d '\"')"
     log_info "============================================"

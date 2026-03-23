@@ -489,6 +489,7 @@ configure_hosts() {
         echo "192.168.10.13 dw-worker1 dw-worker1" >> "$hosts_file"
         echo "192.168.10.14 dw-worker2 dw-worker2" >> "$hosts_file"
         echo "192.168.10.15 dw-worker3 dw-worker3" >> "$hosts_file"
+        echo "192.168.10.20 etl-ssdb etl-ssdb" >> "$hosts_file"
         echo "192.168.10.16 realtime-es1 realtime-es1" >> "$hosts_file"
         echo "192.168.10.17 realtime-es2 realtime-es2" >> "$hosts_file"
         echo "192.168.10.18 realtime-es3 realtime-es3" >> "$hosts_file"

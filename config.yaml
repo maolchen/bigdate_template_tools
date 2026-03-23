@@ -79,6 +79,11 @@ nodes:
   realtime-redis:
     ip: "192.168.10.19"
     hostname: "realtime-redis"
+  
+  # ==================== SSDB节点 ====================
+  etl-ssdb:
+    ip: "192.168.10.20"
+    hostname: "etl-ssdb"
 
 # ============================================================
 # 服务拓扑（服务部署位置）
@@ -126,6 +131,10 @@ serviceTop:
   # ==================== Redis缓存 ====================
   redis:
     nodes: [realtime-redis]
+  
+  # ==================== SSDB存储 ====================
+  ssdb:
+    nodes: [etl-ssdb]
   
   zookeeper:
     nodes: [dw-master1, dw-master2, dw-master3]
@@ -321,6 +330,50 @@ serverConfig:
       maxmemory_policy: "allkeys-lru"
       appendonly: "yes"
       appendfsync: "everysec"
+      
+      # 系统配置
+      run_user: "bigdata"
+      run_group: "bigdata"
+  
+  # ==================== SSDB存储 ====================
+  ssdb:
+    description: "SSDB高性能存储（编译安装，多实例）"
+    vars:
+      version: "ssdb_master"
+      # SSDB编译安装目录固定为 /usr/local/ssdb，不能修改
+      install_dir: "/usr/local/ssdb"
+      package_subdir: "realtime-new-doris/realtime/web_all/etl-ssdb"
+      
+      # 多实例配置（端口与数据目录映射）
+      instances:
+        - port: 8892
+          data_dir: "/data/data2"
+          config_file: "ssdb_8892.conf"
+        - port: 8893
+          data_dir: "/data/data3"
+          config_file: "ssdb_8893.conf"
+        - port: 8894
+          data_dir: "/data/data4"
+          config_file: "ssdb_8894.conf"
+        - port: 8895
+          data_dir: "/data/data5"
+          config_file: "ssdb_8895.conf"
+        - port: 8897
+          data_dir: "/data/data7"
+          config_file: "ssdb_8897.conf"
+        - port: 8898
+          data_dir: "/data/data8"
+          config_file: "ssdb_8898.conf"
+      
+      # SSDB通用配置
+      bind: "127.0.0.1"
+      work_rps: 1000
+      work_threads: 8
+      cache_size: 1024
+      block_size: 32
+      compaction_speed: 1000
+      write_buffer_size: 64
+      compression: "no"
       
       # 系统配置
       run_user: "bigdata"
