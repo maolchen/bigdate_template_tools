@@ -174,7 +174,7 @@ generate_configs() {
 # 节点: etl-ssdb (192.168.10.20)
 
 # 监听地址
-bind 127.0.0.1
+bind 0.0.0.0
 port 8892
 
 # 工作目录
@@ -220,7 +220,7 @@ SSDB_CONF_EOF
 # 节点: etl-ssdb (192.168.10.20)
 
 # 监听地址
-bind 127.0.0.1
+bind 0.0.0.0
 port 8893
 
 # 工作目录
@@ -266,7 +266,7 @@ SSDB_CONF_EOF
 # 节点: etl-ssdb (192.168.10.20)
 
 # 监听地址
-bind 127.0.0.1
+bind 0.0.0.0
 port 8894
 
 # 工作目录
@@ -312,7 +312,7 @@ SSDB_CONF_EOF
 # 节点: etl-ssdb (192.168.10.20)
 
 # 监听地址
-bind 127.0.0.1
+bind 0.0.0.0
 port 8895
 
 # 工作目录
@@ -358,7 +358,7 @@ SSDB_CONF_EOF
 # 节点: etl-ssdb (192.168.10.20)
 
 # 监听地址
-bind 127.0.0.1
+bind 0.0.0.0
 port 8897
 
 # 工作目录
@@ -404,7 +404,7 @@ SSDB_CONF_EOF
 # 节点: etl-ssdb (192.168.10.20)
 
 # 监听地址
-bind 127.0.0.1
+bind 0.0.0.0
 port 8898
 
 # 工作目录

@@ -88,6 +88,42 @@ type Context struct {
 }
 
 // ============================================================
+// 辅助函数
+// ============================================================
+
+// getNestedPort 从嵌套的 map 中获取端口值
+// 支持格式: "zookeeper.client_port" 或 "server.port"
+func getNestedPort(vars map[string]interface{}, fieldPath string) int {
+	parts := strings.Split(fieldPath, ".")
+	if len(parts) == 1 {
+		// 直接字段
+		if p, ok := vars[parts[0]].(int); ok {
+			return p
+		}
+		return 0
+	}
+
+	// 嵌套字段
+	current := vars
+	for i, part := range parts {
+		if i == len(parts)-1 {
+			// 最后一层，获取端口值
+			if p, ok := current[part].(int); ok {
+				return p
+			}
+			return 0
+		}
+		// 中间层，继续深入
+		if next, ok := current[part].(map[string]interface{}); ok {
+			current = next
+		} else {
+			return 0
+		}
+	}
+	return 0
+}
+
+// ============================================================
 // ID格式化器（通用）
 // ============================================================
 
@@ -235,6 +271,20 @@ func RenderTemplate(tmplPath string, ctx Context, cfg *Config) (string, error) {
 			return val
 		},
 
+		// =============== 数学函数 ===============
+		"add": func(a, b int) int {
+			return a + b
+		},
+		"sub": func(a, b int) int {
+			return a - b
+		},
+		"mul": func(a, b int) int {
+			return a * b
+		},
+		"div": func(a, b int) int {
+			return a / b
+		},
+
 		// =============== 服务节点相关函数 ===============
 		// 获取同一服务的所有节点实例
 		"serviceNodes": func(serviceName string) []ServiceInstance {
@@ -249,16 +299,13 @@ func RenderTemplate(tmplPath string, ctx Context, cfg *Config) (string, error) {
 
 		// 获取服务的端点列表（IP:Port格式）
 		// serviceName: 服务名
-		// portField: 端口字段名（如 "client_port", "broker_port"）
+		// portField: 端口字段名（支持嵌套，如 "zookeeper.client_port"）
 		"serviceEndpoints": func(serviceName, portField string) []string {
 			var endpoints []string
 			for _, inst := range ctx.AllInstances {
 				if inst.ServiceName == serviceName {
-					// 获取端口值
-					port := 0
-					if p, ok := inst.Vars[portField].(int); ok {
-						port = p
-					}
+					// 获取端口值（支持嵌套字段）
+					port := getNestedPort(inst.Vars, portField)
 					if port > 0 {
 						endpoints = append(endpoints, fmt.Sprintf("%s:%d", inst.Node.IP, port))
 					}
@@ -272,10 +319,8 @@ func RenderTemplate(tmplPath string, ctx Context, cfg *Config) (string, error) {
 			endpoints := make([]string, 0)
 			for _, inst := range ctx.AllInstances {
 				if inst.ServiceName == serviceName {
-					port := 0
-					if p, ok := inst.Vars[portField].(int); ok {
-						port = p
-					}
+					// 获取端口值（支持嵌套字段）
+					port := getNestedPort(inst.Vars, portField)
 					if port > 0 {
 						endpoints = append(endpoints, fmt.Sprintf("%s:%d", inst.Node.IP, port))
 					}

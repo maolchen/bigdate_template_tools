@@ -366,7 +366,7 @@ serverConfig:
           config_file: "ssdb_8898.conf"
       
       # SSDB通用配置
-      bind: "127.0.0.1"
+      bind: "0.0.0.0"
       work_rps: 1000
       work_threads: 8
       cache_size: 1024
@@ -395,12 +395,85 @@ serverConfig:
     id_field: "broker_id"
     id_format: "index+1"
     vars:
-      version: "3.5.1"
-      scala_version: "2.13"
-      broker_port: 9092
-      num_partitions: 3
-      default_replication_factor: 2
-      log_retention_hours: 168
+      # 版本配置（支持 0.11.0.2 和 3.3.2）
+      version: "2.11-0.11.0.2"
+      scala_version: "2.11"
+      
+      # 安装配置
+      install_dir: "/data/localization/kafka"
+      package_subdir: "realtime-new-doris/realtime/kafka"
+      
+      # Zookeeper配置（Kafka内置ZK）
+      zookeeper:
+        data_dir: "/data/zk-kafka-data"
+        client_port: 2182
+        peer_port: 2889
+        election_port: 3889
+      
+      # Kafka Server配置
+      server:
+        port: 9092
+        log_dirs: "/data/kafka-data"
+        log_retention_hours: 168
+        num_partitions: 5
+        default_replication_factor: 2
+        delete_topic_enable: true
+        num_network_threads: 3
+        num_io_threads: 8
+        socket_send_buffer_bytes: 102400
+        socket_receive_buffer_bytes: 102400
+        socket_request_max_bytes: 104857600
+        log_segment_bytes: 1073741824
+        log_retention_check_interval_ms: 300000
+        zookeeper_connection_timeout_ms: 6000
+        group_initial_rebalance_delay_ms: 0
+        offsets_topic_replication_factor: 1
+        transaction_state_log_replication_factor: 1
+        transaction_state_log_min_isr: 1
+      
+      # Consumer配置
+      consumer:
+        group_id: "test-consumer-group"
+        zookeeper_connection_timeout_ms: 6000
+      
+      # Producer配置
+      producer:
+        acks: "all"
+        retries: 3
+        batch_size: 16384
+        buffer_memory: 33554432
+      
+      # Topic初始化列表
+      topics:
+        - name: "sdklua_online"
+          partitions: 5
+          replication_factor: 2
+        - name: "debug"
+          partitions: 5
+          replication_factor: 2
+        - name: "pay_statisv2"
+          partitions: 5
+          replication_factor: 2
+        - name: "pay_zg_total"
+          partitions: 5
+          replication_factor: 2
+        - name: "pay_zg_total_random"
+          partitions: 5
+          replication_factor: 2
+        - name: "tag-evaluate-new"
+          partitions: 1
+          replication_factor: 1
+        - name: "file-task"
+          partitions: 1
+          replication_factor: 1
+        - name: "group-user-load"
+          partitions: 1
+          replication_factor: 1
+      
+      # 系统配置
+      run_user: "bigdata"
+      run_group: "bigdata"
+      java_home: "/data/jdk"
   
   # ==================== Hadoop生态 ====================
   hadoop_namenode:
