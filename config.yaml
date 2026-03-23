@@ -308,14 +308,14 @@ serverConfig:
       install_dir: "/usr/local/redis"
       package_subdir: "realtime-new-doris/realtime/web_all/app/redis_26480"
       
-      # 多实例配置
+      # 多实例配置（data_subdir 为相对路径，与 global.data_base_dir 拼接）
       instances:
         - port: 26480
-          data_dir: "/data/redis_26480"
+          data_subdir: "redis_26480"
           pid_file: "redis_26480.pid"
           logfile: "redis_26480.log"
         - port: 26380
-          data_dir: "/data/redis_26380"
+          data_subdir: "redis_26380"
           pid_file: "redis_26380.pid"
           logfile: "redis_26380.log"
       
@@ -330,10 +330,6 @@ serverConfig:
       maxmemory_policy: "allkeys-lru"
       appendonly: "yes"
       appendfsync: "everysec"
-      
-      # 系统配置
-      run_user: "bigdata"
-      run_group: "bigdata"
   
   # ==================== SSDB存储 ====================
   ssdb:
@@ -344,25 +340,25 @@ serverConfig:
       install_dir: "/usr/local/ssdb"
       package_subdir: "realtime-new-doris/realtime/web_all/etl-ssdb"
       
-      # 多实例配置（端口与数据目录映射）
+      # 多实例配置（data_subdir 为相对路径，与 global.data_base_dir 拼接）
       instances:
         - port: 8892
-          data_dir: "/data/data2"
+          data_subdir: "data2"
           config_file: "ssdb_8892.conf"
         - port: 8893
-          data_dir: "/data/data3"
+          data_subdir: "data3"
           config_file: "ssdb_8893.conf"
         - port: 8894
-          data_dir: "/data/data4"
+          data_subdir: "data4"
           config_file: "ssdb_8894.conf"
         - port: 8895
-          data_dir: "/data/data5"
+          data_subdir: "data5"
           config_file: "ssdb_8895.conf"
         - port: 8897
-          data_dir: "/data/data7"
+          data_subdir: "data7"
           config_file: "ssdb_8897.conf"
         - port: 8898
-          data_dir: "/data/data8"
+          data_subdir: "data8"
           config_file: "ssdb_8898.conf"
       
       # SSDB通用配置
@@ -374,10 +370,6 @@ serverConfig:
       compaction_speed: 1000
       write_buffer_size: 64
       compression: "no"
-      
-      # 系统配置
-      run_user: "bigdata"
-      run_group: "bigdata"
   
   zookeeper:
     id_field: "myid"
@@ -399,21 +391,21 @@ serverConfig:
       version: "2.11-0.11.0.2"
       scala_version: "2.11"
       
-      # 安装配置
-      install_dir: "/data/localization/kafka"
+      # 安装配置（install_subdir 为相对路径，与 global.install_base_dir 拼接）
+      install_subdir: "kafka"
       package_subdir: "realtime-new-doris/realtime/kafka"
       
-      # Zookeeper配置（Kafka内置ZK）
+      # Zookeeper配置（data_subdir 为相对路径，与 global.data_base_dir 拼接）
       zookeeper:
-        data_dir: "/data/zk-kafka-data"
+        data_subdir: "zk-kafka-data"
         client_port: 2182
         peer_port: 2889
         election_port: 3889
       
-      # Kafka Server配置
+      # Kafka Server配置（log_subdir 为相对路径，与 global.data_base_dir 拼接）
       server:
         port: 9092
-        log_dirs: "/data/kafka-data"
+        log_subdir: "kafka-data"
         log_retention_hours: 168
         num_partitions: 5
         default_replication_factor: 2
@@ -469,11 +461,6 @@ serverConfig:
         - name: "group-user-load"
           partitions: 1
           replication_factor: 1
-      
-      # 系统配置
-      run_user: "bigdata"
-      run_group: "bigdata"
-      java_home: "/data/jdk"
   
   # ==================== Hadoop生态 ====================
   hadoop_namenode:

@@ -19,8 +19,9 @@ SSDB_VERSION="{{ .Instance.Vars.version }}"
 INSTALL_DIR="{{ .Instance.Vars.install_dir }}"
 SOURCE_PACKAGE="{{ .Global.software_dir }}/{{ .Instance.Vars.package_subdir }}/${SSDB_VERSION}.zip"
 TEMP_DIR="{{ .Global.temp_dir }}"
-RUN_USER="{{ .Instance.Vars.run_user }}"
-RUN_GROUP="{{ .Instance.Vars.run_group }}"
+RUN_USER="{{ .Global.user }}"
+RUN_GROUP="{{ .Global.group }}"
+DATA_BASE_DIR="{{ .Global.data_base_dir }}"
 
 # ==================== 日志函数 ====================
 log_info() {
@@ -85,8 +86,8 @@ create_data_dirs() {
     log_info "创建数据目录..."
     
     {{- range $i, $inst := .Instance.Vars.instances }}
-    mkdir -p "{{ $inst.data_dir }}"
-    log_info "创建目录: {{ $inst.data_dir }}"
+    mkdir -p "${DATA_BASE_DIR}/{{ $inst.data_subdir }}"
+    log_info "创建目录: ${DATA_BASE_DIR}/{{ $inst.data_subdir }}"
     {{- end }}
     
     log_success "数据目录创建完成"
@@ -152,6 +153,7 @@ generate_configs() {
     {{- $compaction_speed := .Instance.Vars.compaction_speed }}
     {{- $write_buffer_size := .Instance.Vars.write_buffer_size }}
     {{- $compression := .Instance.Vars.compression }}
+    {{- $dataBaseDir := .Global.data_base_dir }}
     
     {{- range $i, $inst := .Instance.Vars.instances }}
     # ==================== 实例 {{ $inst.port }} ====================
@@ -164,8 +166,8 @@ bind {{ $bind }}
 port {{ $inst.port }}
 
 # 工作目录
-work_dir = {{ $inst.data_dir }}
-pidfile = {{ $inst.data_dir }}/ssdb.pid
+work_dir = {{ $dataBaseDir }}/{{ $inst.data_subdir }}
+pidfile = {{ $dataBaseDir }}/{{ $inst.data_subdir }}/ssdb.pid
 
 # 性能参数
 work_rps = {{ $work_rps }}
@@ -183,7 +185,7 @@ compression = {{ $compression }}
 # 日志
 logger {
     level = debug
-    output = {{ $inst.data_dir }}/ssdb.log
+    output = {{ $dataBaseDir }}/{{ $inst.data_subdir }}/ssdb.log
     rotate {
         size = 1000000000
         num = 10
@@ -271,7 +273,7 @@ set_permissions() {
     
     chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_DIR"
     {{- range $i, $inst := .Instance.Vars.instances }}
-    chown -R ${RUN_USER}:${RUN_GROUP} "{{ $inst.data_dir }}"
+    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/{{ $inst.data_subdir }}"
     {{- end }}
     
     log_success "权限设置完成"
@@ -345,7 +347,7 @@ show_status() {
     {{- range $i, $inst := .Instance.Vars.instances }}
     echo "  - 端口: {{ $inst.port }}"
     echo "    配置: ${INSTALL_DIR}/{{ $inst.config_file }}"
-    echo "    数据: {{ $inst.data_dir }}"
+    echo "    数据: ${DATA_BASE_DIR}/{{ $inst.data_subdir }}"
     echo ""
     {{- end }}
     echo "管理命令:"

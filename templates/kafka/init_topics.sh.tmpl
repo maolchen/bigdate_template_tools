@@ -8,11 +8,11 @@
 set -e
 
 # ==================== 变量定义 ====================
-INSTALL_DIR="{{ .Instance.Vars.install_dir }}"
+INSTALL_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
 KAFKA_VERSION="{{ .Instance.Vars.version }}"
 ZK_PORT="{{ .Instance.Vars.zookeeper.client_port }}"
 KAFKA_PORT="{{ .Instance.Vars.server.port }}"
-JAVA_HOME="{{ .Instance.Vars.java_home }}"
+JAVA_HOME="{{ .Global.java_home }}"
 
 export JAVA_HOME=$JAVA_HOME
 export PATH=$JAVA_HOME/bin:$PATH

@@ -24,17 +24,21 @@ BROKER_ID="1"
 ZK_MYID="1"
 RUN_USER="bigdata"
 RUN_GROUP="bigdata"
-JAVA_HOME="/data/jdk"
+JAVA_HOME="/data/jdk/"
+
+# 全局目录
+DATA_BASE_DIR="/data"
+INSTALL_BASE_DIR="/data/localization"
 
 # Zookeeper 配置
-ZK_DATA_DIR="/data/zk-kafka-data"
+ZK_DATA_DIR="${DATA_BASE_DIR}/zk-kafka-data"
 ZK_CLIENT_PORT="2182"
 ZK_PEER_PORT="2889"
 ZK_ELECTION_PORT="3889"
 
 # Kafka Server 配置
 KAFKA_PORT="9092"
-KAFKA_LOG_DIRS="/data/kafka-data"
+KAFKA_LOG_DIRS="${DATA_BASE_DIR}/kafka-data"
 
 # ==================== 日志函数 ====================
 log_info() {
@@ -271,7 +275,7 @@ generate_scripts() {
     # Zookeeper 启动脚本
     cat > "${INSTALL_DIR}/start_zk.sh" << 'START_ZK_EOF'
 #!/bin/bash
-cd /data/localization/kafka
+cd <no value>
 nohup bin/zookeeper-server-start.sh config/zookeeper.properties > zk.log &
 START_ZK_EOF
     chmod +x "${INSTALL_DIR}/start_zk.sh"
@@ -286,7 +290,7 @@ STOP_ZK_EOF
     # Kafka 启动脚本
     cat > "${INSTALL_DIR}/start_kafka.sh" << 'START_KAFKA_EOF'
 #!/bin/bash
-cd /data/localization/kafka
+cd <no value>
 nohup bin/kafka-server-start.sh config/server.properties > kafka.log &
 START_KAFKA_EOF
     chmod +x "${INSTALL_DIR}/start_kafka.sh"
@@ -337,12 +341,12 @@ After=network.target remote-fs.target
 
 [Service]
 Type=simple
-Environment="JAVA_HOME=/data/jdk"
-Environment="PATH=/data/jdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
-User=bigdata
-Group=bigdata
-ExecStart=/data/localization/kafka/bin/zookeeper-server-start.sh /data/localization/kafka/config/zookeeper.properties
-ExecStop=/data/localization/kafka/bin/zookeeper-server-stop.sh
+Environment="JAVA_HOME=<no value>"
+Environment="PATH=<no value>/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+User=<no value>
+Group=<no value>
+ExecStart=<no value>/bin/zookeeper-server-start.sh <no value>/config/zookeeper.properties
+ExecStop=<no value>/bin/zookeeper-server-stop.sh
 TimeoutSec=30
 Restart=on-failure
 
@@ -360,12 +364,12 @@ After=zookeeper.service
 
 [Service]
 Type=simple
-Environment="JAVA_HOME=/data/jdk"
-Environment="PATH=/data/jdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
-User=bigdata
-Group=bigdata
-ExecStart=/data/localization/kafka/bin/kafka-server-start.sh /data/localization/kafka/config/server.properties
-ExecStop=/data/localization/kafka/bin/kafka-server-stop.sh
+Environment="JAVA_HOME=<no value>"
+Environment="PATH=<no value>/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+User=<no value>
+Group=<no value>
+ExecStart=<no value>/bin/kafka-server-start.sh <no value>/config/server.properties
+ExecStop=<no value>/bin/kafka-server-stop.sh
 Restart=on-failure
 
 [Install]

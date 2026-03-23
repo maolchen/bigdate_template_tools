@@ -17,24 +17,28 @@ NC='\033[0m' # No Color
 # ==================== 变量定义 ====================
 KAFKA_VERSION="{{ .Instance.Vars.version }}"
 SCALA_VERSION="{{ .Instance.Vars.scala_version }}"
-INSTALL_DIR="{{ .Instance.Vars.install_dir }}"
+INSTALL_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
 SOURCE_PACKAGE="{{ .Global.software_dir }}/{{ .Instance.Vars.package_subdir }}/kafka_${KAFKA_VERSION}.tgz"
 TEMP_DIR="{{ .Global.temp_dir }}"
 BROKER_ID="{{ .Instance.AutoID }}"
 ZK_MYID="{{ .Instance.AutoID }}"
-RUN_USER="{{ .Instance.Vars.run_user }}"
-RUN_GROUP="{{ .Instance.Vars.run_group }}"
-JAVA_HOME="{{ .Instance.Vars.java_home }}"
+RUN_USER="{{ .Global.user }}"
+RUN_GROUP="{{ .Global.group }}"
+JAVA_HOME="{{ .Global.java_home }}"
+
+# 全局目录
+DATA_BASE_DIR="{{ .Global.data_base_dir }}"
+INSTALL_BASE_DIR="{{ .Global.install_base_dir }}"
 
 # Zookeeper 配置
-ZK_DATA_DIR="{{ .Instance.Vars.zookeeper.data_dir }}"
+ZK_DATA_DIR="${DATA_BASE_DIR}/{{ .Instance.Vars.zookeeper.data_subdir }}"
 ZK_CLIENT_PORT="{{ .Instance.Vars.zookeeper.client_port }}"
 ZK_PEER_PORT="{{ .Instance.Vars.zookeeper.peer_port }}"
 ZK_ELECTION_PORT="{{ .Instance.Vars.zookeeper.election_port }}"
 
 # Kafka Server 配置
 KAFKA_PORT="{{ .Instance.Vars.server.port }}"
-KAFKA_LOG_DIRS="{{ .Instance.Vars.server.log_dirs }}"
+KAFKA_LOG_DIRS="${DATA_BASE_DIR}/{{ .Instance.Vars.server.log_subdir }}"
 
 # ==================== 日志函数 ====================
 log_info() {
@@ -157,12 +161,14 @@ set_ids() {
 generate_zookeeper_config() {
     log_info "生成 Zookeeper 配置文件..."
     
+    {{- $dataBaseDir := .Global.data_base_dir }}
+    
     cat > "${INSTALL_DIR}/config/zookeeper.properties" << 'ZK_CONF_EOF'
 # Zookeeper 配置文件
 # 节点: {{ .Instance.Node.NodeName }} ({{ .Instance.Node.IP }})
 
 # 数据目录
-dataDir={{ .Instance.Vars.zookeeper.data_dir }}
+dataDir={{ $dataBaseDir }}/{{ .Instance.Vars.zookeeper.data_subdir }}
 
 # 客户端端口
 clientPort={{ .Instance.Vars.zookeeper.client_port }}
@@ -192,6 +198,8 @@ generate_server_config() {
     # 获取所有 Kafka 节点的 ZK 连接串
     ZK_CONNECT="{{ serviceEndpointsJoin "kafka" "zookeeper.client_port" }}"
     
+    {{- $dataBaseDir := .Global.data_base_dir }}
+    
     cat > "${INSTALL_DIR}/config/server.properties" << 'SERVER_CONF_EOF'
 # Kafka Server 配置文件
 # 节点: {{ .Instance.Node.NodeName }} ({{ .Instance.Node.IP }})
@@ -211,7 +219,7 @@ socket.receive.buffer.bytes={{ .Instance.Vars.server.socket_receive_buffer_bytes
 socket.request.max.bytes={{ .Instance.Vars.server.socket_request_max_bytes }}
 
 ############################# Log Basics #############################
-log.dirs={{ .Instance.Vars.server.log_dirs }}
+log.dirs={{ $dataBaseDir }}/{{ .Instance.Vars.server.log_subdir }}
 num.partitions={{ .Instance.Vars.server.num_partitions }}
 num.recovery.threads.per.data.dir=1
 

@@ -18,8 +18,9 @@ REDIS_VERSION="{{ .Instance.Vars.version }}"
 INSTALL_DIR="{{ .Instance.Vars.install_dir }}"
 SOURCE_PACKAGE="{{ .Global.software_dir }}/{{ .Instance.Vars.package_subdir }}/redis-${REDIS_VERSION}.tar.gz"
 TEMP_DIR="{{ .Global.temp_dir }}"
-RUN_USER="{{ .Instance.Vars.run_user }}"
-RUN_GROUP="{{ .Instance.Vars.run_group }}"
+RUN_USER="{{ .Global.user }}"
+RUN_GROUP="{{ .Global.group }}"
+DATA_BASE_DIR="{{ .Global.data_base_dir }}"
 
 # ==================== 日志函数 ====================
 log_info() {
@@ -88,11 +89,12 @@ clean_old_install() {
     fi
     
     # 清理数据目录
-    INSTANCES='{{- range $i, $inst := .Instance.Vars.instances }}{{ if $i }} {{ end }}{{ $inst.data_dir }}{{- end }}'
-    for DATA_DIR in $INSTANCES; do
-        if [ -d "$DATA_DIR" ]; then
-            log_warn "删除旧数据目录: $DATA_DIR"
-            rm -rf "$DATA_DIR"
+    INSTANCES='{{- range $i, $inst := .Instance.Vars.instances }}{{ if $i }} {{ end }}{{ $inst.data_subdir }}{{- end }}'
+    for DATA_SUBDIR in $INSTANCES; do
+        DATA_PATH="${DATA_BASE_DIR}/${DATA_SUBDIR}"
+        if [ -d "$DATA_PATH" ]; then
+            log_warn "删除旧数据目录: $DATA_PATH"
+            rm -rf "$DATA_PATH"
         fi
     done
     
@@ -108,7 +110,7 @@ create_directories() {
     
     # 创建数据目录
     {{- range $i, $inst := .Instance.Vars.instances }}
-    mkdir -p "{{ $inst.data_dir }}"
+    mkdir -p "${DATA_BASE_DIR}/{{ $inst.data_subdir }}"
     {{- end }}
     
     # 创建临时目录
@@ -157,6 +159,7 @@ generate_configs() {
     {{- $maxmemory_policy := .Instance.Vars.maxmemory_policy }}
     {{- $appendonly := .Instance.Vars.appendonly }}
     {{- $appendfsync := .Instance.Vars.appendfsync }}
+    {{- $dataBaseDir := .Global.data_base_dir }}
     
     {{- range $i, $inst := .Instance.Vars.instances }}
     # ==================== 实例 {{ $inst.port }} ====================
@@ -173,12 +176,12 @@ tcp-keepalive {{ $tcp_keepalive }}
 # 通用配置
 daemonize {{ $daemonize }}
 pidfile /var/run/{{ $inst.pid_file }}
-logfile {{ $inst.data_dir }}/{{ $inst.logfile }}
+logfile {{ $dataBaseDir }}/{{ $inst.data_subdir }}/{{ $inst.logfile }}
 loglevel {{ $loglevel }}
 databases {{ $databases }}
 
 # 数据目录
-dir {{ $inst.data_dir }}
+dir {{ $dataBaseDir }}/{{ $inst.data_subdir }}
 
 # 内存管理
 maxmemory {{ $maxmemory }}
@@ -221,7 +224,7 @@ set_permissions() {
     
     chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_DIR"
     {{- range $i, $inst := .Instance.Vars.instances }}
-    chown -R ${RUN_USER}:${RUN_GROUP} "{{ $inst.data_dir }}"
+    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/{{ $inst.data_subdir }}"
     {{- end }}
     
     log_success "权限设置完成"
@@ -301,7 +304,7 @@ show_status() {
     {{- range $i, $inst := .Instance.Vars.instances }}
     echo "  - 端口: {{ $inst.port }}"
     echo "    配置: ${INSTALL_DIR}/redis_{{ $inst.port }}.conf"
-    echo "    数据: {{ $inst.data_dir }}"
+    echo "    数据: ${DATA_BASE_DIR}/{{ $inst.data_subdir }}"
     echo ""
     {{- end }}
     echo "管理命令:"

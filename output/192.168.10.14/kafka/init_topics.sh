@@ -12,7 +12,7 @@ INSTALL_DIR="/data/localization/kafka"
 KAFKA_VERSION="2.11-0.11.0.2"
 ZK_PORT="2182"
 KAFKA_PORT="9092"
-JAVA_HOME="/data/jdk"
+JAVA_HOME="/data/jdk/"
 
 export JAVA_HOME=$JAVA_HOME
 export PATH=$JAVA_HOME/bin:$PATH

@@ -20,6 +20,7 @@ SOURCE_PACKAGE="/data/softwares/realtime-new-doris/realtime/web_all/app/redis_26
 TEMP_DIR="/data/tmp_install_dir"
 RUN_USER="bigdata"
 RUN_GROUP="bigdata"
+DATA_BASE_DIR="/data"
 
 # ==================== 日志函数 ====================
 log_info() {
@@ -88,11 +89,12 @@ clean_old_install() {
     fi
     
     # 清理数据目录
-    INSTANCES='/data/redis_26480 /data/redis_26380'
-    for DATA_DIR in $INSTANCES; do
-        if [ -d "$DATA_DIR" ]; then
-            log_warn "删除旧数据目录: $DATA_DIR"
-            rm -rf "$DATA_DIR"
+    INSTANCES='redis_26480 redis_26380'
+    for DATA_SUBDIR in $INSTANCES; do
+        DATA_PATH="${DATA_BASE_DIR}/${DATA_SUBDIR}"
+        if [ -d "$DATA_PATH" ]; then
+            log_warn "删除旧数据目录: $DATA_PATH"
+            rm -rf "$DATA_PATH"
         fi
     done
     
@@ -107,8 +109,8 @@ create_directories() {
     mkdir -p "$INSTALL_DIR"
     
     # 创建数据目录
-    mkdir -p "/data/redis_26480"
-    mkdir -p "/data/redis_26380"
+    mkdir -p "${DATA_BASE_DIR}/redis_26480"
+    mkdir -p "${DATA_BASE_DIR}/redis_26380"
     
     # 创建临时目录
     mkdir -p "$TEMP_DIR"
@@ -254,8 +256,8 @@ set_permissions() {
     log_info "设置目录权限..."
     
     chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_DIR"
-    chown -R ${RUN_USER}:${RUN_GROUP} "/data/redis_26480"
-    chown -R ${RUN_USER}:${RUN_GROUP} "/data/redis_26380"
+    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/redis_26480"
+    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/redis_26380"
     
     log_success "权限设置完成"
 }
@@ -351,11 +353,11 @@ show_status() {
     echo "实例列表:"
     echo "  - 端口: 26480"
     echo "    配置: ${INSTALL_DIR}/redis_26480.conf"
-    echo "    数据: /data/redis_26480"
+    echo "    数据: ${DATA_BASE_DIR}/redis_26480"
     echo ""
     echo "  - 端口: 26380"
     echo "    配置: ${INSTALL_DIR}/redis_26380.conf"
-    echo "    数据: /data/redis_26380"
+    echo "    数据: ${DATA_BASE_DIR}/redis_26380"
     echo ""
     echo "管理命令:"
     echo "  查看状态: redis-cli -p <port> info"
