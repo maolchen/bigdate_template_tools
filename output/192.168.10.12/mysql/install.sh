@@ -2,7 +2,7 @@
 # ============================================================
 # MySQL 安装脚本 (Docker部署)
 # 服务: mysql
-# 节点: {{ .Instance.Node.NodeName }} ({{ .Instance.Node.IP }})
+# 节点: dw-master3 (192.168.10.12)
 # ============================================================
 
 set -e
@@ -14,14 +14,14 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # ==================== 变量定义 ====================
-CONTAINER_NAME="{{ .Instance.Vars.container_name }}"
-MYSQL_IMAGE="{{ .Instance.Vars.mysql_image }}"
-MYSQL_IMAGE_FILE="{{ .Global.software_dir }}/{{ .Instance.Vars.package_subdir }}/{{ .Instance.Vars.image_name }}"
-MYSQL_DATA_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.mysql_data_subdir }}"
-MYSQL_CONFIG_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.mysql_config_subdir }}"
-INIT_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.init_subdir }}"
-TEMP_DIR="{{ .Global.temp_dir }}"
-SQL_TOOLS_DIR="{{ .Global.data_base_dir }}/{{ .Instance.Vars.sql_tools_subdir }}"
+CONTAINER_NAME="zanalytics_mysql_v33"
+MYSQL_IMAGE="mysql:5.7.33"
+MYSQL_IMAGE_FILE="/data/softwares/realtime-new-doris/realtime/web_all/mysql/mysql-5.7.33.tar"
+MYSQL_DATA_DIR="/data/localization/mysql/data"
+MYSQL_CONFIG_DIR="/data/localization/mysql"
+INIT_DIR="/data/localization/mysql/init"
+TEMP_DIR="/data/tmp_install_dir"
+SQL_TOOLS_DIR="/data/tools"
 
 # ==================== 日志函数 ====================
 log_info() {
@@ -57,14 +57,14 @@ check_docker() {
 }
 
 check_mysql_container() {
-    if docker ps -a --format '{{ "{{" }}.Names{{ "}}" }}' | grep -q "^${CONTAINER_NAME}$"; then
+    if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
         return 0
     fi
     return 1
 }
 
 check_mysql_running() {
-    if docker ps --format '{{ "{{" }}.Names{{ "}}" }}' | grep -q "^${CONTAINER_NAME}$"; then
+    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
         return 0
     fi
     return 1
@@ -101,7 +101,7 @@ upload_image() {
     fi
     
     # 复制镜像到临时目录
-    local dest_file="${TEMP_DIR}/{{ .Instance.Vars.image_name }}"
+    local dest_file="${TEMP_DIR}/mysql-5.7.33.tar"
     if [ "$MYSQL_IMAGE_FILE" != "$dest_file" ]; then
         cp -f "$MYSQL_IMAGE_FILE" "$dest_file"
         log_info "镜像已复制到: $dest_file"
@@ -114,10 +114,10 @@ upload_image() {
 load_image() {
     log_info "加载MySQL Docker镜像..."
     
-    local image_file="${TEMP_DIR}/{{ .Instance.Vars.image_name }}"
+    local image_file="${TEMP_DIR}/mysql-5.7.33.tar"
     
     # 检查镜像是否已存在
-    if docker images --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }}' | grep -q "^${MYSQL_IMAGE}$"; then
+    if docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^${MYSQL_IMAGE}$"; then
         log_success "MySQL镜像已存在: $MYSQL_IMAGE"
         return 0
     fi
@@ -265,15 +265,15 @@ verify_installation() {
     log_success "MySQL容器运行正常"
     
     # 检查端口
-    if ss -tuln | grep -q ":{{ .Instance.Vars.container_port }} "; then
-        log_success "MySQL端口({{ .Instance.Vars.container_port }})正在监听"
+    if ss -tuln | grep -q ":3306 "; then
+        log_success "MySQL端口(3306)正在监听"
     else
-        log_warn "MySQL端口({{ .Instance.Vars.container_port }})未监听"
+        log_warn "MySQL端口(3306)未监听"
     fi
     
     # 显示容器信息
     log_info "容器信息:"
-    docker ps --filter "name=$CONTAINER_NAME" --format "table {{ "{{" }}.Names{{ "}}" }}\t{{ "{{" }}.Image{{ "}}" }}\t{{ "{{" }}.Status{{ "}}" }}\t{{ "{{" }}.Ports{{ "}}" }}"
+    docker ps --filter "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
     
     return 0
 }
@@ -283,7 +283,7 @@ main() {
     echo ""
     echo "========================================"
     echo "  MySQL 安装脚本 (Docker部署)"
-    echo "  节点: {{ .Instance.Node.NodeName }} ({{ .Instance.Node.IP }})"
+    echo "  节点: dw-master3 (192.168.10.12)"
     echo "  容器名: ${CONTAINER_NAME}"
     echo "========================================"
     echo ""
@@ -338,11 +338,11 @@ main() {
         echo ""
         log_info "安装信息:"
         echo "  - 容器名: ${CONTAINER_NAME}"
-        echo "  - MySQL版本: {{ .Instance.Vars.mysql_image }}"
+        echo "  - MySQL版本: mysql:5.7.33"
         echo "  - 数据目录: ${MYSQL_DATA_DIR}"
         echo "  - 配置目录: ${MYSQL_CONFIG_DIR}"
         echo "  - 初始化脚本目录: ${INIT_DIR}"
-        echo "  - 监听端口: {{ .Instance.Vars.container_port }}"
+        echo "  - 监听端口: 3306"
         echo ""
         log_info "初始化脚本位置:"
         echo "  - 启动容器: ${INIT_DIR}/start_container.sh"
