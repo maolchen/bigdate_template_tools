@@ -495,6 +495,7 @@ configure_hosts() {
         echo "192.168.10.13 realtime-kafka1 realtime-kafka1" >> "$hosts_file"
         echo "192.168.10.14 realtime-kafka2 realtime-kafka2" >> "$hosts_file"
         echo "192.168.10.15 realtime-kafka3 realtime-kafka3" >> "$hosts_file"
+        echo "192.168.10.19 realtime-redis realtime-redis" >> "$hosts_file"
         log_info "添加所有节点的 hosts 映射"
     fi
     

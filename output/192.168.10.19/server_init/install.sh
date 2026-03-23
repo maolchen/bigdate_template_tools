@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================
 # 服务器初始化脚本
-# 节点: realtime-es2
-# IP: 192.168.10.17
-# Hostname: realtime-es2
+# 节点: realtime-redis
+# IP: 192.168.10.19
+# Hostname: realtime-redis
 # 兼容系统: CentOS 7/8/9, 麒麟, 统信UOS等RedHat系列
 # ============================================================
 
@@ -604,8 +604,8 @@ configure_cron() {
 main() {
     log_info "============================================"
     log_info "服务器初始化开始"
-    log_info "节点: realtime-es2"
-    log_info "IP: 192.168.10.17"
+    log_info "节点: realtime-redis"
+    log_info "IP: 192.168.10.19"
     log_info "系统: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'=' -f2 | tr -d '\"')"
     log_info "============================================"
     

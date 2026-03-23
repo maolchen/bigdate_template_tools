@@ -74,6 +74,11 @@ nodes:
   realtime-es3:
     ip: "192.168.10.18"
     hostname: "realtime-es3"
+  
+  # ==================== Redis节点 ====================
+  realtime-redis:
+    ip: "192.168.10.19"
+    hostname: "realtime-redis"
 
 # ============================================================
 # 服务拓扑（服务部署位置）
@@ -117,6 +122,10 @@ serviceTop:
   # ==================== 第七步：MySQL数据库 ====================
   mysql:
     nodes: [dw-master3]
+  
+  # ==================== Redis缓存 ====================
+  redis:
+    nodes: [realtime-redis]
   
   zookeeper:
     nodes: [dw-master1, dw-master2, dw-master3]
@@ -281,6 +290,41 @@ serverConfig:
       
       # SQL脚本目录
       sql_tools_subdir: "tools"
+  
+  # ==================== Redis缓存 ====================
+  redis:
+    description: "Redis缓存服务（编译安装，多实例）"
+    vars:
+      version: "6.2.14"
+      install_dir: "/usr/local/redis"
+      package_subdir: "realtime-new-doris/realtime/web_all/app/redis_26480"
+      
+      # 多实例配置
+      instances:
+        - port: 26480
+          data_dir: "/data/redis_26480"
+          pid_file: "redis_26480.pid"
+          logfile: "redis_26480.log"
+        - port: 26380
+          data_dir: "/data/redis_26380"
+          pid_file: "redis_26380.pid"
+          logfile: "redis_26380.log"
+      
+      # Redis通用配置
+      bind: "0.0.0.0"
+      daemonize: "yes"
+      timeout: 0
+      tcp_keepalive: 300
+      loglevel: "notice"
+      databases: 16
+      maxmemory: "4gb"
+      maxmemory_policy: "allkeys-lru"
+      appendonly: "yes"
+      appendfsync: "everysec"
+      
+      # 系统配置
+      run_user: "bigdata"
+      run_group: "bigdata"
   
   zookeeper:
     id_field: "myid"
