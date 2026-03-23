@@ -270,18 +270,17 @@ serverConfig:
         - "audit_log"
         - "cep"
       
-      # 目录配置
-      mysql_data_dir: "/data/localization/mysql/data"
-      mysql_config_dir: "/data/localization/mysql"
-      init_dir: "/data/localization/mysql/init"
+      # 目录配置（相对路径，将与global.install_base_dir拼接）
+      mysql_data_subdir: "mysql/data"
+      mysql_config_subdir: "mysql"
+      init_subdir: "mysql/init"
       
       # 安装包配置
       package_subdir: "realtime-new-doris/realtime/web_all/mysql"
       image_name: "mysql-5.7.33.tar"
       
       # SQL脚本目录
-      sql_tools_dir: "/data/tools"
-      sdkv_schema_sql: "/data/tools/data/tools/sql/sdkv.sql"
+      sql_tools_subdir: "tools"
   
   zookeeper:
     id_field: "myid"

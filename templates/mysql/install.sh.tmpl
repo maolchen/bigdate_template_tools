@@ -17,10 +17,11 @@ NC='\033[0m' # No Color
 CONTAINER_NAME="{{ .Instance.Vars.container_name }}"
 MYSQL_IMAGE="{{ .Instance.Vars.mysql_image }}"
 MYSQL_IMAGE_FILE="{{ .Global.software_dir }}/{{ .Instance.Vars.package_subdir }}/{{ .Instance.Vars.image_name }}"
-MYSQL_DATA_DIR="{{ .Instance.Vars.mysql_data_dir }}"
-MYSQL_CONFIG_DIR="{{ .Instance.Vars.mysql_config_dir }}"
-INIT_DIR="{{ .Instance.Vars.init_dir }}"
+MYSQL_DATA_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.mysql_data_subdir }}"
+MYSQL_CONFIG_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.mysql_config_subdir }}"
+INIT_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.init_subdir }}"
 TEMP_DIR="{{ .Global.temp_dir }}"
+SQL_TOOLS_DIR="{{ .Global.data_base_dir }}/{{ .Instance.Vars.sql_tools_subdir }}"
 
 # ==================== 日志函数 ====================
 log_info() {

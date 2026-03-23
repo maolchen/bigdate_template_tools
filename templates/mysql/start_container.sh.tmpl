@@ -9,8 +9,8 @@ docker run --restart=always -d --name {{ .Instance.Vars.container_name }} \
      -e MYSQL_USER={{ .Instance.Vars.mysql_user }} \
      -e MYSQL_PASSWORD={{ .Instance.Vars.mysql_password }} \
      -e MYSQL_ROOT_PASSWORD={{ .Instance.Vars.mysql_root_password }} \
-     -v {{ .Instance.Vars.mysql_config_dir }}/my.cnf:/etc/mysql/conf.d/my.cnf \
-     -v {{ .Instance.Vars.mysql_data_dir }}:/var/lib/mysql \
+     -v {{ .Global.install_base_dir }}/{{ .Instance.Vars.mysql_config_subdir }}/my.cnf:/etc/mysql/conf.d/my.cnf \
+     -v {{ .Global.install_base_dir }}/{{ .Instance.Vars.mysql_data_subdir }}:/var/lib/mysql \
      -e MYSQL_DATABASE={{ .Instance.Vars.mysql_database }} \
      -p {{ .Instance.Vars.container_port }}:{{ .Instance.Vars.mysql_port }} \
      {{ .Instance.Vars.mysql_image }}
