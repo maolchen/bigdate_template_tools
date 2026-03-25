@@ -351,6 +351,37 @@ func RenderTemplate(tmplPath string, ctx Context, cfg *Config) (string, error) {
 			return hostnames
 		},
 
+		// 获取服务的所有节点别名列表
+		"getServiceNodes": func(serviceName string) []string {
+			var nodeNames []string
+			seen := make(map[string]bool)
+			for _, inst := range ctx.AllInstances {
+				if inst.ServiceName == serviceName && !seen[inst.NodeName] {
+					nodeNames = append(nodeNames, inst.NodeName)
+					seen[inst.NodeName] = true
+				}
+			}
+			return nodeNames
+		},
+
+		// 获取服务配置变量
+		"serviceVars": func(serviceName string) map[string]interface{} {
+			if svc, ok := cfg.ServerConfig[serviceName]; ok {
+				return svc.Vars
+			}
+			return make(map[string]interface{})
+		},
+
+		// 获取服务的特定变量值
+		"serviceVar": func(serviceName, varName string) interface{} {
+			if svc, ok := cfg.ServerConfig[serviceName]; ok {
+				if val, exists := svc.Vars[varName]; exists {
+					return val
+				}
+			}
+			return nil
+		},
+
 		// =============== 配置访问函数 ===============
 		// 获取服务配置
 		"serviceConfig": func(serviceName string) ServiceConfig {

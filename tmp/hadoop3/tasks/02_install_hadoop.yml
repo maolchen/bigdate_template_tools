@@ -1,0 +1,72 @@
+---
+- name: Ensure {{ install_dir }} exists
+  ansible.builtin.file:
+    path: "{{ install_dir }}"
+    state: directory
+- name: Check if Hadoop directory exists
+  ansible.builtin.stat:
+    path: "{{ install_dir }}/etc"
+  register: install_path_stat
+
+- name: Abort if Hadoop is already installed
+  ansible.builtin.fail:
+    msg: "Hadoop installation directory already exists at {{ install_dir }}"
+  when:
+  - install_path_stat.stat.exists
+  - not force_install | default(false)
+
+#- name: Ensure temporary directory exists
+#  ansible.builtin.file:
+#    path: "{{ GLOBAL.tmp_install_dir }}"
+#    state: directory
+#    mode: '0755'
+
+- name: Copy Hadoop package to target servers
+  ansible.builtin.unarchive:
+    src: "{{ source_package }}"
+    dest: "{{ install_dir }}"
+    extra_opts: [ "--strip-components=1" ]
+
+- name: Add Hadoop variables to /etc/profile
+  become: yes
+  become_user: root
+  become_method: sudo
+  ansible.builtin.lineinfile:
+    path: /etc/profile
+    line: |
+      # HADOOP3
+      export HADOOP_HOME=/data/hadoop3
+      export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
+      export LD_LIBRARY_PATH=/data/hadoop3/lib/native
+      export HADOOP_CLASSPATH=$(/data/hadoop3/bin/hadoop classpath)
+      export PATH=$PATH:$HADOOP_HOME/bin
+      export PATH=$PATH:$HADOOP_HOME/sbin
+    insertafter: EOF
+
+- name: Add Hadoop variables to /home/{{GLOBAL.run_user}}/.bash_profile
+  become: yes
+  become_user: root
+  become_method: sudo
+  ansible.builtin.lineinfile:
+    path: /home/{{GLOBAL.run_user}}/.bash_profile
+    line: |
+      # HADOOP3
+      export HADOOP_HOME=/data/hadoop3
+      export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
+      export LD_LIBRARY_PATH=/data/hadoop3/lib/native
+      export HADOOP_CLASSPATH=$(/data/hadoop3/bin/hadoop classpath)
+      export PATH=$PATH:$HADOOP_HOME/bin
+      export PATH=$PATH:$HADOOP_HOME/sbin
+    insertafter: EOF
+
+- name: Verify changes
+  become: yes
+  become_user: root
+  ansible.builtin.shell: |
+    grep "HADOOP_HOME" /etc/profile
+  register: grep_result
+  changed_when: false
+
+- name: Display verification result
+  ansible.builtin.debug:
+    var: grep_result.stdout_lines

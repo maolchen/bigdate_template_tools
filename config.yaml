@@ -145,11 +145,27 @@ serviceTop:
     id_auto_derive: true
   
   # ==================== 第四步：Hadoop生态 ====================
+  # HDFS HA组件
   hadoop_namenode:
     nodes: [dw-master1, dw-master2]
     id_auto_derive: true
   
+  hadoop_journalnode:
+    nodes: [dw-master1, dw-master2, dw-master3]
+    id_auto_derive: true
+  
   hadoop_datanode:
+    nodes: [dw-worker1, dw-worker2, dw-worker3]
+  
+  hadoop_zkfc:
+    nodes: [dw-master1, dw-master2]
+  
+  # YARN HA组件
+  hadoop_resourcemanager:
+    nodes: [dw-master1, dw-master2]
+    id_auto_derive: true
+  
+  hadoop_nodemanager:
     nodes: [dw-worker1, dw-worker2, dw-worker3]
   
   spark_master:
@@ -466,16 +482,99 @@ serverConfig:
   hadoop_namenode:
     id_field: "namenode_id"
     id_format: "nn{index+1}"
+    description: "HDFS NameNode（HA模式）"
     vars:
       version: "3.3.6"
-      namenode_port: 9820
-      http_port: 9870
+      scala_version: "2.12"
+      
+      # 安装配置（install_subdir 为相对路径，与 global.install_base_dir 拼接）
+      install_subdir: "hadoop"
+      package_subdir: "realtime-new-doris/realtime/hadoop3"
+      pkg_name: "hadoop-3.3.6.tar.gz"
+      
+      # HDFS HA配置
+      nameservice: "zhugeio"
+      namenode_rpc_port: 8020
+      namenode_http_port: 50070
+      
+      # 数据目录（data_subdir 为相对路径，与 global.data_base_dir 拼接）
+      namenode_data_subdir: "dfs/nn"
+      tmp_data_subdir: "dfs/tmp"
+      datanode_data_subdir: "dfs/dn"
+      journalnode_data_subdir: "dfs/jn"
+      
+      # 端口配置
+      journalnode_port: 8485
+      
+      # JVM配置
+      namenode_heapsize: "4096m"
+      
+      # HDFS块大小
+      blocksize: "268435456"
+  
+  hadoop_journalnode:
+    id_field: "journalnode_id"
+    id_format: "jn{index+1}"
+    description: "HDFS JournalNode（HA模式）"
+    vars:
+      # 共享NameNode的安装目录和配置
+      install_subdir: "hadoop"
+      journalnode_data_subdir: "dfs/jn"
+      journalnode_port: 8485
   
   hadoop_datanode:
+    description: "HDFS DataNode"
     vars:
-      version: "3.3.6"
-      data_port: 9866
-      http_port: 9864
+      # 共享NameNode的安装目录和配置
+      install_subdir: "hadoop"
+      datanode_data_subdir: "dfs/dn"
+      datanode_data_port: 9866
+      datanode_http_port: 9864
+      blocksize: "268435456"
+  
+  hadoop_zkfc:
+    description: "HDFS ZKFailoverController（HA模式）"
+    vars:
+      # 共享NameNode的安装目录和配置
+      install_subdir: "hadoop"
+      nameservice: "zhugeio"
+  
+  hadoop_resourcemanager:
+    id_field: "rm_id"
+    id_format: "rm{index+1}"
+    description: "YARN ResourceManager（HA模式）"
+    vars:
+      # 共享NameNode的安装目录和配置
+      install_subdir: "hadoop"
+      nameservice: "zhugeio"
+      
+      yarn_cluster_id: "zhugeio2"
+      resourcemanager_port: 8032
+      resourcemanager_web_port: 8089
+      resourcemanager_scheduler_port: 8030
+      resourcemanager_resource_port: 8031
+      
+      # YARN配置
+      scheduler_minimum_allocation_mb: 32
+      scheduler_maximum_allocation_vcores: 8
+      nodemanager_resource_memory_mb: 12288
+      vmem_pmem_ratio: 5
+      
+      # 数据目录（data_subdir 为相对路径，与 global.data_base_dir 拼接）
+      nodemanager_local_subdir: "hadoop3/hadoop-yarn/cache"
+      nodemanager_log_subdir: "hadoop3/hadoop-yarn/containers"
+      remote_app_log_dir: "hdfs://zhugeio/var/log/hadoop-yarn/apps"
+  
+  hadoop_nodemanager:
+    description: "YARN NodeManager"
+    vars:
+      # 共享NameNode的安装目录和配置
+      install_subdir: "hadoop"
+      
+      # 数据目录（data_subdir 为相对路径，与 global.data_base_dir 拼接）
+      nodemanager_local_subdir: "hadoop3/hadoop-yarn/cache"
+      nodemanager_log_subdir: "hadoop3/hadoop-yarn/containers"
+      remote_app_log_dir: "hdfs://zhugeio/var/log/hadoop-yarn/apps"
   
   spark_master:
     vars:

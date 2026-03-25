@@ -184,7 +184,7 @@ syncLimit=2
 {{- $zkPeerPort := .Instance.Vars.zookeeper.peer_port }}
 {{- $zkElectionPort := .Instance.Vars.zookeeper.election_port }}
 {{- range $i, $inst := (serviceNodes "kafka") }}
-server.{{ add $i 1 }}={{ $inst.Node.IP }}:{{ $zkPeerPort }}:{{ $zkElectionPort }}
+server.{{ $inst.AutoID }}={{ $inst.Node.IP }}:{{ $zkPeerPort }}:{{ $zkElectionPort }}
 {{- end }}
 ZK_CONF_EOF
     

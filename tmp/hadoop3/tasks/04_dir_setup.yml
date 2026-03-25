@@ -1,0 +1,54 @@
+---
+- name: Check old datanode data dir
+  stat:
+    path: "{{ HADOOP3_GROUP.datanode_dir }}"
+  register: datanode_data_dir_stat
+  when: inventory_hostname in groups["hadoop3"]
+
+- name: Check old namenode name dir exist
+  stat:
+    path: "{{ HADOOP3_GROUP.namenode_dir }}"
+  register: namenode_name_dir_stat
+  when: inventory_hostname == groups["hadoop3_namenode"]
+
+- name: Check datanode dir
+  stat:
+    path: "{{ HADOOP3_GROUP.datanode_dir }}"
+  register: datanode_dir_stat
+
+- name: Backup old datanode data dir
+  command: >
+    mv {{ HADOOP3_GROUP.datanode_dir }} {{ HADOOP3_GROUP.datanode_dir }}.bak.$(date +"%Y%m%d%H%M%S")
+  when:
+  - inventory_hostname in groups["hadoop3"]
+  - datanode_dir_stat.stat.exists
+
+- name: Check namenode dir
+  stat:
+    path: "{{ HADOOP3_GROUP.namenode_dir }}"
+  register: namenode_dir_stat
+
+- name: Backup old namenode name dir
+  shell: "mv {{ HADOOP3_GROUP.namenode_dir }} {{ HADOOP3_GROUP.namenode_dir }}.bak.`date +\"%Y%m%d%H%M%S\"`"
+  when:
+  - inventory_hostname == groups["hadoop3_namenode"][0]
+  - namenode_dir_stat.stat.exists
+
+- name: Create HDFS directory structure
+  ansible.builtin.file:
+    path: "/data/{{ item.path }}"
+    state: directory
+    owner: "{{GLOBAL.run_user}}"
+    group: "{{GLOBAL.run_user}}"
+    mode: "{{ item.mode | default('0755') }}"
+  loop:
+  - { path: "dfs", mode: "0750" }
+  - { path: "dfs/jn", mode: "0750" }
+  - { path: "dfs/nn", mode: "0700" }
+  - { path: "dfs/dn", mode: "0750" }
+  - { path: "hadoop3/hdfs-sockets", mode: "0750" }
+  - { path: "hadoop3/hadoop-yarn", mode: "0755" }
+  when: not skip_dir_creation | default(false)
+
+- name: Backup old namenode name dir
+  shell: "chmod g-w /data/hadoop3/hdfs-sockets"

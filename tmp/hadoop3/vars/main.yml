@@ -1,0 +1,10 @@
+declared_hostgroup: hadoop3
+version: "{{HADOOP3_GROUP.version}}"
+architecture: "{{HADOOP3_GROUP.architecture}}"
+install_dir: "{{HADOOP3_GROUP.install_dir}}"
+source_package: "{{HADOOP3_GROUP.source_package}}"
+#source_package: "{{GLOBAL.sw}}/realtime-new-doris/realtime/hadoop3/hadoop-{{HADOOP3_GROUP.version}}-{{HADOOP3_GROUP.architecture}}.tar.gz"
+config_dir: "{{ install_dir }}/etc/hadoop"
+namenode_dir: "{{HADOOP3_GROUP.namenode_dir}}"
+datanode_dir: "{{HADOOP3_GROUP.datanode_dir}}"
+sockets_dir: "{{HADOOP3_GROUP.sockets_dir}}"

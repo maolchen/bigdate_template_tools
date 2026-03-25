@@ -1,0 +1,38 @@
+#!/bin/bash
+# Hadoop JournalNode 安装脚本
+# 使用方法: bash install.sh
+
+set -e
+
+# ============================================================
+# 全局变量
+# ============================================================
+INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
+DATA_BASE_DIR="{{.Global.data_base_dir}}"
+PKG_PRO_DIR="{{.Global.pkg_pro_dir}}"
+HADOOP_USER="{{.Global.user}}"
+HADOOP_GROUP="{{.Global.group}}"
+
+# ============================================================
+# JournalNode配置
+# ============================================================
+HADOOP_INSTALL_DIR="${INSTALL_BASE_DIR}/{{.Instance.Vars.install_subdir}}"
+JOURNALNODE_DATA_DIR="${DATA_BASE_DIR}/{{.Instance.Vars.journalnode_data_subdir}}"
+
+# ============================================================
+# 创建目录
+# ============================================================
+echo "创建JournalNode数据目录..."
+mkdir -p "${JOURNALNODE_DATA_DIR}"
+mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/logs"
+mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/pids"
+
+# ============================================================
+# 设置权限
+# ============================================================
+echo "设置JournalNode目录权限..."
+chown -R ${HADOOP_USER}:${HADOOP_GROUP} "${JOURNALNODE_DATA_DIR}"
+
+echo "Hadoop JournalNode 安装准备完成！"
+echo "数据目录: ${JOURNALNODE_DATA_DIR}"
+echo "请确保Hadoop已安装在: ${HADOOP_INSTALL_DIR}"

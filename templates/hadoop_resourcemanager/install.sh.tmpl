@@ -1,0 +1,72 @@
+#!/bin/bash
+# Hadoop ResourceManager 安装脚本
+# 使用方法: bash install.sh
+
+set -e
+
+# ============================================================
+# 全局变量
+# ============================================================
+INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
+DATA_BASE_DIR="{{.Global.data_base_dir}}"
+SOFTWARE_DIR="{{.Global.software_dir}}"
+PKG_PRO_DIR="{{.Global.pkg_pro_dir}}"
+HADOOP_USER="{{.Global.user}}"
+HADOOP_GROUP="{{.Global.group}}"
+JAVA_HOME="{{.Global.java_home}}"
+
+# ============================================================
+# Hadoop配置（从NameNode配置中获取共享变量）
+# ============================================================
+HADOOP_INSTALL_DIR="${INSTALL_BASE_DIR}/{{.Instance.Vars.install_subdir}}"
+HADOOP_PKG_NAME="hadoop-3.3.6.tar.gz"
+PACKAGE_SUBDIR="realtime-new-doris/realtime/hadoop3"
+
+# ============================================================
+# 创建目录
+# ============================================================
+echo "创建Hadoop目录..."
+mkdir -p "${HADOOP_INSTALL_DIR}"
+mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/logs"
+mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/pids"
+
+# ============================================================
+# 解压安装包（如果尚未安装）
+# ============================================================
+if [ ! -f "${HADOOP_INSTALL_DIR}/bin/hadoop" ]; then
+    echo "解压Hadoop安装包..."
+    if [ -f "${PKG_PRO_DIR}/${PACKAGE_SUBDIR}/${HADOOP_PKG_NAME}" ]; then
+        tar -zxf "${PKG_PRO_DIR}/${PACKAGE_SUBDIR}/${HADOOP_PKG_NAME}" -C "${HADOOP_INSTALL_DIR}" --strip-components=1
+    else
+        echo "错误: 找不到Hadoop安装包 ${PKG_PRO_DIR}/${PACKAGE_SUBDIR}/${HADOOP_PKG_NAME}"
+        exit 1
+    fi
+else
+    echo "Hadoop已安装，跳过解压步骤"
+fi
+
+# ============================================================
+# 配置环境变量
+# ============================================================
+echo "配置Hadoop环境变量..."
+HADOOP_HOME="${HADOOP_INSTALL_DIR}"
+
+# 创建环境变量脚本
+cat > /etc/profile.d/hadoop.sh <<'EOF'
+export HADOOP_HOME={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}
+export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
+export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
+export YARN_CONF_DIR=$HADOOP_HOME/etc/hadoop
+EOF
+
+chmod +x /etc/profile.d/hadoop.sh
+source /etc/profile.d/hadoop.sh
+
+# ============================================================
+# 设置权限
+# ============================================================
+echo "设置Hadoop目录权限..."
+chown -R ${HADOOP_USER}:${HADOOP_GROUP} "${HADOOP_INSTALL_DIR}"
+
+echo "Hadoop ResourceManager 安装完成！"
+echo "安装目录: ${HADOOP_INSTALL_DIR}"

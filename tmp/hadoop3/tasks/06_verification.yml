@@ -1,0 +1,16 @@
+---
+# 等待hadoop3各组件启动完成（10秒）
+- name: Wait for hadoop3 to initialize
+  wait_for:
+    timeout: 10
+  delegate_to: localhost
+
+- name: Verify Hadoop services are running
+  shell: "source ~/.bash_profile && jps | grep -E 'NameNode|DataNode|JournalNode|DFSZKFailoverController|ResourceManager|NodeManager'"
+  register: hadoop_services
+  changed_when: false
+  ignore_errors: yes
+
+- name: Display running Hadoop services
+  debug:
+    var: hadoop_services.stdout_lines

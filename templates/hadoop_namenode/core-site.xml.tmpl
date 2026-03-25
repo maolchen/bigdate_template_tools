@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+
+<!-- HDFS Nameservice配置 -->
+<property>
+  <name>fs.defaultFS</name>
+  <value>hdfs://{{.Instance.Vars.nameservice}}</value>
+</property>
+
+<!-- 临时目录 -->
+<property>  
+  <name>hadoop.tmp.dir</name>  
+  <value>{{.Global.data_base_dir}}/{{.Instance.Vars.tmp_data_subdir}}</value>  
+  <description>A base for other temporary directories.</description>  
+</property>  
+
+<!-- ZooKeeper集群地址（用于HA自动故障转移） -->
+<property>
+  <name>ha.zookeeper.quorum</name>
+  <value>{{serviceEndpointsJoin "zookeeper" "client_port"}}</value>
+</property>
+
+<!-- 压缩编解码器 -->
+<property>
+  <name>io.compression.codecs</name>
+  <value>org.apache.hadoop.io.compress.DefaultCodec,org.apache.hadoop.io.compress.GzipCodec,org.apache.hadoop.io.compress.BZip2Codec,com.hadoop.compression.lzo.LzoCodec,com.hadoop.compression.lzo.LzopCodec,org.apache.hadoop.io.compress.SnappyCodec</value>
+</property>
+
+<property>
+  <name>io.compression.codec.lzo.class</name>
+  <value>com.hadoop.compression.lzo.LzoCodec</value>
+</property>
+
+<!-- 代理用户配置 -->
+<property>
+  <name>hadoop.proxyuser.{{.Global.user}}.host</name>
+  <value>*</value>
+</property>
+
+<property>
+  <name>hadoop.proxyuser.{{.Global.user}}.groups</name>
+  <value>*</value>
+</property>
+
+</configuration>

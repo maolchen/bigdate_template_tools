@@ -192,7 +192,7 @@ generate_server_config() {
     log_info "生成 Kafka Server 配置文件..."
     
     # 获取所有 Kafka 节点的 ZK 连接串
-    ZK_CONNECT="192.168.10.13:2182,192.168.10.14:2182,192.168.10.15:2182"
+    ZK_CONNECT=""
     
     cat > "${INSTALL_DIR}/config/server.properties" << 'SERVER_CONF_EOF'
 # Kafka Server 配置文件
@@ -228,7 +228,7 @@ log.segment.bytes=1073741824
 log.retention.check.interval.ms=300000
 
 ############################# Zookeeper #############################
-zookeeper.connect=192.168.10.13:2182,192.168.10.14:2182,192.168.10.15:2182
+zookeeper.connect=
 zookeeper.connection.timeout.ms=6000
 
 ############################# Group Coordinator Settings #############################
@@ -244,7 +244,7 @@ generate_consumer_config() {
     
     cat > "${INSTALL_DIR}/config/consumer.properties" << 'CONSUMER_CONF_EOF'
 # Consumer 配置文件
-zookeeper.connect=192.168.10.13:2182,192.168.10.14:2182,192.168.10.15:2182
+zookeeper.connect=
 zookeeper.connection.timeout.ms=6000
 group.id=test-consumer-group
 CONSUMER_CONF_EOF
@@ -262,7 +262,7 @@ acks=all
 retries=3
 batch.size=16384
 buffer.memory=33554432
-bootstrap.servers=192.168.10.13:9092,192.168.10.14:9092,192.168.10.15:9092
+bootstrap.servers=
 PRODUCER_CONF_EOF
     
     log_success "Producer 配置已生成"
