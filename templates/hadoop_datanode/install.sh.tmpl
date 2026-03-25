@@ -10,8 +10,26 @@ set -e
 INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
 DATA_BASE_DIR="{{.Global.data_base_dir}}"
 PKG_PRO_DIR="{{.Global.pkg_pro_dir}}"
-HADOOP_USER="{{.Global.user}}"
-HADOOP_GROUP="{{.Global.group}}"
+RUN_USER="{{.Global.user}}"
+RUN_GROUP="{{.Global.group}}"
+
+# ============================================================
+# 用户权限判断（符合规范5）
+# ============================================================
+if [ "$RUN_USER" = "root" ]; then
+    SUDO_CMD=""
+else
+    SUDO_CMD="sudo"
+fi
+
+# 辅助函数：以root权限执行命令
+run_as_root() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
 
 # ============================================================
 # DataNode配置
@@ -23,17 +41,18 @@ DATANODE_DATA_DIR="${DATA_BASE_DIR}/{{.Instance.Vars.datanode_data_subdir}}"
 # 创建目录
 # ============================================================
 echo "创建DataNode数据目录..."
-mkdir -p "${DATANODE_DATA_DIR}"
-mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/logs"
-mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/pids"
-mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/hdfs-sockets/dn"
+run_as_root mkdir -p "${DATANODE_DATA_DIR}"
+run_as_root mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/logs"
+run_as_root mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/pids"
+run_as_root mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/hdfs-sockets/dn"
 
 # ============================================================
-# 设置权限
+# 设置权限（符合规范6）
 # ============================================================
 echo "设置DataNode目录权限..."
-chown -R ${HADOOP_USER}:${HADOOP_GROUP} "${DATANODE_DATA_DIR}"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${DATANODE_DATA_DIR}"
 
 echo "Hadoop DataNode 安装准备完成！"
 echo "数据目录: ${DATANODE_DATA_DIR}"
 echo "请确保Hadoop已安装在: ${HADOOP_INSTALL_DIR}"
+echo "运行用户: ${RUN_USER}"

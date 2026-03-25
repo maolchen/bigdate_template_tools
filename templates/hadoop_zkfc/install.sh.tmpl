@@ -9,8 +9,26 @@ set -e
 # ============================================================
 INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
 DATA_BASE_DIR="{{.Global.data_base_dir}}"
-HADOOP_USER="{{.Global.user}}"
-HADOOP_GROUP="{{.Global.group}}"
+RUN_USER="{{.Global.user}}"
+RUN_GROUP="{{.Global.group}}"
+
+# ============================================================
+# 用户权限判断（符合规范5）
+# ============================================================
+if [ "$RUN_USER" = "root" ]; then
+    SUDO_CMD=""
+else
+    SUDO_CMD="sudo"
+fi
+
+# 辅助函数：以root权限执行命令
+run_as_root() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
 
 # ============================================================
 # ZKFC配置
@@ -22,8 +40,8 @@ NAMESERVICE="{{.Instance.Vars.nameservice}}"
 # 创建目录
 # ============================================================
 echo "创建ZKFC相关目录..."
-mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/logs"
-mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/pids"
+run_as_root mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/logs"
+run_as_root mkdir -p "${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/pids"
 
 # ============================================================
 # 在ZooKeeper中创建HA节点（提示信息）
@@ -40,3 +58,4 @@ echo "请确保:"
 echo "1. Hadoop已安装在: ${HADOOP_INSTALL_DIR}"
 echo "2. ZooKeeper集群已启动"
 echo "3. 在ZooKeeper中创建 /hadoop-ha/${NAMESERVICE} 节点"
+echo "运行用户: ${RUN_USER}"

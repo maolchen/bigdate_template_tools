@@ -30,6 +30,22 @@ JAVA_HOME="{{ .Global.java_home }}"
 DATA_BASE_DIR="{{ .Global.data_base_dir }}"
 INSTALL_BASE_DIR="{{ .Global.install_base_dir }}"
 
+# ==================== 用户权限判断（符合规范5）====================
+if [ "$RUN_USER" = "root" ]; then
+    SUDO_CMD=""
+else
+    SUDO_CMD="sudo"
+fi
+
+# 辅助函数：以root权限执行命令
+run_as_root() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
 # Zookeeper 配置
 ZK_DATA_DIR="${DATA_BASE_DIR}/{{ .Instance.Vars.zookeeper.data_subdir }}"
 ZK_CLIENT_PORT="{{ .Instance.Vars.zookeeper.client_port }}"
@@ -124,10 +140,10 @@ clean_old_install() {
 create_directories() {
     log_info "创建所需目录..."
     
-    mkdir -p "$ZK_DATA_DIR"
-    mkdir -p "$KAFKA_LOG_DIRS"
-    mkdir -p "$TEMP_DIR"
-    mkdir -p "$(dirname $INSTALL_DIR)"
+    run_as_root mkdir -p "$ZK_DATA_DIR"
+    run_as_root mkdir -p "$KAFKA_LOG_DIRS"
+    run_as_root mkdir -p "$TEMP_DIR"
+    run_as_root mkdir -p "$(dirname $INSTALL_DIR)"
     
     log_success "目录创建完成"
 }
@@ -337,7 +353,7 @@ GET_CHECK_EOF
 install_systemd_services() {
     log_info "安装 Systemd 服务文件..."
     
-    # Zookeeper Service
+    # Zookeeper Service（符合规范6：使用非root用户启动）
     cat > /etc/systemd/system/zookeeper.service << 'ZK_SERVICE_EOF'
 [Unit]
 Description=Apache Zookeeper server (Kafka embedded)
@@ -347,12 +363,12 @@ After=network.target remote-fs.target
 
 [Service]
 Type=simple
-Environment="JAVA_HOME={{ .Instance.Vars.java_home }}"
-Environment="PATH={{ .Instance.Vars.java_home }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
-User={{ .Instance.Vars.run_user }}
-Group={{ .Instance.Vars.run_group }}
-ExecStart={{ .Instance.Vars.install_dir }}/bin/zookeeper-server-start.sh {{ .Instance.Vars.install_dir }}/config/zookeeper.properties
-ExecStop={{ .Instance.Vars.install_dir }}/bin/zookeeper-server-stop.sh
+Environment="JAVA_HOME={{ .Global.java_home }}"
+Environment="PATH={{ .Global.java_home }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+User={{ .Global.user }}
+Group={{ .Global.group }}
+ExecStart={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/bin/zookeeper-server-start.sh {{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config/zookeeper.properties
+ExecStop={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/bin/zookeeper-server-stop.sh
 TimeoutSec=30
 Restart=on-failure
 
@@ -360,7 +376,7 @@ Restart=on-failure
 WantedBy=multi-user.target
 ZK_SERVICE_EOF
     
-    # Kafka Service
+    # Kafka Service（符合规范6：使用非root用户启动）
     cat > /etc/systemd/system/kafka.service << 'KAFKA_SERVICE_EOF'
 [Unit]
 Description=Apache Kafka Server (broker)
@@ -370,12 +386,12 @@ After=zookeeper.service
 
 [Service]
 Type=simple
-Environment="JAVA_HOME={{ .Instance.Vars.java_home }}"
-Environment="PATH={{ .Instance.Vars.java_home }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
-User={{ .Instance.Vars.run_user }}
-Group={{ .Instance.Vars.run_group }}
-ExecStart={{ .Instance.Vars.install_dir }}/bin/kafka-server-start.sh {{ .Instance.Vars.install_dir }}/config/server.properties
-ExecStop={{ .Instance.Vars.install_dir }}/bin/kafka-server-stop.sh
+Environment="JAVA_HOME={{ .Global.java_home }}"
+Environment="PATH={{ .Global.java_home }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+User={{ .Global.user }}
+Group={{ .Global.group }}
+ExecStart={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/bin/kafka-server-start.sh {{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config/server.properties
+ExecStop={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/bin/kafka-server-stop.sh
 Restart=on-failure
 
 [Install]
@@ -392,9 +408,9 @@ KAFKA_SERVICE_EOF
 set_permissions() {
     log_info "设置目录权限..."
     
-    chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_DIR"
-    chown -R ${RUN_USER}:${RUN_GROUP} "$ZK_DATA_DIR"
-    chown -R ${RUN_USER}:${RUN_GROUP} "$KAFKA_LOG_DIRS"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_DIR"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$ZK_DATA_DIR"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$KAFKA_LOG_DIRS"
     
     log_success "权限设置完成"
 }

@@ -30,6 +30,22 @@ JAVA_HOME="/data/jdk/"
 DATA_BASE_DIR="/data"
 INSTALL_BASE_DIR="/data/localization"
 
+# ==================== 用户权限判断（符合规范5）====================
+if [ "$RUN_USER" = "root" ]; then
+    SUDO_CMD=""
+else
+    SUDO_CMD="sudo"
+fi
+
+# 辅助函数：以root权限执行命令
+run_as_root() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
 # Zookeeper 配置
 ZK_DATA_DIR="${DATA_BASE_DIR}/zk-kafka-data"
 ZK_CLIENT_PORT="2182"
@@ -124,10 +140,10 @@ clean_old_install() {
 create_directories() {
     log_info "创建所需目录..."
     
-    mkdir -p "$ZK_DATA_DIR"
-    mkdir -p "$KAFKA_LOG_DIRS"
-    mkdir -p "$TEMP_DIR"
-    mkdir -p "$(dirname $INSTALL_DIR)"
+    run_as_root mkdir -p "$ZK_DATA_DIR"
+    run_as_root mkdir -p "$KAFKA_LOG_DIRS"
+    run_as_root mkdir -p "$TEMP_DIR"
+    run_as_root mkdir -p "$(dirname $INSTALL_DIR)"
     
     log_success "目录创建完成"
 }
@@ -331,7 +347,7 @@ GET_CHECK_EOF
 install_systemd_services() {
     log_info "安装 Systemd 服务文件..."
     
-    # Zookeeper Service
+    # Zookeeper Service（符合规范6：使用非root用户启动）
     cat > /etc/systemd/system/zookeeper.service << 'ZK_SERVICE_EOF'
 [Unit]
 Description=Apache Zookeeper server (Kafka embedded)
@@ -341,12 +357,12 @@ After=network.target remote-fs.target
 
 [Service]
 Type=simple
-Environment="JAVA_HOME=<no value>"
-Environment="PATH=<no value>/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
-User=<no value>
-Group=<no value>
-ExecStart=<no value>/bin/zookeeper-server-start.sh <no value>/config/zookeeper.properties
-ExecStop=<no value>/bin/zookeeper-server-stop.sh
+Environment="JAVA_HOME=/data/jdk/"
+Environment="PATH=/data/jdk//bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+User=bigdata
+Group=bigdata
+ExecStart=/data/localization/kafka/bin/zookeeper-server-start.sh /data/localization/kafka/config/zookeeper.properties
+ExecStop=/data/localization/kafka/bin/zookeeper-server-stop.sh
 TimeoutSec=30
 Restart=on-failure
 
@@ -354,7 +370,7 @@ Restart=on-failure
 WantedBy=multi-user.target
 ZK_SERVICE_EOF
     
-    # Kafka Service
+    # Kafka Service（符合规范6：使用非root用户启动）
     cat > /etc/systemd/system/kafka.service << 'KAFKA_SERVICE_EOF'
 [Unit]
 Description=Apache Kafka Server (broker)
@@ -364,12 +380,12 @@ After=zookeeper.service
 
 [Service]
 Type=simple
-Environment="JAVA_HOME=<no value>"
-Environment="PATH=<no value>/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
-User=<no value>
-Group=<no value>
-ExecStart=<no value>/bin/kafka-server-start.sh <no value>/config/server.properties
-ExecStop=<no value>/bin/kafka-server-stop.sh
+Environment="JAVA_HOME=/data/jdk/"
+Environment="PATH=/data/jdk//bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+User=bigdata
+Group=bigdata
+ExecStart=/data/localization/kafka/bin/kafka-server-start.sh /data/localization/kafka/config/server.properties
+ExecStop=/data/localization/kafka/bin/kafka-server-stop.sh
 Restart=on-failure
 
 [Install]
@@ -386,9 +402,9 @@ KAFKA_SERVICE_EOF
 set_permissions() {
     log_info "设置目录权限..."
     
-    chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_DIR"
-    chown -R ${RUN_USER}:${RUN_GROUP} "$ZK_DATA_DIR"
-    chown -R ${RUN_USER}:${RUN_GROUP} "$KAFKA_LOG_DIRS"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_DIR"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$ZK_DATA_DIR"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$KAFKA_LOG_DIRS"
     
     log_success "权限设置完成"
 }

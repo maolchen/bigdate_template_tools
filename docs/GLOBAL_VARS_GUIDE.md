@@ -54,28 +54,16 @@ RUN_GROUP="{{ .Global.group }}"
 JAVA_HOME="{{ .Global.java_home }}"
 ```
 
-## 已检查的服务配置
+### 4. 环境变量配置规范 
+环境变量的配置，根据{{ .Global.user }}判断是否为root用户，如果是root用户，则配置到/etc/profile，如果是非root用户，则配置到~/.bash_profile 和/etc/profile 
 
-### ✅ MySQL (已完成)
-- 使用 `mysql_data_subdir`, `mysql_config_subdir` 后缀
-- 已正确使用全局变量拼接
+### 5. 脚本编写规范  
+所有的shell脚本，默认使用{{ .Global.user }}这个用户进行执行，如果该用户为非root用户，所有需要进行root用户的操作，均在脚本中使用sudo 提权。 
 
-### ✅ Redis (已修改)
-- `data_dir: "/data/redis_26480"` → 改为 `data_subdir: "redis_26480"`
-- 删除 `run_user`, `run_group`
-- 模板中使用 `{{ .Global.user }}`, `{{ .Global.group }}`, `{{ .Global.data_base_dir }}`
+### 6. 服务部署和启动规范  
+所有的服务非必要不使用root用户启动，使用{{ .Global.user }}启动，systemctl 管理的或者有特殊说明的除外，如果有systemctl 启动的或者类似docker用户执行的，或者强制只能安装到/usr/local目录中的服务，均需要配置{{ .Global.user }}能访问和运维的权限，例如chown -R {{ .Global.user }}:{{ .Global.group }} xxx/
 
-### ✅ SSDB (已修改)
-- `data_dir: "/data/data2"` → 改为 `data_subdir: "data2"`
-- 删除 `run_user`, `run_group`
-- 模板中使用 `{{ .Global.user }}`, `{{ .Global.group }}`, `{{ .Global.data_base_dir }}`
 
-### ✅ Kafka (已修改)
-- `install_dir: "/data/localization/kafka"` → 改为 `install_subdir: "kafka"`
-- `zookeeper.data_dir: "/data/zk-kafka-data"` → 改为 `zookeeper.data_subdir: "zk-kafka-data"`
-- `server.log_dirs: "/data/kafka-data"` → 改为 `server.log_subdir: "kafka-data"`
-- 删除 `run_user`, `run_group`, `java_home`
-- 模板中使用 `{{ .Global.user }}`, `{{ .Global.group }}`, `{{ .Global.java_home }}`, `{{ .Global.install_base_dir }}`, `{{ .Global.data_base_dir }}`
 
 ## 模板修改规范
 
