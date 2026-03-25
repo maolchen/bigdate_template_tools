@@ -22,6 +22,15 @@ NTP_MASTER_IP="{{ $inst.Node.IP }}"
 {{- end }}
 {{- end }}
 
+# ==================== 权限辅助函数 ====================
+run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 # ==================== 日志函数 ====================
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -67,14 +76,14 @@ install_ntp() {
     # 尝试使用yum安装
     if command -v yum &> /dev/null; then
         log_info "使用yum安装ntp..."
-        yum install -y ntp
+        run_as_root yum install -y ntp
     elif command -v dnf &> /dev/null; then
         log_info "使用dnf安装ntp..."
-        dnf install -y ntp
+        run_as_root dnf install -y ntp
     elif command -v apt-get &> /dev/null; then
         log_info "使用apt-get安装ntp..."
-        apt-get update
-        apt-get install -y ntp
+        run_as_root apt-get update
+        run_as_root apt-get install -y ntp
     else
         log_error "无法找到可用的包管理器（yum/dnf/apt-get）"
         return 1
@@ -97,7 +106,7 @@ configure_ntp() {
     # 备份原有配置
     if [ -f "$NTP_CONF_FILE" ]; then
         log_info "备份原有配置文件..."
-        cp -f "$NTP_CONF_FILE" "${NTP_CONF_FILE}.bak.$(date +%Y%m%d%H%M%S)"
+        run_as_root cp -f "$NTP_CONF_FILE" "${NTP_CONF_FILE}.bak.$(date +%Y%m%d%H%M%S)"
     fi
     
     # 从当前脚本目录复制配置文件
@@ -106,19 +115,19 @@ configure_ntp() {
     
     if [ -f "$conf_source" ]; then
         log_info "从 $conf_source 复制配置文件..."
-        cp -f "$conf_source" "$NTP_CONF_FILE"
+        run_as_root cp -f "$conf_source" "$NTP_CONF_FILE"
     else
         log_error "配置文件源不存在: $conf_source"
         return 1
     fi
     
     # 创建日志和统计目录
-    mkdir -p /var/log/ntpstats
-    mkdir -p /var/lib/ntp
+    run_as_root mkdir -p /var/log/ntpstats
+    run_as_root mkdir -p /var/lib/ntp
     
     # 设置权限
-    chown -R ntp:ntp /var/log/ntpstats 2>/dev/null || true
-    chown -R ntp:ntp /var/lib/ntp 2>/dev/null || true
+    run_as_root chown -R ntp:ntp /var/log/ntpstats 2>/dev/null || true
+    run_as_root chown -R ntp:ntp /var/lib/ntp 2>/dev/null || true
     
     log_success "NTP Slave配置完成"
     return 0
@@ -131,23 +140,23 @@ manage_service() {
     # 停止chrony服务（如果存在，会与ntp冲突）
     if systemctl is-active chronyd &> /dev/null; then
         log_info "停止chrony服务（与ntp冲突）..."
-        systemctl stop chronyd
-        systemctl disable chronyd
+        run_as_root systemctl stop chronyd
+        run_as_root systemctl disable chronyd
     fi
     
     # 重载systemd
-    systemctl daemon-reload
+    run_as_root systemctl daemon-reload
     
     # 停止服务（如果正在运行）
     if check_ntp_service; then
         log_info "停止现有的NTP服务..."
-        systemctl stop ntpd
+        run_as_root systemctl stop ntpd
     fi
     
     # 启用并启动服务
     log_info "启用并启动NTP服务..."
-    systemctl enable ntpd
-    systemctl start ntpd
+    run_as_root systemctl enable ntpd
+    run_as_root systemctl start ntpd
     
     # 等待服务启动
     sleep 3

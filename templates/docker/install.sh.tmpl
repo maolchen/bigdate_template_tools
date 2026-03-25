@@ -25,6 +25,15 @@ DOCKER_USER="docker"
 SYSTEM_USER="{{ .Global.user }}"
 {{- end }}
 
+# ==================== 权限辅助函数 ====================
+run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 # ==================== 日志函数 ====================
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -77,7 +86,7 @@ install_docker() {
     # 2. 创建docker用户和组（如果不存在）
     if ! id "$DOCKER_USER" &>/dev/null; then
         log_info "创建docker用户组..."
-        groupadd -r docker
+        run_as_root groupadd -r docker
         log_info "docker用户组创建成功"
     else
         log_info "docker用户组已存在"
@@ -86,16 +95,16 @@ install_docker() {
     # 3. 解压安装包
     log_info "解压Docker安装包..."
     local tmp_dir="/tmp/docker_install_$$"
-    mkdir -p "$tmp_dir"
-    tar -xzf "$DOCKER_PACKAGE" -C "$tmp_dir"
+    run_as_root mkdir -p "$tmp_dir"
+    run_as_root tar -xzf "$DOCKER_PACKAGE" -C "$tmp_dir"
     
     # 4. 复制二进制文件到目标目录
     log_info "安装Docker二进制文件到 ${DOCKER_BIN_PATH}..."
     if [ -d "$tmp_dir/docker" ]; then
-        cp -f "$tmp_dir/docker/"* "${DOCKER_BIN_PATH}/"
+        run_as_root cp -f "$tmp_dir/docker/"* "${DOCKER_BIN_PATH}/"
     else
         # 某些安装包可能直接包含文件而不是docker子目录
-        cp -f "$tmp_dir/"* "${DOCKER_BIN_PATH}/" 2>/dev/null || true
+        run_as_root cp -f "$tmp_dir/"* "${DOCKER_BIN_PATH}/" 2>/dev/null || true
     fi
     
     # 5. 创建软链接到/usr/bin（如果bin_path不是/usr/bin）
@@ -103,20 +112,20 @@ install_docker() {
         log_info "创建软链接到 /usr/bin..."
         for bin_file in docker dockerd containerd containerd-shim containerd-shim-runc-v2 runc ctr; do
             if [ -f "${DOCKER_BIN_PATH}/${bin_file}" ]; then
-                ln -sf "${DOCKER_BIN_PATH}/${bin_file}" "/usr/bin/${bin_file}"
+                run_as_root ln -sf "${DOCKER_BIN_PATH}/${bin_file}" "/usr/bin/${bin_file}"
             fi
         done
     fi
     
     # 6. 设置权限
     log_info "设置文件权限..."
-    chmod +x "${DOCKER_BIN_PATH}"/docker* 2>/dev/null || true
-    chmod +x "${DOCKER_BIN_PATH}"/containerd* 2>/dev/null || true
-    chmod +x "${DOCKER_BIN_PATH}"/runc 2>/dev/null || true
-    chmod +x "${DOCKER_BIN_PATH}"/ctr 2>/dev/null || true
+    run_as_root chmod +x "${DOCKER_BIN_PATH}"/docker* 2>/dev/null || true
+    run_as_root chmod +x "${DOCKER_BIN_PATH}"/containerd* 2>/dev/null || true
+    run_as_root chmod +x "${DOCKER_BIN_PATH}"/runc 2>/dev/null || true
+    run_as_root chmod +x "${DOCKER_BIN_PATH}"/ctr 2>/dev/null || true
     
     # 7. 清理临时文件
-    rm -rf "$tmp_dir"
+    run_as_root rm -rf "$tmp_dir"
     log_info "Docker二进制文件安装完成"
     
     # 8. 安装systemd服务文件
@@ -126,7 +135,7 @@ install_docker() {
     {{- if .Global.user }}
     if id "$SYSTEM_USER" &>/dev/null; then
         log_info "将用户 ${SYSTEM_USER} 加入docker组..."
-        usermod -aG docker "$SYSTEM_USER"
+        run_as_root usermod -aG docker "$SYSTEM_USER"
         log_info "用户 ${SYSTEM_USER} 已加入docker组"
     fi
     {{- end }}
@@ -141,7 +150,7 @@ install_systemd_service() {
     log_info "配置Docker systemd服务..."
     
     # 创建docker.socket文件
-    cat > "$DOCKER_SOCKET_FILE" << 'SOCKETEOF'
+    run_as_root bash -c "cat > '$DOCKER_SOCKET_FILE' << 'SOCKETEOF'
 [Unit]
 Description=Docker Socket for the API
 
@@ -153,12 +162,12 @@ SocketGroup=docker
 
 [Install]
 WantedBy=sockets.target
-SOCKETEOF
+SOCKETEOF"
     
     # 复制docker.service文件（从模板目录）
     # 注意：实际部署时需要将docker.service.tmpl渲染后的文件放到对应位置
     # 这里我们直接使用内嵌的服务配置
-    cat > "$DOCKER_SERVICE_FILE" << 'SERVICEEOF'
+    run_as_root bash -c "cat > '$DOCKER_SERVICE_FILE' << 'SERVICEEOF'
 [Unit]
 Description=Docker Application Container Engine
 Documentation=https://docs.docker.com
@@ -169,7 +178,7 @@ Requires=docker.socket
 [Service]
 Type=notify
 ExecStart=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
-ExecReload=/bin/kill -s HUP $MAINPID
+ExecReload=/bin/kill -s HUP \$MAINPID
 TimeoutSec=0
 RestartSec=2
 Restart=always
@@ -185,10 +194,10 @@ OOMScoreAdjust=-500
 
 [Install]
 WantedBy=multi-user.target
-SERVICEEOF
+SERVICEEOF"
     
     # 重载systemd
-    systemctl daemon-reload
+    run_as_root systemctl daemon-reload
     log_info "Docker systemd服务配置完成"
 }
 
@@ -196,10 +205,10 @@ start_docker_service() {
     log_info "启动Docker服务..."
     
     # 启用并启动服务
-    systemctl enable docker.socket
-    systemctl enable docker.service
-    systemctl start docker.socket
-    systemctl start docker.service
+    run_as_root systemctl enable docker.socket
+    run_as_root systemctl enable docker.service
+    run_as_root systemctl start docker.socket
+    run_as_root systemctl start docker.service
     
     # 等待服务启动
     sleep 3
@@ -269,8 +278,8 @@ main() {
     elif [ $check_result -eq 1 ]; then
         log_warn "检测到不同版本的Docker，将重新安装"
         # 停止现有服务
-        systemctl stop docker 2>/dev/null || true
-        systemctl stop docker.socket 2>/dev/null || true
+        run_as_root systemctl stop docker 2>/dev/null || true
+        run_as_root systemctl stop docker.socket 2>/dev/null || true
     fi
     
     # 执行安装
