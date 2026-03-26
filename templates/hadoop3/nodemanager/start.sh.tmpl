@@ -1,11 +1,12 @@
 #!/bin/bash
-# Hadoop NodeManager 启动脚本
+# Hadoop 3 YARN NodeManager 服务启动脚本
 # 使用方法: bash start.sh
+# 参考: tmp/hadoop3/tasks/05_service_startup.yml
 
 set -e
 
 # ============================================================
-# 全局变量
+# 全局变量（遵循 GLOBAL_VARS_GUIDE.md 规范）
 # ============================================================
 INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
 DATA_BASE_DIR="{{.Global.data_base_dir}}"
@@ -13,7 +14,9 @@ RUN_USER="{{.Global.user}}"
 RUN_GROUP="{{.Global.group}}"
 JAVA_HOME="{{.Global.java_home}}"
 
-# 辅助函数：以root权限执行命令
+# ============================================================
+# 辅助函数
+# ============================================================
 run_as_root() {
     if [ "$RUN_USER" = "root" ]; then
         "$@"
@@ -22,18 +25,48 @@ run_as_root() {
     fi
 }
 
+run_as_user() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo -u ${RUN_USER} "$@"
+    fi
+}
+
+log_info() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+}
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
+}
+
+log_warn() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1"
+}
+
+is_process_running() {
+    pgrep -f "$1" > /dev/null 2>&1
+}
+
+check_port() {
+    local host="$1"
+    local port="$2"
+    timeout 5 bash -c "echo > /dev/tcp/${host}/${port}" 2>/dev/null
+}
+
 # ============================================================
-# Hadoop配置
+# Hadoop 配置
 # ============================================================
 HADOOP_HOME="${INSTALL_BASE_DIR}/{{.Instance.Vars.install_subdir}}"
 NM_LOCAL_DIR="${DATA_BASE_DIR}/{{.Instance.Vars.nodemanager_local_subdir}}"
 NM_LOG_DIR="${DATA_BASE_DIR}/{{.Instance.Vars.nodemanager_log_subdir}}"
 
 # ============================================================
-# 检查环境
+# 开始启动
 # ============================================================
 echo "============================================"
-echo "Hadoop NodeManager 启动脚本"
+echo "Hadoop 3 NodeManager 服务启动脚本"
 echo "============================================"
 echo "主机名: $(hostname)"
 echo "HADOOP_HOME: ${HADOOP_HOME}"
@@ -42,121 +75,129 @@ echo "日志目录: ${NM_LOG_DIR}"
 echo "运行用户: ${RUN_USER}"
 echo "============================================"
 
-# 检查Java环境
-if [ ! -d "${JAVA_HOME}" ]; then
-    echo "错误: JAVA_HOME 目录不存在: ${JAVA_HOME}"
-    exit 1
-fi
-
-# 检查Hadoop安装
-if [ ! -d "${HADOOP_HOME}" ]; then
-    echo "错误: HADOOP_HOME 目录不存在: ${HADOOP_HOME}"
-    echo "请先执行 install.sh 完成安装"
-    exit 1
-fi
-
-# ============================================================
-# 检查ResourceManager状态
-# ============================================================
-echo ""
-echo "检查ResourceManager状态..."
-
-RM_PORT=8032
-RM_READY=false
-
-{{- range $i, $inst := (serviceNodes "hadoop3/resourcemanager") }}
-echo "  检查 ResourceManager: {{$inst.Node.Hostname}}:{{$inst.Node.IP}}:${RM_PORT}"
-if timeout 5 bash -c "echo > /dev/tcp/{{$inst.Node.IP}}/${RM_PORT}" 2>/dev/null; then
-    echo "    [✓] 连接正常"
-    RM_READY=true
-fi
-{{- end }}
-
-if [ "$RM_READY" = "false" ]; then
-    echo ""
-    echo "警告: 无法连接到任何ResourceManager"
-    echo "请确保ResourceManager已启动"
-    read -p "是否继续启动NodeManager? (y/n): " CONTINUE
-    if [ "$CONTINUE" != "y" ]; then
-        echo "启动已取消"
-        exit 1
-    fi
-fi
-
-# ============================================================
-# 准备数据目录
-# ============================================================
-echo ""
-echo "准备NodeManager目录..."
-run_as_root mkdir -p "${NM_LOCAL_DIR}"
-run_as_root mkdir -p "${NM_LOG_DIR}"
-run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${NM_LOCAL_DIR}"
-run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${NM_LOG_DIR}"
-
-# 创建日志和PID目录
-run_as_root mkdir -p "${HADOOP_HOME}/logs"
-run_as_root mkdir -p "${HADOOP_HOME}/pids"
-run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/logs"
-run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/pids"
-
-# ============================================================
 # 设置环境变量
-# ============================================================
 export JAVA_HOME=${JAVA_HOME}
 export HADOOP_HOME=${HADOOP_HOME}
 export HADOOP_CONF_DIR=${HADOOP_HOME}/etc/hadoop
 export YARN_CONF_DIR=${HADOOP_HOME}/etc/hadoop
 export PATH=${PATH}:${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin
 
-cd ${HADOOP_HOME}
+# ============================================================
+# 步骤1: 检查前置条件
+# ============================================================
+log_info "步骤1: 检查前置条件..."
+
+if [ ! -d "${HADOOP_HOME}" ]; then
+    log_error "Hadoop未安装，请先执行 install.sh"
+    exit 1
+fi
+
+if [ ! -f "${HADOOP_CONF_DIR}/yarn-site.xml" ]; then
+    log_error "配置文件不存在，请先执行 deploy_config.sh"
+    exit 1
+fi
+
+log_info "前置条件检查通过"
 
 # ============================================================
-# 检查是否已运行
+# 步骤2: 检查 ResourceManager 状态
 # ============================================================
-if pgrep -f "org.apache.hadoop.yarn.server.nodemanager.NodeManager" > /dev/null 2>&1; then
-    echo ""
-    echo "NodeManager 已在运行中"
-    echo "进程ID: $(pgrep -f 'org.apache.hadoop.yarn.server.nodemanager.NodeManager')"
+log_info "步骤2: 检查 ResourceManager 状态..."
+
+RM_PORT="{{.Instance.Vars.resourcemanager_port}}"
+RM_READY=false
+
+{{- range $i, $inst := (serviceNodes "hadoop3/resourcemanager") }}
+if check_port "{{$inst.Node.IP}}" "${RM_PORT}"; then
+    log_info "ResourceManager {{$inst.Node.Hostname}}:{{$inst.Node.IP}}:${RM_PORT} 可连接"
+    RM_READY=true
+fi
+{{- end }}
+
+if [ "$RM_READY" = "false" ]; then
+    log_warn "无法连接到 ResourceManager"
+    log_warn "请确保 ResourceManager 已启动"
+    read -p "是否继续启动 NodeManager? (y/n): " CONTINUE
+    if [ "$CONTINUE" != "y" ]; then
+        log_info "启动已取消"
+        exit 0
+    fi
+fi
+
+# ============================================================
+# 步骤3: 准备数据目录
+# ============================================================
+log_info "步骤3: 准备数据目录..."
+
+# 本地目录
+if [ ! -d "${NM_LOCAL_DIR}" ]; then
+    run_as_root mkdir -p "${NM_LOCAL_DIR}"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${NM_LOCAL_DIR}"
+    log_info "本地目录已创建: ${NM_LOCAL_DIR}"
+else
+    log_info "本地目录已存在: ${NM_LOCAL_DIR}"
+fi
+
+# 日志目录
+if [ ! -d "${NM_LOG_DIR}" ]; then
+    run_as_root mkdir -p "${NM_LOG_DIR}"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${NM_LOG_DIR}"
+    log_info "日志目录已创建: ${NM_LOG_DIR}"
+else
+    log_info "日志目录已存在: ${NM_LOG_DIR}"
+fi
+
+# Hadoop日志和PID目录
+run_as_root mkdir -p "${HADOOP_HOME}/logs"
+run_as_root mkdir -p "${HADOOP_HOME}/pids"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/logs"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/pids"
+
+# ============================================================
+# 步骤4: 检查是否已运行
+# ============================================================
+log_info "步骤4: 检查服务状态..."
+
+if is_process_running "org.apache.hadoop.yarn.server.nodemanager.NodeManager"; then
+    log_info "NodeManager 已在运行中"
+    echo "进程ID: $(pgrep -f 'NodeManager')"
     exit 0
 fi
 
 # ============================================================
-# 启动NodeManager
+# 步骤5: 启动 NodeManager
 # ============================================================
-echo ""
-echo "启动NodeManager..."
+log_info "步骤5: 启动 NodeManager..."
 
-if [ "$RUN_USER" = "root" ]; then
-    ${HADOOP_HOME}/bin/yarn --daemon start nodemanager
-else
-    run_as_root -u ${RUN_USER} ${HADOOP_HOME}/bin/yarn --daemon start nodemanager
-fi
+cd ${HADOOP_HOME}
+run_as_user ${HADOOP_HOME}/bin/yarn --daemon start nodemanager
 
-# ============================================================
-# 验证启动
-# ============================================================
-echo ""
-echo "等待服务启动..."
 sleep 10
 
-if pgrep -f "org.apache.hadoop.yarn.server.nodemanager.NodeManager" > /dev/null 2>&1; then
-    echo "NodeManager 启动成功！"
-    echo "进程ID: $(pgrep -f 'org.apache.hadoop.yarn.server.nodemanager.NodeManager')"
-    
-    # 等待注册到ResourceManager
-    echo ""
-    echo "等待注册到ResourceManager..."
-    sleep 5
-    
-    echo ""
-    echo "============================================"
-    echo "NodeManager 启动完成"
-    echo "============================================"
-    echo ""
-    echo "验证命令:"
-    echo "  在ResourceManager节点执行: yarn node -list"
+# ============================================================
+# 步骤6: 验证启动
+# ============================================================
+log_info "步骤6: 验证启动..."
+
+if is_process_running "org.apache.hadoop.yarn.server.nodemanager.NodeManager"; then
+    PID=$(pgrep -f 'org.apache.hadoop.yarn.server.nodemanager.NodeManager')
+    log_info "NodeManager 启动成功 (PID: ${PID})"
 else
-    echo "错误: NodeManager 启动失败"
-    echo "请检查日志: ${HADOOP_HOME}/logs/yarn-*-nodemanager-*.log"
+    log_error "NodeManager 启动失败"
+    log_error "请检查日志: ${HADOOP_HOME}/logs/yarn-*-nodemanager-*.log"
     exit 1
 fi
+
+# ============================================================
+# 启动完成
+# ============================================================
+echo ""
+echo "============================================"
+echo "NodeManager 启动完成！"
+echo "============================================"
+echo "进程ID: ${PID}"
+echo "本地目录: ${NM_LOCAL_DIR}"
+echo "日志目录: ${NM_LOG_DIR}"
+echo ""
+echo "验证命令（在 ResourceManager 节点执行）:"
+echo "  yarn node -list"

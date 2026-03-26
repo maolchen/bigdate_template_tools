@@ -58,7 +58,8 @@ JAVA_HOME="{{ .Global.java_home }}"
 环境变量的配置，根据{{ .Global.user }}判断是否为root用户，如果是root用户，则配置到/etc/profile，如果是非root用户，则配置到~/.bash_profile 和/etc/profile 
 
 ### 5. 脚本编写规范  
-所有的shell脚本，默认使用{{ .Global.user }}这个用户进行执行，如果该用户为非root用户，所有需要进行root用户的操作，均在脚本中使用sudo 提权。 
+所有的shell脚本，默认使用{{ .Global.user }}这个用户进行执行，如果该用户为非root用户，所有需要进行root用户的操作，均在脚本中使用sudo 提权。
+脚本需要尽可能的具有幂等性-----重要  
 
 ### 6. 服务部署和启动规范  
 所有的服务非必要不使用root用户启动，使用{{ .Global.user }}启动，systemctl 管理的或者有特殊说明的除外，如果有systemctl 启动的或者类似docker用户执行的，或者强制只能安装到/usr/local目录中的服务，均需要配置{{ .Global.user }}能访问和运维的权限，例如chown -R {{ .Global.user }}:{{ .Global.group }} xxx/

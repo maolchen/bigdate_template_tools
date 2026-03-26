@@ -1,0 +1,27 @@
+[Unit]
+Description=Hadoop YARN NodeManager
+Documentation=https://hadoop.apache.org/docs/stable/hadoop-yarn/hadoop-yarn-site/YARN.html
+After=network.target network-online.target hadoop-yarn-resourcemanager.service
+Wants=network-online.target
+Requires=hadoop-yarn-resourcemanager.service
+
+[Service]
+Type=forking
+User={{.Global.user}}
+Group={{.Global.group}}
+Environment="JAVA_HOME={{.Global.java_home}}"
+Environment="HADOOP_HOME={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}"
+Environment="HADOOP_CONF_DIR={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/etc/hadoop"
+Environment="YARN_CONF_DIR={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/etc/hadoop"
+ExecStart={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/bin/yarn --daemon start nodemanager
+ExecStop={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/bin/yarn --daemon stop nodemanager
+PIDFile={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/pids/yarn-{{.Global.user}}-nodemanager.pid
+Restart=on-failure
+RestartSec=10
+
+# 安全加固
+LimitNOFILE=65536
+LimitNPROC=65536
+
+[Install]
+WantedBy=multi-user.target

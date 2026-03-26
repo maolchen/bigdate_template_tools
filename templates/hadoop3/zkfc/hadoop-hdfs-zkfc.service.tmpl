@@ -1,0 +1,26 @@
+[Unit]
+Description=Hadoop HDFS ZKFC (ZooKeeper Failover Controller)
+Documentation=https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HDFSHighAvailabilityWithQJM.html
+After=network.target network-online.target zookeeper.service
+Wants=network-online.target
+Requires=zookeeper.service
+
+[Service]
+Type=forking
+User={{.Global.user}}
+Group={{.Global.group}}
+Environment="JAVA_HOME={{.Global.java_home}}"
+Environment="HADOOP_HOME={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}"
+Environment="HADOOP_CONF_DIR={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/etc/hadoop"
+ExecStart={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/bin/hdfs --daemon start zkfc
+ExecStop={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/bin/hdfs --daemon stop zkfc
+PIDFile={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/pids/hadoop-{{.Global.user}}-zkfc.pid
+Restart=on-failure
+RestartSec=10
+
+# 安全加固
+LimitNOFILE=65536
+LimitNPROC=65536
+
+[Install]
+WantedBy=multi-user.target

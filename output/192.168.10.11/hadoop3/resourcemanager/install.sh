@@ -1,32 +1,21 @@
 #!/bin/bash
-# Hadoop ResourceManager 安装脚本
+# Hadoop 3 YARN ResourceManager 准备脚本
 # 使用方法: bash install.sh
+# 说明: Hadoop是统一安装的，此脚本仅准备YARN目录
 
 set -e
 
 # ============================================================
-# 全局变量
+# 全局变量（遵循 GLOBAL_VARS_GUIDE.md 规范）
 # ============================================================
 INSTALL_BASE_DIR="/data/localization"
 DATA_BASE_DIR="/data"
-SOFTWARE_DIR="/data/softwares"
-PKG_PRO_DIR="/data/20251027-yuwq-cdtest"
 RUN_USER="bigdata"
 RUN_GROUP="bigdata"
-JAVA_HOME="/data/jdk/"
 
 # ============================================================
-# 用户权限判断（符合规范5）
+# 辅助函数
 # ============================================================
-if [ "$RUN_USER" = "root" ]; then
-    SUDO_CMD=""
-    PROFILE_DIR="/etc/profile.d"
-else
-    SUDO_CMD="sudo"
-    PROFILE_DIR="/etc/profile.d"
-fi
-
-# 辅助函数：以root权限执行命令
 run_as_root() {
     if [ "$RUN_USER" = "root" ]; then
         "$@"
@@ -35,66 +24,82 @@ run_as_root() {
     fi
 }
 
-# ============================================================
-# Hadoop配置（从NameNode配置中获取共享变量）
-# ============================================================
-HADOOP_INSTALL_DIR="${INSTALL_BASE_DIR}/hadoop"
-HADOOP_PKG_NAME="hadoop-3.3.6.tar.gz"
-PACKAGE_SUBDIR="realtime-new-doris/realtime/hadoop3"
+log_info() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+}
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
+}
 
 # ============================================================
-# 创建目录
+# 配置
 # ============================================================
-echo "创建Hadoop目录..."
-run_as_root mkdir -p "${HADOOP_INSTALL_DIR}"
-run_as_root mkdir -p "${DATA_BASE_DIR}/hadoop/logs"
-run_as_root mkdir -p "${DATA_BASE_DIR}/hadoop/pids"
+HADOOP_HOME="${INSTALL_BASE_DIR}/hadoop"
+YARN_DIR="${DATA_BASE_DIR}/hadoop/hadoop-yarn"
 
 # ============================================================
-# 解压安装包（如果尚未安装）
+# 开始准备
 # ============================================================
-if [ ! -f "${HADOOP_INSTALL_DIR}/bin/hadoop" ]; then
-    echo "解压Hadoop安装包..."
-    if [ -f "${PKG_PRO_DIR}/${PACKAGE_SUBDIR}/${HADOOP_PKG_NAME}" ]; then
-        run_as_root tar -zxf "${PKG_PRO_DIR}/${PACKAGE_SUBDIR}/${HADOOP_PKG_NAME}" -C "${HADOOP_INSTALL_DIR}" --strip-components=1
-    else
-        echo "错误: 找不到Hadoop安装包 ${PKG_PRO_DIR}/${PACKAGE_SUBDIR}/${HADOOP_PKG_NAME}"
-        exit 1
-    fi
-else
-    echo "Hadoop已安装，跳过解压步骤"
-fi
-
-# ============================================================
-# 配置环境变量（符合规范4）
-# ============================================================
-echo "配置Hadoop环境变量..."
-HADOOP_HOME="${HADOOP_INSTALL_DIR}"
-
-# 环境变量内容
-ENV_CONTENT="export HADOOP_HOME=/data/localization/hadoop
-export PATH=\$PATH:\$HADOOP_HOME/bin:\$HADOOP_HOME/sbin
-export HADOOP_CONF_DIR=\$HADOOP_HOME/etc/hadoop
-export YARN_CONF_DIR=\$HADOOP_HOME/etc/hadoop"
-
-if [ "$RUN_USER" = "root" ]; then
-    # root用户：配置到 /etc/profile.d/
-    echo "$ENV_CONTENT" > ${PROFILE_DIR}/hadoop.sh
-    chmod +x ${PROFILE_DIR}/hadoop.sh
-    source ${PROFILE_DIR}/hadoop.sh
-else
-    # 非root用户：配置到 ~/.bash_profile 和 /etc/profile
-    echo "$ENV_CONTENT" >> ~/.bash_profile
-    run_as_root sh -c "echo '$ENV_CONTENT' >> /etc/profile"
-    source ~/.bash_profile
-fi
-
-# ============================================================
-# 设置权限（符合规范6）
-# ============================================================
-echo "设置Hadoop目录权限..."
-run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${HADOOP_INSTALL_DIR}"
-
-echo "Hadoop ResourceManager 安装完成！"
-echo "安装目录: ${HADOOP_INSTALL_DIR}"
+echo "============================================"
+echo "Hadoop 3 ResourceManager 准备脚本"
+echo "============================================"
+echo "主机名: $(hostname)"
+echo "HADOOP_HOME: ${HADOOP_HOME}"
+echo "YARN目录: ${YARN_DIR}"
 echo "运行用户: ${RUN_USER}"
+echo "============================================"
+
+# ============================================================
+# 步骤1: 检查Hadoop安装
+# ============================================================
+log_info "步骤1: 检查Hadoop安装..."
+
+if [ ! -d "${HADOOP_HOME}" ]; then
+    log_error "Hadoop未安装: ${HADOOP_HOME}"
+    log_error "请先在NameNode节点执行 install.sh 完成Hadoop安装"
+    exit 1
+fi
+
+if [ ! -f "${HADOOP_HOME}/bin/yarn" ]; then
+    log_error "YARN二进制文件不存在"
+    exit 1
+fi
+
+log_info "Hadoop安装检查通过"
+
+# ============================================================
+# 步骤2: 创建YARN目录
+# ============================================================
+log_info "步骤2: 创建YARN目录..."
+
+run_as_root mkdir -p "${YARN_DIR}"
+run_as_root mkdir -p "${YARN_DIR}/cache"
+run_as_root mkdir -p "${YARN_DIR}/containers"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${YARN_DIR}"
+run_as_root chmod -R 755 "${YARN_DIR}"
+log_info "YARN目录创建完成: ${YARN_DIR}"
+
+# ============================================================
+# 步骤3: 创建日志和PID目录
+# ============================================================
+log_info "步骤3: 创建日志和PID目录..."
+
+run_as_root mkdir -p "${HADOOP_HOME}/logs"
+run_as_root mkdir -p "${HADOOP_HOME}/pids"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/logs"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/pids"
+log_info "日志目录: ${HADOOP_HOME}/logs"
+log_info "PID目录: ${HADOOP_HOME}/pids"
+
+# ============================================================
+# 准备完成
+# ============================================================
+echo ""
+echo "============================================"
+echo "ResourceManager 准备完成！"
+echo "============================================"
+echo ""
+echo "后续步骤:"
+echo "1. 确保HDFS已启动"
+echo "2. 启动服务: bash start.sh"

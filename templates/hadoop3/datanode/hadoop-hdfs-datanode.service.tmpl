@@ -1,0 +1,26 @@
+[Unit]
+Description=Hadoop HDFS DataNode
+Documentation=https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HDFSHighAvailabilityWithQJM.html
+After=network.target network-online.target hadoop-hdfs-namenode.service
+Wants=network-online.target
+Requires=hadoop-hdfs-namenode.service
+
+[Service]
+Type=forking
+User={{.Global.user}}
+Group={{.Global.group}}
+Environment="JAVA_HOME={{.Global.java_home}}"
+Environment="HADOOP_HOME={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}"
+Environment="HADOOP_CONF_DIR={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/etc/hadoop"
+ExecStart={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/bin/hdfs --daemon start datanode
+ExecStop={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/bin/hdfs --daemon stop datanode
+PIDFile={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/pids/hadoop-{{.Global.user}}-datanode.pid
+Restart=on-failure
+RestartSec=10
+
+# 安全加固
+LimitNOFILE=65536
+LimitNPROC=65536
+
+[Install]
+WantedBy=multi-user.target
