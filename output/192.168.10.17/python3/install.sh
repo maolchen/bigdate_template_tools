@@ -24,6 +24,15 @@ PYTHON3_SOURCE_DIR="${PYTHON3_TMP_DIR}/Python-${PYTHON3_VERSION}"
 # 从版本号提取主版本号（如3.6.8 -> 3.6）
 PYTHON3_MAJOR_VERSION=$(echo "$PYTHON3_VERSION" | cut -d. -f1,2)
 
+# ==================== 权限辅助函数 ====================
+run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 # ==================== 日志函数 ====================
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -82,14 +91,14 @@ install_dependencies() {
     
     if command -v yum &> /dev/null; then
         log_info "使用yum安装依赖包..."
-        yum install -y "${deps[@]}"
+        run_as_root yum install -y "${deps[@]}"
     elif command -v dnf &> /dev/null; then
         log_info "使用dnf安装依赖包..."
-        dnf install -y "${deps[@]}"
+        run_as_root dnf install -y "${deps[@]}"
     elif command -v apt-get &> /dev/null; then
         log_info "使用apt-get安装依赖包..."
-        apt-get update
-        apt-get install -y zlib1g-dev libbz2-dev libssl-dev libncurses5-dev gcc make
+        run_as_root apt-get update
+        run_as_root apt-get install -y zlib1g-dev libbz2-dev libssl-dev libncurses5-dev gcc make
     else
         log_error "无法找到可用的包管理器（yum/dnf/apt-get）"
         return 1
@@ -111,7 +120,7 @@ extract_source() {
     
     # 创建临时目录
     if [ ! -d "$PYTHON3_TMP_DIR" ]; then
-        mkdir -p "$PYTHON3_TMP_DIR"
+        run_as_root mkdir -p "$PYTHON3_TMP_DIR"
     fi
     
     # 检查是否已解压
@@ -122,9 +131,9 @@ extract_source() {
     
     # 解压（支持.tar.xz和.tar.gz）
     if [[ "$PYTHON3_PACKAGE" == *.tar.xz ]]; then
-        tar -xJf "$PYTHON3_PACKAGE" -C "$PYTHON3_TMP_DIR"
+        run_as_root tar -xJf "$PYTHON3_PACKAGE" -C "$PYTHON3_TMP_DIR"
     elif [[ "$PYTHON3_PACKAGE" == *.tar.gz ]]; then
-        tar -xzf "$PYTHON3_PACKAGE" -C "$PYTHON3_TMP_DIR"
+        run_as_root tar -xzf "$PYTHON3_PACKAGE" -C "$PYTHON3_TMP_DIR"
     else
         log_error "不支持的压缩格式: $PYTHON3_PACKAGE"
         return 1
@@ -142,7 +151,7 @@ compile_install() {
     
     # 运行configure
     log_info "运行configure..."
-    ./configure --enable-shared
+    run_as_root ./configure --enable-shared
     
     # 编译
     log_info "编译Python3 (make all)..."
@@ -150,7 +159,7 @@ compile_install() {
     
     # 安装
     log_info "安装Python3 (make install)..."
-    make install
+    run_as_root make install
     
     log_success "Python3编译安装完成"
     return 0
@@ -177,13 +186,13 @@ copy_shared_lib() {
     for lib in $lib_pattern; do
         if [ -f "$lib" ]; then
             log_info "复制: $lib -> /usr/lib64/"
-            cp -a "$lib" /usr/lib64/
+            run_as_root cp -a "$lib" /usr/lib64/
         fi
     done
     
     # 更新动态链接库缓存
     log_info "更新动态链接库缓存..."
-    ldconfig
+    run_as_root ldconfig
     
     log_success "共享库复制完成"
     return 0

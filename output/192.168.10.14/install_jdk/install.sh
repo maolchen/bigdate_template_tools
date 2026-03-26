@@ -2,7 +2,7 @@
 # ============================================================
 # JDK 安装脚本
 # 服务: install_jdk
-# 节点: dw-worker2 (192.168.10.14)
+# 节点: realtime-kafka2 (192.168.10.14)
 # ============================================================
 
 set -e
@@ -22,6 +22,15 @@ SYSTEM_USER="bigdata"
 # 例如: jdk-8u202-linux-x64.tar.gz -> jdk1.8.0_202
 JDK_PKG_NAME="jdk-8u202-linux-x64.tar.gz"
 JDK_VERSION_DIR=$(echo "$JDK_PKG_NAME" | sed 's/-linux-x64.tar.gz//' | sed 's/jdk-/jdk1./' | sed 's/u/0_/' | sed 's/\([0-9]\+\)0_/\1_/')
+
+# ==================== 权限辅助函数 ====================
+run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
 
 # ==================== 日志函数 ====================
 log_info() {
@@ -80,11 +89,7 @@ backup_system_java() {
                 # 备份系统java命令
                 if [ ! -f "${dir}/java.bak" ]; then
                     log_info "备份系统Java: ${dir}/java -> ${dir}/java.bak"
-                    if [ -w "$dir" ]; then
-                        mv -f "${dir}/java" "${dir}/java.bak"
-                    else
-                        sudo mv -f "${dir}/java" "${dir}/java.bak"
-                    fi
+                    run_as_root mv -f "${dir}/java" "${dir}/java.bak"
                 else
                     log_info "已存在备份文件: ${dir}/java.bak"
                 fi
@@ -97,11 +102,7 @@ backup_system_java() {
                 if [ -f "$dir/$cmd" ] && [ ! -f "${dir}/${cmd}.bak" ]; then
                     if [[ "$dir/$cmd" != "${JDK_INSTALL_PATH}/bin/$cmd" ]]; then
                         log_info "备份: ${dir}/${cmd} -> ${dir}/${cmd}.bak"
-                        if [ -w "$dir" ]; then
-                            mv -f "${dir}/${cmd}" "${dir}/${cmd}.bak"
-                        else
-                            sudo mv -f "${dir}/${cmd}" "${dir}/${cmd}.bak"
-                        fi
+                        run_as_root mv -f "${dir}/${cmd}" "${dir}/${cmd}.bak"
                     fi
                 fi
             done
@@ -134,11 +135,7 @@ install_jdk() {
     local parent_dir=$(dirname "$JDK_INSTALL_PATH")
     if [ ! -d "$parent_dir" ]; then
         log_info "创建父目录: $parent_dir"
-        if [ -w "$(dirname "$parent_dir")" ]; then
-            mkdir -p "$parent_dir"
-        else
-            sudo mkdir -p "$parent_dir"
-        fi
+        run_as_root mkdir -p "$parent_dir"
     fi
     
     # 解压安装包
@@ -164,21 +161,12 @@ install_jdk() {
     
     if [ -d "$JDK_INSTALL_PATH" ]; then
         log_warn "目标目录已存在，备份..."
-        if [ -w "$JDK_INSTALL_PATH" ]; then
-            mv -f "$JDK_INSTALL_PATH" "${JDK_INSTALL_PATH}.bak.$(date +%Y%m%d%H%M%S)"
-        else
-            sudo mv -f "$JDK_INSTALL_PATH" "${JDK_INSTALL_PATH}.bak.$(date +%Y%m%d%H%M%S)"
-        fi
+        run_as_root mv -f "$JDK_INSTALL_PATH" "${JDK_INSTALL_PATH}.bak.$(date +%Y%m%d%H%M%S)"
     fi
     
     # 创建目标目录并移动内容
-    if [ -w "$(dirname "$JDK_INSTALL_PATH")" ]; then
-        mkdir -p "$JDK_INSTALL_PATH"
-        cp -r "$extracted_dir"/* "$JDK_INSTALL_PATH"/
-    else
-        sudo mkdir -p "$JDK_INSTALL_PATH"
-        sudo cp -r "$extracted_dir"/* "$JDK_INSTALL_PATH"/
-    fi
+    run_as_root mkdir -p "$JDK_INSTALL_PATH"
+    run_as_root cp -r "$extracted_dir"/* "$JDK_INSTALL_PATH"/
     
     # 清理临时文件
     rm -rf "$tmp_dir"
@@ -186,11 +174,7 @@ install_jdk() {
     # 设置权限
     log_info "设置JDK目录权限..."
     if [ -n "$SYSTEM_USER" ]; then
-        if [ -w "$JDK_INSTALL_PATH" ]; then
-            chown -R ${SYSTEM_USER}:${SYSTEM_USER} "$JDK_INSTALL_PATH"
-        else
-            sudo chown -R ${SYSTEM_USER}:${SYSTEM_USER} "$JDK_INSTALL_PATH"
-        fi
+        run_as_root chown -R ${SYSTEM_USER}:${SYSTEM_USER} "$JDK_INSTALL_PATH"
     fi
     
     log_success "JDK安装完成: ${JDK_INSTALL_PATH}"
@@ -222,7 +206,7 @@ export JAVA_HOME JAVA_BIN PATH CLASSPATH
         if grep -q "JAVA_HOME=${JDK_INSTALL_PATH}" /etc/profile 2>/dev/null; then
             log_info "环境变量已在/etc/profile中配置，跳过"
         else
-            echo "$env_content" >> /etc/profile
+            run_as_root bash -c "echo '$env_content' >> /etc/profile"
             log_success "环境变量已添加到 /etc/profile"
         fi
     else
@@ -248,7 +232,7 @@ export JAVA_HOME JAVA_BIN PATH CLASSPATH
             if grep -q "JAVA_HOME=${JDK_INSTALL_PATH}" /etc/profile 2>/dev/null; then
                 log_info "环境变量已在/etc/profile中配置，跳过"
             else
-                echo "$env_content" | sudo tee -a /etc/profile > /dev/null
+                run_as_root bash -c "echo '$env_content' >> /etc/profile"
                 log_success "环境变量已添加到 /etc/profile"
             fi
         fi
@@ -282,11 +266,7 @@ create_symlinks() {
                 fi
                 
                 # 创建软链接
-                if [ -w "$bin_dir" ]; then
-                    ln -sf "${java_bin}/${cmd}" "${bin_dir}/${cmd}"
-                else
-                    sudo ln -sf "${java_bin}/${cmd}" "${bin_dir}/${cmd}"
-                fi
+                run_as_root ln -sf "${java_bin}/${cmd}" "${bin_dir}/${cmd}"
             done
         fi
     done
@@ -332,7 +312,7 @@ main() {
     echo ""
     echo "========================================"
     echo "  JDK 安装脚本"
-    echo "  节点: dw-worker2 (192.168.10.14)"
+    echo "  节点: realtime-kafka2 (192.168.10.14)"
     echo "  安装路径: ${JDK_INSTALL_PATH}"
     echo "  系统用户: ${SYSTEM_USER}"
     echo "========================================"

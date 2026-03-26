@@ -23,6 +23,15 @@ INIT_DIR="/data/localization/mysql/init"
 TEMP_DIR="/data/tmp_install_dir"
 SQL_TOOLS_DIR="/data/tools"
 
+# ==================== 权限辅助函数 ====================
+run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 # ==================== 日志函数 ====================
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -97,13 +106,13 @@ upload_image() {
     
     # 检查临时目录
     if [ ! -d "$TEMP_DIR" ]; then
-        mkdir -p "$TEMP_DIR"
+        run_as_root mkdir -p "$TEMP_DIR"
     fi
     
     # 复制镜像到临时目录
     local dest_file="${TEMP_DIR}/mysql-5.7.33.tar"
     if [ "$MYSQL_IMAGE_FILE" != "$dest_file" ]; then
-        cp -f "$MYSQL_IMAGE_FILE" "$dest_file"
+        run_as_root cp -f "$MYSQL_IMAGE_FILE" "$dest_file"
         log_info "镜像已复制到: $dest_file"
     fi
     
@@ -140,19 +149,19 @@ create_directories() {
     
     # 数据目录
     if [ ! -d "$MYSQL_DATA_DIR" ]; then
-        mkdir -p "$MYSQL_DATA_DIR"
+        run_as_root mkdir -p "$MYSQL_DATA_DIR"
         log_info "创建数据目录: $MYSQL_DATA_DIR"
     fi
     
     # 配置目录
     if [ ! -d "$MYSQL_CONFIG_DIR" ]; then
-        mkdir -p "$MYSQL_CONFIG_DIR"
+        run_as_root mkdir -p "$MYSQL_CONFIG_DIR"
         log_info "创建配置目录: $MYSQL_CONFIG_DIR"
     fi
     
     # 初始化脚本目录
     if [ ! -d "$INIT_DIR" ]; then
-        mkdir -p "$INIT_DIR"
+        run_as_root mkdir -p "$INIT_DIR"
         log_info "创建初始化脚本目录: $INIT_DIR"
     fi
     
@@ -168,7 +177,7 @@ prepare_config() {
     
     # 复制my.cnf
     if [ -f "${script_dir}/my.cnf" ]; then
-        cp -f "${script_dir}/my.cnf" "${MYSQL_CONFIG_DIR}/my.cnf"
+        run_as_root cp -f "${script_dir}/my.cnf" "${MYSQL_CONFIG_DIR}/my.cnf"
         log_info "配置文件已复制: ${MYSQL_CONFIG_DIR}/my.cnf"
     else
         log_error "配置文件模板不存在: ${script_dir}/my.cnf"
@@ -177,8 +186,8 @@ prepare_config() {
     
     # 复制启动脚本
     if [ -f "${script_dir}/start_container.sh" ]; then
-        cp -f "${script_dir}/start_container.sh" "${INIT_DIR}/start_container.sh"
-        chmod 700 "${INIT_DIR}/start_container.sh"
+        run_as_root cp -f "${script_dir}/start_container.sh" "${INIT_DIR}/start_container.sh"
+        run_as_root chmod 700 "${INIT_DIR}/start_container.sh"
         log_info "启动脚本已复制: ${INIT_DIR}/start_container.sh"
     else
         log_error "启动脚本模板不存在: ${script_dir}/start_container.sh"
@@ -187,14 +196,14 @@ prepare_config() {
     
     # 复制初始化脚本
     if [ -f "${script_dir}/init_db.sh" ]; then
-        cp -f "${script_dir}/init_db.sh" "${INIT_DIR}/init_db.sh"
-        chmod 700 "${INIT_DIR}/init_db.sh"
+        run_as_root cp -f "${script_dir}/init_db.sh" "${INIT_DIR}/init_db.sh"
+        run_as_root chmod 700 "${INIT_DIR}/init_db.sh"
         log_info "初始化脚本已复制: ${INIT_DIR}/init_db.sh"
     fi
     
     if [ -f "${script_dir}/init_user.sh" ]; then
-        cp -f "${script_dir}/init_user.sh" "${INIT_DIR}/init_user.sh"
-        chmod 700 "${INIT_DIR}/init_user.sh"
+        run_as_root cp -f "${script_dir}/init_user.sh" "${INIT_DIR}/init_user.sh"
+        run_as_root chmod 700 "${INIT_DIR}/init_user.sh"
         log_info "用户初始化脚本已复制: ${INIT_DIR}/init_user.sh"
     fi
     

@@ -19,6 +19,15 @@ DNSMASQ_CONF_FILE="/etc/dnsmasq.conf"
 DNSMASQ_SERVICE="dnsmasq"
 LISTEN_ADDRESS="192.168.10.19"
 
+# ==================== 权限辅助函数 ====================
+run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 # ==================== 日志函数 ====================
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -64,14 +73,14 @@ install_dnsmasq() {
     # 尝试使用yum安装
     if command -v yum &> /dev/null; then
         log_info "使用yum安装dnsmasq..."
-        yum install -y dnsmasq
+        run_as_root yum install -y dnsmasq
     elif command -v dnf &> /dev/null; then
         log_info "使用dnf安装dnsmasq..."
-        dnf install -y dnsmasq
+        run_as_root dnf install -y dnsmasq
     elif command -v apt-get &> /dev/null; then
         log_info "使用apt-get安装dnsmasq..."
-        apt-get update
-        apt-get install -y dnsmasq
+        run_as_root apt-get update
+        run_as_root apt-get install -y dnsmasq
     else
         log_error "无法找到可用的包管理器（yum/dnf/apt-get）"
         return 1
@@ -94,13 +103,13 @@ configure_dnsmasq() {
     # 备份原有配置
     if [ -f "$DNSMASQ_CONF_FILE" ]; then
         log_info "备份原有配置文件..."
-        cp -f "$DNSMASQ_CONF_FILE" "${DNSMASQ_CONF_FILE}.bak.$(date +%Y%m%d%H%M%S)"
+        run_as_root cp -f "$DNSMASQ_CONF_FILE" "${DNSMASQ_CONF_FILE}.bak.$(date +%Y%m%d%H%M%S)"
     fi
     
     # 创建配置目录
     if [ ! -d "$DNSMASQ_CONF_DIR" ]; then
         log_info "创建配置目录: $DNSMASQ_CONF_DIR"
-        mkdir -p "$DNSMASQ_CONF_DIR"
+        run_as_root mkdir -p "$DNSMASQ_CONF_DIR"
     fi
     
     # 从当前脚本目录复制配置文件
@@ -110,7 +119,7 @@ configure_dnsmasq() {
     
     if [ -f "$conf_source" ]; then
         log_info "从 $conf_source 复制配置文件..."
-        cp -f "$conf_source" "$DNSMASQ_CONF_FILE"
+        run_as_root cp -f "$conf_source" "$DNSMASQ_CONF_FILE"
     else
         log_error "配置文件源不存在: $conf_source"
         return 1
@@ -133,18 +142,18 @@ manage_service() {
     log_info "管理Dnsmasq服务..."
     
     # 重载systemd
-    systemctl daemon-reload
+    run_as_root systemctl daemon-reload
     
     # 停止服务（如果正在运行）
     if check_dnsmasq_service; then
         log_info "停止现有的Dnsmasq服务..."
-        systemctl stop dnsmasq
+        run_as_root systemctl stop dnsmasq
     fi
     
     # 启用并启动服务
     log_info "启用并启动Dnsmasq服务..."
-    systemctl enable dnsmasq
-    systemctl start dnsmasq
+    run_as_root systemctl enable dnsmasq
+    run_as_root systemctl start dnsmasq
     
     # 等待服务启动
     sleep 2

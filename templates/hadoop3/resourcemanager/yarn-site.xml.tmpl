@@ -1,0 +1,123 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+
+<!-- NodeManager辅助服务 -->
+<property>
+  <name>yarn.nodemanager.aux-services</name>
+  <value>mapreduce_shuffle</value>
+</property>
+
+<property>
+  <name>yarn.nodemanager.aux-services.mapreduce_shuffle.class</name>
+  <value>org.apache.hadoop.mapred.ShuffleHandler</value>
+</property>
+
+<!-- NodeManager本地目录 -->
+<property>
+  <description>List of directories to store localized files in.</description>
+  <name>yarn.nodemanager.local-dirs</name>
+  <value>file://{{.Global.data_base_dir}}/{{.Instance.Vars.nodemanager_local_subdir}}/${user.name}/nm-local-dir</value>
+</property>
+
+<!-- NodeManager日志目录 -->
+<property>
+  <description>Where to store container logs.</description>
+  <name>yarn.nodemanager.log-dirs</name>
+  <value>file://{{.Global.data_base_dir}}/{{.Instance.Vars.nodemanager_log_subdir}}</value>
+</property>
+
+<!-- YARN应用类路径 -->
+<property>
+  <description>Classpath for typical applications.</description>
+  <name>yarn.application.classpath</name>
+  <value>
+    $HADOOP_CONF_DIR,
+    $HADOOP_COMMON_HOME/*,$HADOOP_COMMON_HOME/lib/*,
+    $HADOOP_HDFS_HOME/*,$HADOOP_HDFS_HOME/lib/*,
+    $HADOOP_MAPRED_HOME/*,$HADOOP_MAPRED_HOME/lib/*,
+    $HADOOP_YARN_HOME/*,$HADOOP_YARN_HOME/lib/*
+  </value>
+</property>
+
+<!-- ResourceManager HA配置 -->
+<property>
+  <name>yarn.resourcemanager.ha.enabled</name>
+  <value>true</value>
+</property>
+
+<property>
+  <name>yarn.resourcemanager.cluster-id</name>
+  <value>{{.Instance.Vars.yarn_cluster_id}}</value>
+</property>
+
+<property>
+  <name>yarn.resourcemanager.ha.rm-ids</name>
+  <value>{{range $i, $inst := (serviceNodes "hadoop3/resourcemanager")}}{{if $i}},{{end}}{{$inst.AutoID}}{{end}}</value>
+</property>
+
+{{ $webPort := .Instance.Vars.resourcemanager_web_port }}
+{{range $i, $inst := (serviceNodes "hadoop3/resourcemanager")}}
+<!-- ResourceManager地址: {{$inst.NodeName}} ({{$inst.AutoID}}) -->
+<property>
+  <name>yarn.resourcemanager.hostname.{{$inst.AutoID}}</name>
+  <value>{{$inst.NodeName}}</value>
+</property>
+
+<property>  
+  <name>yarn.resourcemanager.webapp.address.{{$inst.AutoID}}</name>  
+  <value>{{$inst.NodeName}}:{{$webPort}}</value>  
+</property> 
+{{end}}
+
+<!-- ZooKeeper地址（用于ResourceManager HA） -->
+<property>
+  <name>yarn.resourcemanager.zk-address</name>
+  <value>{{serviceEndpointsJoin "zookeeper" "client_port"}}</value>
+</property>
+
+<!-- 资源配置 -->
+<property>
+  <name>yarn.nodemanager.vmem-pmem-ratio</name>
+  <value>{{.Instance.Vars.vmem_pmem_ratio}}</value>
+</property>
+
+<property>
+  <name>yarn.scheduler.minimum-allocation-mb</name>
+  <value>{{.Instance.Vars.scheduler_minimum_allocation_mb}}</value>
+</property>
+
+<property>  
+  <name>yarn.nodemanager.remote-app-log-dir</name>
+  <value>{{.Instance.Vars.remote_app_log_dir}}</value>
+</property>
+
+<property>
+  <name>yarn.resourcemanager.scheduler.class</name>
+  <value>org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler</value>
+</property>
+
+<property>  
+  <name>yarn.scheduler.maximum-allocation-vcores</name>  
+  <value>{{.Instance.Vars.scheduler_maximum_allocation_vcores}}</value>
+</property>
+
+<!-- 日志配置 -->
+<property>
+  <name>yarn.nodemanager.delete.debug-delay-sec</name>
+  <value>86400</value>
+</property>
+
+<property>
+  <name>yarn.nodemanager.log.retain-seconds</name>
+  <value>86400</value>
+</property>
+
+<!-- 内存资源配置 -->
+<property>
+  <name>yarn.nodemanager.resource.memory-mb</name>
+  <value>{{.Instance.Vars.nodemanager_resource_memory_mb}}</value>
+  <description>Amount of physical memory, in MB, that can be allocated for containers.</description>
+</property>
+
+</configuration>

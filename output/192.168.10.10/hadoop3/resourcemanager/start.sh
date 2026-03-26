@@ -1,0 +1,197 @@
+#!/bin/bash
+# Hadoop ResourceManager 启动脚本
+# 使用方法: bash start.sh
+
+set -e
+
+# ============================================================
+# 全局变量
+# ============================================================
+INSTALL_BASE_DIR="/data/localization"
+DATA_BASE_DIR="/data"
+RUN_USER="bigdata"
+RUN_GROUP="bigdata"
+JAVA_HOME="/data/jdk/"
+
+# 辅助函数：以root权限执行命令
+run_as_root() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+# ============================================================
+# Hadoop配置
+# ============================================================
+HADOOP_HOME="${INSTALL_BASE_DIR}/hadoop"
+YARN_CLUSTER_ID="zhugeio2"
+RM_ID="rm1"
+RM_PORT="8032"
+RM_WEB_PORT="8089"
+
+# ============================================================
+# 检查环境
+# ============================================================
+echo "============================================"
+echo "Hadoop ResourceManager 启动脚本"
+echo "============================================"
+echo "主机名: $(hostname)"
+echo "ResourceManager ID: ${RM_ID}"
+echo "YARN集群ID: ${YARN_CLUSTER_ID}"
+echo "HADOOP_HOME: ${HADOOP_HOME}"
+echo "RPC端口: ${RM_PORT}"
+echo "Web端口: ${RM_WEB_PORT}"
+echo "运行用户: ${RUN_USER}"
+echo "============================================"
+
+# 检查Java环境
+if [ ! -d "${JAVA_HOME}" ]; then
+    echo "错误: JAVA_HOME 目录不存在: ${JAVA_HOME}"
+    exit 1
+fi
+
+# 检查Hadoop安装
+if [ ! -d "${HADOOP_HOME}" ]; then
+    echo "错误: HADOOP_HOME 目录不存在: ${HADOOP_HOME}"
+    echo "请先执行 install.sh 完成安装"
+    exit 1
+fi
+
+# ============================================================
+# 检查HDFS状态
+# ============================================================
+echo ""
+echo "检查HDFS状态..."
+
+NN_PORT=8020
+HDFS_READY=false
+echo "  检查 NameNode: dw-master1:192.168.10.10:${NN_PORT}"
+if timeout 5 bash -c "echo > /dev/tcp/192.168.10.10/${NN_PORT}" 2>/dev/null; then
+    echo "    [✓] 连接正常"
+    HDFS_READY=true
+fi
+echo "  检查 NameNode: dw-master2:192.168.10.11:${NN_PORT}"
+if timeout 5 bash -c "echo > /dev/tcp/192.168.10.11/${NN_PORT}" 2>/dev/null; then
+    echo "    [✓] 连接正常"
+    HDFS_READY=true
+fi
+
+if [ "$HDFS_READY" = "false" ]; then
+    echo ""
+    echo "警告: 无法连接到NameNode"
+    echo "请确保HDFS已启动"
+    read -p "是否继续? (y/n): " CONTINUE
+    if [ "$CONTINUE" != "y" ]; then
+        echo "启动已取消"
+        exit 1
+    fi
+fi
+
+# ============================================================
+# 检查ZooKeeper
+# ============================================================
+echo ""
+echo "检查ZooKeeper状态..."
+
+ZK_PORT=2181
+ZK_READY=false
+echo "  检查 ZooKeeper: dw-master1:192.168.10.10:${ZK_PORT}"
+if timeout 5 bash -c "echo > /dev/tcp/192.168.10.10/${ZK_PORT}" 2>/dev/null; then
+    echo "    [✓] 连接正常"
+    ZK_READY=true
+fi
+echo "  检查 ZooKeeper: dw-master2:192.168.10.11:${ZK_PORT}"
+if timeout 5 bash -c "echo > /dev/tcp/192.168.10.11/${ZK_PORT}" 2>/dev/null; then
+    echo "    [✓] 连接正常"
+    ZK_READY=true
+fi
+echo "  检查 ZooKeeper: dw-master3:192.168.10.12:${ZK_PORT}"
+if timeout 5 bash -c "echo > /dev/tcp/192.168.10.12/${ZK_PORT}" 2>/dev/null; then
+    echo "    [✓] 连接正常"
+    ZK_READY=true
+fi
+
+if [ "$ZK_READY" = "false" ]; then
+    echo ""
+    echo "警告: 无法连接到ZooKeeper"
+    echo "ResourceManager HA需要ZooKeeper支持"
+fi
+
+# ============================================================
+# 创建必要目录
+# ============================================================
+echo ""
+echo "创建日志和PID目录..."
+run_as_root mkdir -p "${HADOOP_HOME}/logs"
+run_as_root mkdir -p "${HADOOP_HOME}/pids"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/logs"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/pids"
+
+# ============================================================
+# 设置环境变量
+# ============================================================
+export JAVA_HOME=${JAVA_HOME}
+export HADOOP_HOME=${HADOOP_HOME}
+export HADOOP_CONF_DIR=${HADOOP_HOME}/etc/hadoop
+export YARN_CONF_DIR=${HADOOP_HOME}/etc/hadoop
+export PATH=${PATH}:${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin
+
+cd ${HADOOP_HOME}
+
+# ============================================================
+# 检查是否已运行
+# ============================================================
+if pgrep -f "org.apache.hadoop.yarn.server.resourcemanager.ResourceManager" > /dev/null 2>&1; then
+    echo ""
+    echo "ResourceManager 已在运行中"
+    echo "进程ID: $(pgrep -f 'org.apache.hadoop.yarn.server.resourcemanager.ResourceManager')"
+    exit 0
+fi
+
+# ============================================================
+# 启动ResourceManager
+# ============================================================
+echo ""
+echo "启动ResourceManager..."
+
+if [ "$RUN_USER" = "root" ]; then
+    ${HADOOP_HOME}/bin/yarn --daemon start resourcemanager
+else
+    run_as_root -u ${RUN_USER} ${HADOOP_HOME}/bin/yarn --daemon start resourcemanager
+fi
+
+# ============================================================
+# 验证启动
+# ============================================================
+echo ""
+echo "等待服务启动..."
+sleep 10
+
+if pgrep -f "org.apache.hadoop.yarn.server.resourcemanager.ResourceManager" > /dev/null 2>&1; then
+    echo "ResourceManager 启动成功！"
+    echo "进程ID: $(pgrep -f 'org.apache.hadoop.yarn.server.resourcemanager.ResourceManager')"
+    echo "RPC端口: ${RM_PORT}"
+    echo "Web端口: ${RM_WEB_PORT}"
+    echo ""
+    echo "Web UI: http://$(hostname):${RM_WEB_PORT}"
+    
+    # 检查HA状态
+    sleep 5
+    echo ""
+    echo "检查RM HA状态..."
+    RM_STATE=$(${HADOOP_HOME}/bin/yarn rmadmin -getServiceState "rm1" 2>/dev/null || echo "未知")
+    echo "  rm1 (dw-master1): ${RM_STATE}"
+    RM_STATE=$(${HADOOP_HOME}/bin/yarn rmadmin -getServiceState "rm2" 2>/dev/null || echo "未知")
+    echo "  rm2 (dw-master2): ${RM_STATE}"
+else
+    echo "错误: ResourceManager 启动失败"
+    echo "请检查日志: ${HADOOP_HOME}/logs/yarn-*-resourcemanager-*.log"
+    exit 1
+fi
+
+echo ""
+echo "============================================"
+echo "ResourceManager 启动完成"
+echo "============================================"

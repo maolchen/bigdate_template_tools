@@ -19,6 +19,15 @@ SCALA_INSTALL_DIR="/data/scala"
 SCALA_PACKAGE="/data/softwares/realtime-new-doris/realtime/kafka/scala-${SCALA_VERSION}.tgz"
 SYSTEM_USER="bigdata"
 
+# ==================== 权限辅助函数 ====================
+run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 # ==================== 日志函数 ====================
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -79,11 +88,7 @@ install_scala() {
     local parent_dir=$(dirname "$SCALA_INSTALL_DIR")
     if [ ! -d "$parent_dir" ]; then
         log_info "创建父目录: $parent_dir"
-        if [ -w "$(dirname "$parent_dir")" ]; then
-            mkdir -p "$parent_dir"
-        else
-            sudo mkdir -p "$parent_dir"
-        fi
+        run_as_root mkdir -p "$parent_dir"
     fi
     
     # 解压安装包
@@ -107,21 +112,12 @@ install_scala() {
     
     if [ -d "$SCALA_INSTALL_DIR" ]; then
         log_warn "目标目录已存在，备份..."
-        if [ -w "$SCALA_INSTALL_DIR" ]; then
-            mv -f "$SCALA_INSTALL_DIR" "${SCALA_INSTALL_DIR}.bak.$(date +%Y%m%d%H%M%S)"
-        else
-            sudo mv -f "$SCALA_INSTALL_DIR" "${SCALA_INSTALL_DIR}.bak.$(date +%Y%m%d%H%M%S)"
-        fi
+        run_as_root mv -f "$SCALA_INSTALL_DIR" "${SCALA_INSTALL_DIR}.bak.$(date +%Y%m%d%H%M%S)"
     fi
     
     # 创建目标目录并移动内容
-    if [ -w "$(dirname "$SCALA_INSTALL_DIR")" ]; then
-        mkdir -p "$SCALA_INSTALL_DIR"
-        cp -r "$extracted_dir"/* "$SCALA_INSTALL_DIR"/
-    else
-        sudo mkdir -p "$SCALA_INSTALL_DIR"
-        sudo cp -r "$extracted_dir"/* "$SCALA_INSTALL_DIR"/
-    fi
+    run_as_root mkdir -p "$SCALA_INSTALL_DIR"
+    run_as_root cp -r "$extracted_dir"/* "$SCALA_INSTALL_DIR"/
     
     # 清理临时文件
     rm -rf "$tmp_dir"
@@ -129,11 +125,7 @@ install_scala() {
     # 设置权限
     log_info "设置Scala目录权限..."
     if [ -n "$SYSTEM_USER" ]; then
-        if [ -w "$SCALA_INSTALL_DIR" ]; then
-            chown -R ${SYSTEM_USER}:${SYSTEM_USER} "$SCALA_INSTALL_DIR"
-        else
-            sudo chown -R ${SYSTEM_USER}:${SYSTEM_USER} "$SCALA_INSTALL_DIR"
-        fi
+        run_as_root chown -R ${SYSTEM_USER}:${SYSTEM_USER} "$SCALA_INSTALL_DIR"
     fi
     
     log_success "Scala安装完成: ${SCALA_INSTALL_DIR}"
@@ -163,7 +155,7 @@ export SCALA_HOME PATH
         if grep -q "SCALA_HOME=${SCALA_INSTALL_DIR}" /etc/profile 2>/dev/null; then
             log_info "环境变量已在/etc/profile中配置，跳过"
         else
-            echo "$env_content" >> /etc/profile
+            run_as_root bash -c "echo '$env_content' >> /etc/profile"
             log_success "环境变量已添加到 /etc/profile"
         fi
     else
@@ -189,7 +181,7 @@ export SCALA_HOME PATH
             if grep -q "SCALA_HOME=${SCALA_INSTALL_DIR}" /etc/profile 2>/dev/null; then
                 log_info "环境变量已在/etc/profile中配置，跳过"
             else
-                echo "$env_content" | sudo tee -a /etc/profile > /dev/null
+                run_as_root bash -c "echo '$env_content' >> /etc/profile"
                 log_success "环境变量已添加到 /etc/profile"
             fi
         fi
@@ -215,11 +207,7 @@ create_symlinks() {
         if [ -f "${scala_bin}/${cmd}" ]; then
             for bin_dir in "${bin_dirs[@]}"; do
                 # 创建软链接
-                if [ -w "$bin_dir" ]; then
-                    ln -sf "${scala_bin}/${cmd}" "${bin_dir}/${cmd}" 2>/dev/null || true
-                else
-                    sudo ln -sf "${scala_bin}/${cmd}" "${bin_dir}/${cmd}" 2>/dev/null || true
-                fi
+                run_as_root ln -sf "${scala_bin}/${cmd}" "${bin_dir}/${cmd}" 2>/dev/null || true
             done
         fi
     done

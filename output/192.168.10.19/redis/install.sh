@@ -22,6 +22,15 @@ RUN_USER="bigdata"
 RUN_GROUP="bigdata"
 DATA_BASE_DIR="/data"
 
+# ==================== 权限辅助函数 ====================
+run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 # ==================== 日志函数 ====================
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -106,14 +115,14 @@ create_directories() {
     log_info "创建安装和数据目录..."
     
     # 创建安装目录
-    mkdir -p "$INSTALL_DIR"
+    run_as_root mkdir -p "$INSTALL_DIR"
     
     # 创建数据目录
-    mkdir -p "${DATA_BASE_DIR}/redis_26480"
-    mkdir -p "${DATA_BASE_DIR}/redis_26380"
+    run_as_root mkdir -p "${DATA_BASE_DIR}/redis_26480"
+    run_as_root mkdir -p "${DATA_BASE_DIR}/redis_26380"
     
     # 创建临时目录
-    mkdir -p "$TEMP_DIR"
+    run_as_root mkdir -p "$TEMP_DIR"
     
     log_success "目录创建完成"
 }
@@ -122,7 +131,7 @@ create_directories() {
 extract_package() {
     log_info "解压Redis安装包..."
     
-    tar -xzf "$SOURCE_PACKAGE" -C "$TEMP_DIR"
+    run_as_root tar -xzf "$SOURCE_PACKAGE" -C "$TEMP_DIR"
     
     log_success "解压完成: $TEMP_DIR/redis-${REDIS_VERSION}"
 }
@@ -139,7 +148,7 @@ compile_install() {
     
     # 安装
     log_info "执行 make install..."
-    make install PREFIX="$INSTALL_DIR"
+    run_as_root make install PREFIX="$INSTALL_DIR"
     
     log_success "编译安装完成: $INSTALL_DIR"
 }
@@ -255,9 +264,9 @@ REDIS_CONF_EOF
 set_permissions() {
     log_info "设置目录权限..."
     
-    chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_DIR"
-    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/redis_26480"
-    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/redis_26380"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_DIR"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/redis_26480"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/redis_26380"
     
     log_success "权限设置完成"
 }
@@ -302,7 +311,7 @@ create_symlinks() {
     log_info "创建redis-cli软链接..."
     
     if [ -f "${INSTALL_DIR}/bin/redis-cli" ]; then
-        ln -sf "${INSTALL_DIR}/bin/redis-cli" /usr/bin/redis-cli
+        run_as_root ln -sf "${INSTALL_DIR}/bin/redis-cli" /usr/bin/redis-cli
         log_success "软链接创建完成: /usr/bin/redis-cli"
     fi
 }
@@ -313,7 +322,7 @@ add_startup_scripts() {
     
     # 确保 rc.local 可执行
     if [ -f /etc/rc.local ]; then
-        chmod +x /etc/rc.local
+        run_as_root chmod +x /etc/rc.local
     fi
     
     # 添加启动命令
@@ -321,9 +330,9 @@ add_startup_scripts() {
     
     if ! grep -q "redis_26480" /etc/rc.local 2>/dev/null; then
         if grep -q "^exit 0" /etc/rc.local 2>/dev/null; then
-            sed -i "/^exit 0/i ${START_CMD_26480}" /etc/rc.local
+            run_as_root sed -i "/^exit 0/i ${START_CMD_26480}" /etc/rc.local
         else
-            echo "${START_CMD_26480}" >> /etc/rc.local
+            run_as_root bash -c "echo '${START_CMD_26480}' >> /etc/rc.local"
         fi
         log_info "已添加实例 26480 到开机启动"
     fi
@@ -331,9 +340,9 @@ add_startup_scripts() {
     
     if ! grep -q "redis_26380" /etc/rc.local 2>/dev/null; then
         if grep -q "^exit 0" /etc/rc.local 2>/dev/null; then
-            sed -i "/^exit 0/i ${START_CMD_26380}" /etc/rc.local
+            run_as_root sed -i "/^exit 0/i ${START_CMD_26380}" /etc/rc.local
         else
-            echo "${START_CMD_26380}" >> /etc/rc.local
+            run_as_root bash -c "echo '${START_CMD_26380}' >> /etc/rc.local"
         fi
         log_info "已添加实例 26380 到开机启动"
     fi

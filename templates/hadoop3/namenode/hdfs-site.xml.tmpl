@@ -1,0 +1,119 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+
+<!-- 权限配置 -->
+<property>
+  <name>dfs.permissions.superusergroup</name>
+  <value>{{.Global.group}}</value>
+</property>
+
+<property>
+  <name>fs.permissions.umask-mode</name>
+  <value>022</value>
+</property>
+
+<property>
+  <name>dfs.namenode.acls.enabled</name>
+  <value>true</value>
+</property>
+
+<!-- DataNode数据目录 -->
+<property>
+  <name>dfs.datanode.data.dir</name>
+  <value>file://{{.Global.data_base_dir}}/{{.Instance.Vars.datanode_data_subdir}}</value>
+</property>
+
+<!-- HDFS块大小 -->
+<property>
+  <name>dfs.blocksize</name>
+  <value>{{.Instance.Vars.blocksize}}</value>
+</property>
+ 
+<!-- Nameservice配置 -->
+<property>
+  <name>dfs.nameservices</name>
+  <value>{{.Instance.Vars.nameservice}}</value>
+</property>
+ 
+<!-- NameNode数据目录 -->
+<property>
+  <name>dfs.namenode.name.dir</name>
+  <value>file://{{.Global.data_base_dir}}/{{.Instance.Vars.namenode_data_subdir}}</value>
+</property>
+ 
+<!-- HA NameNode列表 -->
+<property>
+  <name>dfs.ha.namenodes.{{.Instance.Vars.nameservice}}</name>
+  <value>{{range $i, $inst := (serviceNodes "hadoop3/namenode")}}{{if $i}},{{end}}{{$inst.NodeName}}{{end}}</value>
+</property>
+
+{{ $nameservice := .Instance.Vars.nameservice }}
+{{ $rpcPort := .Instance.Vars.namenode_rpc_port }}
+{{ $httpPort := .Instance.Vars.namenode_http_port }}
+{{range $i, $inst := (serviceNodes "hadoop3/namenode")}}
+<!-- NameNode RPC地址: {{$inst.NodeName}} -->
+<property>
+  <name>dfs.namenode.rpc-address.{{$nameservice}}.{{$inst.NodeName}}</name>
+  <value>{{$inst.NodeName}}:{{$rpcPort}}</value>
+</property>
+
+<!-- NameNode HTTP地址: {{$inst.NodeName}} -->
+<property>
+  <name>dfs.namenode.http-address.{{$nameservice}}.{{$inst.NodeName}}</name>
+  <value>{{$inst.NodeName}}:{{$httpPort}}</value>
+</property>
+{{end}}
+
+<!-- JournalNode共享编辑目录 -->
+<property>
+  <name>dfs.namenode.shared.edits.dir</name>
+  <value>qjournal://{{range $i, $inst := (serviceNodes "hadoop3/journalnode")}}{{if $i}};{{end}}{{$inst.NodeName}}:{{$.Instance.Vars.journalnode_port}}{{end}}/{{.Instance.Vars.nameservice}}</value>
+</property>
+
+<!-- 故障转移代理提供者 -->
+<property>
+  <name>dfs.client.failover.proxy.provider.{{.Instance.Vars.nameservice}}</name>
+  <value>org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider</value>
+</property>
+ 
+<!-- 故障转移SSH配置 -->
+<property>
+  <name>dfs.ha.fencing.ssh.private-key-files</name>
+  <value>/home/{{.Global.user}}/.ssh/id_rsa</value>
+</property>
+
+<property>
+  <name>dfs.ha.fencing.methods</name>
+  <value>shell(/bin/true)</value>
+</property>
+
+<!-- JournalNode编辑目录 -->
+<property>
+  <name>dfs.journalnode.edits.dir</name>
+  <value>{{.Global.data_base_dir}}/{{.Instance.Vars.journalnode_data_subdir}}</value>
+</property>
+
+<!-- 自动故障转移 -->
+<property>
+  <name>dfs.ha.automatic-failover.enabled</name>
+  <value>true</value>
+</property>
+
+<!-- 短路读取配置 -->
+<property>
+  <name>dfs.datanode.hdfs-blocks-metadata.enabled</name>
+  <value>true</value>
+</property>
+
+<property>
+  <name>dfs.client.read.shortcircuit</name>
+  <value>true</value>
+</property>
+
+<property>
+  <name>dfs.domain.socket.path</name>
+  <value>{{.Global.data_base_dir}}/{{.Instance.Vars.install_subdir}}/hdfs-sockets/dn</value>
+</property>
+
+</configuration>

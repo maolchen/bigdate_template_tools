@@ -23,6 +23,17 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # ============================================================
+# 权限辅助函数
+# ============================================================
+run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
+# ============================================================
 # 工具函数
 # ============================================================
 
@@ -31,7 +42,7 @@ log() {
     shift
     local msg="$@"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo -e "${timestamp} [${level}] ${msg}" | tee -a "$LOG_FILE"
+    echo -e "${timestamp} [${level}] ${msg}" | run_as_root tee -a "$LOG_FILE"
 }
 
 log_info() {
@@ -88,12 +99,12 @@ disable_firewall() {
     # 处理 firewalld
     if command_exists firewall-cmd; then
         if systemctl is-active firewalld >/dev/null 2>&1; then
-            systemctl stop firewalld && log_info "停止 firewalld 服务" || log_error "停止 firewalld 服务失败"
+            run_as_root systemctl stop firewalld && log_info "停止 firewalld 服务" || log_error "停止 firewalld 服务失败"
         else
             log_info "firewalld 服务已停止"
         fi
         if systemctl is-enabled firewalld >/dev/null 2>&1; then
-            systemctl disable firewalld && log_info "禁用 firewalld 开机自启" || log_error "禁用 firewalld 开机自启失败"
+            run_as_root systemctl disable firewalld && log_info "禁用 firewalld 开机自启" || log_error "禁用 firewalld 开机自启失败"
         else
             log_info "firewalld 已禁用开机自启"
         fi
@@ -104,12 +115,12 @@ disable_firewall() {
     # 处理 iptables（CentOS 6/7）
     if command_exists iptables; then
         if systemctl is-active iptables >/dev/null 2>&1 2>/dev/null; then
-            systemctl stop iptables 2>/dev/null && log_info "停止 iptables 服务" || true
-            systemctl disable iptables 2>/dev/null && log_info "禁用 iptables 开机自启" || true
+            run_as_root systemctl stop iptables 2>/dev/null && log_info "停止 iptables 服务" || true
+            run_as_root systemctl disable iptables 2>/dev/null && log_info "禁用 iptables 开机自启" || true
         fi
         if service iptables status >/dev/null 2>&1; then
-            service iptables stop && log_info "停止 iptables 服务" || true
-            chkconfig iptables off 2>/dev/null && log_info "禁用 iptables 开机自启" || true
+            run_as_root service iptables stop && log_info "停止 iptables 服务" || true
+            run_as_root chkconfig iptables off 2>/dev/null && log_info "禁用 iptables 开机自启" || true
         fi
     fi
     
@@ -133,18 +144,18 @@ disable_selinux() {
         log_info "SELinux 已处于 Disabled 状态"
     else
         # 临时关闭
-        setenforce 0 2>/dev/null && log_info "临时关闭 SELinux" || log_warn "临时关闭 SELinux 失败（可能需要重启）"
+        run_as_root setenforce 0 2>/dev/null && log_info "临时关闭 SELinux" || log_warn "临时关闭 SELinux 失败（可能需要重启）"
         
         # 永久关闭（修改配置文件）
         if [ -f /etc/selinux/config ]; then
             if grep -q "^SELINUX=disabled" /etc/selinux/config; then
                 log_info "SELinux 配置文件已设置为 disabled"
             elif grep -q "^SELINUX=" /etc/selinux/config; then
-                sed -i 's/^SELINUX=.*/SELINUX=disabled/g' /etc/selinux/config
+                run_as_root sed -i 's/^SELINUX=.*/SELINUX=disabled/g' /etc/selinux/config
                 log_info "修改 SELinux 配置文件为 disabled"
             else
-                sed -i '/^SELINUX=/d' /etc/selinux/config
-                echo "SELINUX=disabled" >> /etc/selinux/config
+                run_as_root sed -i '/^SELINUX=/d' /etc/selinux/config
+                run_as_root bash -c "echo 'SELINUX=disabled' >> /etc/selinux/config"
                 log_info "添加 SELinux 配置: SELINUX=disabled"
             fi
         fi
@@ -162,7 +173,7 @@ disable_swap() {
     # 临时关闭
     local swap_count=$(swapon -s | wc -l)
     if [ "$swap_count" -gt 0 ]; then
-        swapoff -a && log_info "临时关闭所有 swap 分区" || log_error "关闭 swap 失败"
+        run_as_root swapoff -a && log_info "临时关闭所有 swap 分区" || log_error "关闭 swap 失败"
     else
         log_info "Swap 已关闭"
     fi
@@ -170,7 +181,7 @@ disable_swap() {
     # 永久关闭（注释掉 /etc/fstab 中的 swap 行）
     if [ -f /etc/fstab ]; then
         if grep -q "^[^#].*swap" /etc/fstab; then
-            sed -i 's/^\([^#].*swap.*\)/#\1/g' /etc/fstab
+            run_as_root sed -i 's/^\([^#].*swap.*\)/#\1/g' /etc/fstab
             log_info "注释 /etc/fstab 中的 swap 配置"
         else
             log_info "/etc/fstab 中无 swap 配置，跳过"
@@ -192,7 +203,7 @@ load_kernel_modules() {
         if lsmod | grep -q "^${module}" 2>/dev/null; then
             log_info "内核模块已加载: $module"
         else
-            modprobe $module && log_info "加载内核模块: $module" || log_warn "加载内核模块失败: $module（可能需要安装额外包）"
+            run_as_root modprobe $module && log_info "加载内核模块: $module" || log_warn "加载内核模块失败: $module（可能需要安装额外包）"
         fi
         
         # 设置开机自动加载
@@ -200,8 +211,8 @@ load_kernel_modules() {
         if [ -f "$conf_file" ] && grep -q "^${module}$" "$conf_file"; then
             log_info "模块开机自启已配置: $module"
         else
-            mkdir -p /etc/modules-load.d
-            echo "$module" > "$conf_file"
+            run_as_root mkdir -p /etc/modules-load.d
+            run_as_root bash -c "echo '$module' > '$conf_file'"
             log_info "配置模块开机自启: $module"
         fi
     done
@@ -223,26 +234,26 @@ configure_sysctl() {
     local sysctl_file="/etc/sysctl.d/99-bigdata.conf"
     
     # 需要先加载 br_netfilter 模块，否则 bridge-nf-call 参数可能不生效
-    modprobe br_netfilter 2>/dev/null || true
+    run_as_root modprobe br_netfilter 2>/dev/null || true
     
     # 直接覆盖文件内容（独立配置文件，不影响系统默认配置）
-    cat > "$sysctl_file" << 'SYSCTL_EOF'
+    run_as_root bash -c "cat > '$sysctl_file' << 'SYSCTL_EOF'
 # BigData Platform Kernel Parameters
 # Generated by server_init script
-SYSCTL_EOF
-    echo "fs.file-max=6553560" >> "$sysctl_file"
-    echo "net.core.somaxconn=65536" >> "$sysctl_file"
-    echo "net.ipv4.ip_forward=1" >> "$sysctl_file"
-    echo "net.ipv4.tcp_max_syn_backlog=8192" >> "$sysctl_file"
-    echo "vm.dirty_background_ratio=5" >> "$sysctl_file"
-    echo "vm.max_map_count=2000000" >> "$sysctl_file"
-    echo "vm.panic_on_oom=0" >> "$sysctl_file"
-    echo "vm.swappiness=0" >> "$sysctl_file"
+SYSCTL_EOF"
+    run_as_root bash -c "echo 'fs.file-max=6553560' >> '$sysctl_file'"
+    run_as_root bash -c "echo 'net.core.somaxconn=65536' >> '$sysctl_file'"
+    run_as_root bash -c "echo 'net.ipv4.ip_forward=1' >> '$sysctl_file'"
+    run_as_root bash -c "echo 'net.ipv4.tcp_max_syn_backlog=8192' >> '$sysctl_file'"
+    run_as_root bash -c "echo 'vm.dirty_background_ratio=5' >> '$sysctl_file'"
+    run_as_root bash -c "echo 'vm.max_map_count=2000000' >> '$sysctl_file'"
+    run_as_root bash -c "echo 'vm.panic_on_oom=0' >> '$sysctl_file'"
+    run_as_root bash -c "echo 'vm.swappiness=0' >> '$sysctl_file'"
     
     log_info "写入 sysctl 配置文件: $sysctl_file"
     
     # 应用配置
-    sysctl -p "$sysctl_file" >/dev/null 2>&1 && log_info "应用 sysctl 配置成功" || log_warn "部分 sysctl 配置应用失败"
+    run_as_root sysctl -p "$sysctl_file" >/dev/null 2>&1 && log_info "应用 sysctl 配置成功" || log_warn "部分 sysctl 配置应用失败"
     
     log_info "========== sysctl配置完成 =========="
 }
@@ -257,11 +268,11 @@ configure_limits() {
     local limits_d_file="/etc/security/limits.d/90-nofile.conf"
     
     # 创建 limits.d 目录
-    mkdir -p /etc/security/limits.d
+    run_as_root mkdir -p /etc/security/limits.d
     
     # 备份原文件（如果需要）
     if [ -f "$limits_file" ] && [ ! -f "${limits_file}.bak" ]; then
-        cp "$limits_file" "${limits_file}.bak"
+        run_as_root cp "$limits_file" "${limits_file}.bak"
     fi
     
     # 定义limits配置数组
@@ -281,15 +292,15 @@ configure_limits() {
         if grep -q "$pattern" "$limits_file" 2>/dev/null; then
             log_info "limits 配置已存在: $config"
         else
-            echo "$config" >> "$limits_file"
+            run_as_root bash -c "echo '$config' >> '$limits_file'"
             log_info "添加 limits 配置: $config"
         fi
     done
     
     # 创建 limits.d/90-nofile.conf（部分系统优先读取此文件）
-    echo "# BigData Platform Limits Configuration" > "$limits_d_file"
+    run_as_root bash -c "echo '# BigData Platform Limits Configuration' > '$limits_d_file'"
     for config in "${limits_configs[@]}"; do
-        echo "$config" >> "$limits_d_file"
+        run_as_root bash -c "echo '$config' >> '$limits_d_file'"
     done
     log_info "创建 $limits_d_file"
     
@@ -297,7 +308,7 @@ configure_limits() {
     for pam_file in /etc/pam.d/login /etc/pam.d/sshd /etc/pam.d/su; do
         if [ -f "$pam_file" ]; then
             if ! grep -q "pam_limits.so" "$pam_file"; then
-                echo "session required pam_limits.so" >> "$pam_file"
+                run_as_root bash -c "echo 'session required pam_limits.so' >> '$pam_file'"
                 log_info "添加 pam_limits.so 到 $pam_file"
             fi
         fi
@@ -322,8 +333,8 @@ disable_thp() {
             log_info "透明大页已禁用"
         else
             # 临时禁用
-            echo never > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null && log_info "临时禁用透明大页" || log_warn "临时禁用透明大页失败"
-            echo never > /sys/kernel/mm/transparent_hugepage/defrag 2>/dev/null || true
+            run_as_root bash -c "echo never > /sys/kernel/mm/transparent_hugepage/enabled" 2>/dev/null && log_info "临时禁用透明大页" || log_warn "临时禁用透明大页失败"
+            run_as_root bash -c "echo never > /sys/kernel/mm/transparent_hugepage/defrag" 2>/dev/null || true
         fi
     else
         log_info "系统不支持透明大页配置"
@@ -343,14 +354,14 @@ fi
         if grep -q "transparent_hugepage" "$rc_local"; then
             log_info "rc.local 已配置透明大页禁用"
         else
-            echo "$thp_cmds" >> "$rc_local"
-            chmod +x "$rc_local"
+            run_as_root bash -c "echo '$thp_cmds' >> '$rc_local'"
+            run_as_root chmod +x "$rc_local"
             log_info "添加透明大页禁用配置到 rc.local"
         fi
     else
         # 使用 systemd 服务（CentOS 8/9, 麒麟V10等）
         local systemd_service="/etc/systemd/system/disable-thp.service"
-        cat > "$systemd_service" << 'EOF'
+        run_as_root bash -c "cat > '$systemd_service' << 'EOF'
 [Unit]
 Description=Disable Transparent Huge Pages (THP)
 DefaultDependencies=no
@@ -364,9 +375,9 @@ ExecStart=/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/defrag'
 
 [Install]
 WantedBy=basic.target
-EOF
-        systemctl daemon-reload
-        systemctl enable disable-thp.service >/dev/null 2>&1
+EOF"
+        run_as_root systemctl daemon-reload
+        run_as_root systemctl enable disable-thp.service >/dev/null 2>&1
         log_info "创建 systemd 服务禁用透明大页"
     fi
     
@@ -375,7 +386,7 @@ EOF
         if grep -q "transparent_hugepage=never" /etc/default/grub; then
             log_info "GRUB 已配置 transparent_hugepage=never"
         else
-            sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="transparent_hugepage=never /g' /etc/default/grub
+            run_as_root sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="transparent_hugepage=never /g' /etc/default/grub
             log_info "添加 GRUB 参数: transparent_hugepage=never"
             log_warn "需要执行 grub2-mkconfig 并重启生效"
         fi
@@ -395,8 +406,8 @@ create_directories() {
 
     # 创建用户和组（如果不存在）
     if ! id "$user" >/dev/null 2>&1; then
-        groupadd -f "$group" 2>/dev/null || true
-        useradd -g "$group" -s /bin/bash "$user" && log_info "创建用户: $user" || log_warn "用户可能已存在: $user"
+        run_as_root groupadd -f "$group" 2>/dev/null || true
+        run_as_root useradd -g "$group" -s /bin/bash "$user" && log_info "创建用户: $user" || log_warn "用户可能已存在: $user"
     else
         log_info "用户已存在: $user"
     fi
@@ -410,21 +421,21 @@ create_directories() {
 
 
     
-    setfacl -R -m u:$user:rwx $data_dir
+    run_as_root setfacl -R -m u:$user:rwx $data_dir
 
     
     for dir in "${dirs[@]}"; do
         if [ -d "$dir" ]; then
             log_info "目录已存在: $dir"
         else
-            mkdir -p "$dir" && log_info "创建目录: $dir" || log_error "创建目录失败: $dir"
+            run_as_root mkdir -p "$dir" && log_info "创建目录: $dir" || log_error "创建目录失败: $dir"
         fi
     done
     
 
     # 设置目录所有者
     for dir in "${dirs[@]}"; do
-        chown -R "$user:$group" "$dir" 2>/dev/null && log_info "设置目录所有者: $dir -> $user:$group" || true
+        run_as_root chown -R "$user:$group" "$dir" 2>/dev/null && log_info "设置目录所有者: $dir -> $user:$group" || true
     done
     
     log_info "========== 安装目录创建完成 =========="
@@ -444,16 +455,16 @@ set_timezone() {
     else
         # 方式1: timedatectl（推荐）
         if command_exists timedatectl; then
-            timedatectl set-timezone "$timezone" && log_info "设置时区: $timezone" || log_error "设置时区失败"
+            run_as_root timedatectl set-timezone "$timezone" && log_info "设置时区: $timezone" || log_error "设置时区失败"
         # 方式2: 符号链接
         elif [ -f "/usr/share/zoneinfo/$timezone" ]; then
-            ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime
+            run_as_root ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime
             log_info "设置时区: $timezone"
             # 写入 /etc/sysconfig/clock（CentOS 6/7）
             if [ -d /etc/sysconfig ]; then
-                echo "ZONE=\"$timezone\"" > /etc/sysconfig/clock
-                echo "UTC=false" >> /etc/sysconfig/clock
-                echo "ARC=false" >> /etc/sysconfig/clock
+                run_as_root bash -c "echo 'ZONE=\"$timezone\"' > /etc/sysconfig/clock"
+                run_as_root bash -c "echo 'UTC=false' >> /etc/sysconfig/clock"
+                run_as_root bash -c "echo 'ARC=false' >> /etc/sysconfig/clock"
             fi
         else
             log_error "时区文件不存在: /usr/share/zoneinfo/$timezone"
@@ -462,7 +473,7 @@ set_timezone() {
     
     # 同步硬件时钟
     if command_exists hwclock; then
-        hwclock --systohc 2>/dev/null && log_info "同步硬件时钟" || true
+        run_as_root hwclock --systohc 2>/dev/null && log_info "同步硬件时钟" || true
     fi
     
     log_info "========== 时区设置完成 =========="
@@ -483,20 +494,20 @@ configure_hosts() {
         log_info "/etc/hosts 已配置过，跳过"
     else
         # 添加所有节点信息
-        echo "192.168.10.10 dw-master1 dw-master1" >> "$hosts_file"
-        echo "192.168.10.11 dw-master2 dw-master2" >> "$hosts_file"
-        echo "192.168.10.12 dw-master3 dw-master3" >> "$hosts_file"
-        echo "192.168.10.13 dw-worker1 dw-worker1" >> "$hosts_file"
-        echo "192.168.10.14 dw-worker2 dw-worker2" >> "$hosts_file"
-        echo "192.168.10.15 dw-worker3 dw-worker3" >> "$hosts_file"
-        echo "192.168.10.20 etl-ssdb etl-ssdb" >> "$hosts_file"
-        echo "192.168.10.16 realtime-es1 realtime-es1" >> "$hosts_file"
-        echo "192.168.10.17 realtime-es2 realtime-es2" >> "$hosts_file"
-        echo "192.168.10.18 realtime-es3 realtime-es3" >> "$hosts_file"
-        echo "192.168.10.13 realtime-kafka1 realtime-kafka1" >> "$hosts_file"
-        echo "192.168.10.14 realtime-kafka2 realtime-kafka2" >> "$hosts_file"
-        echo "192.168.10.15 realtime-kafka3 realtime-kafka3" >> "$hosts_file"
-        echo "192.168.10.19 realtime-redis realtime-redis" >> "$hosts_file"
+        run_as_root bash -c "echo '192.168.10.10 dw-master1 dw-master1' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.11 dw-master2 dw-master2' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.12 dw-master3 dw-master3' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.13 dw-worker1 dw-worker1' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.14 dw-worker2 dw-worker2' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.15 dw-worker3 dw-worker3' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.20 etl-ssdb etl-ssdb' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.16 realtime-es1 realtime-es1' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.17 realtime-es2 realtime-es2' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.18 realtime-es3 realtime-es3' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.13 realtime-kafka1 realtime-kafka1' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.14 realtime-kafka2 realtime-kafka2' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.15 realtime-kafka3 realtime-kafka3' >> '$hosts_file'"
+        run_as_root bash -c "echo '192.168.10.19 realtime-redis realtime-redis' >> '$hosts_file'"
         log_info "添加所有节点的 hosts 映射"
     fi
     
@@ -518,7 +529,7 @@ optimize_journald() {
     fi
     
     # 创建 journald.conf.d 目录
-    mkdir -p "$journald_conf_d"
+    run_as_root mkdir -p "$journald_conf_d"
     
     # 创建自定义配置文件
     local custom_conf="$journald_conf_d/99-bigdata.conf"
@@ -527,7 +538,7 @@ optimize_journald() {
     if grep -q "^Storage=auto" "$custom_conf" 2>/dev/null; then
         log_info "journald Storage 已配置为 auto"
     else
-        cat > "$custom_conf" << 'EOF'
+        run_as_root bash -c "cat > '$custom_conf' << 'EOF'
 [Journal]
 # 存储方式：auto（自动选择，优先持久化存储）
 Storage=auto
@@ -539,13 +550,13 @@ SystemMaxUse=2G
 SystemMaxFileSize=100M
 # 日志保留天数
 MaxRetentionSec=7day
-EOF
+EOF"
         log_info "创建 journald 优化配置: $custom_conf"
     fi
     
     # 重启 journald 服务
     if command_exists systemctl; then
-        systemctl restart systemd-journald 2>/dev/null && log_info "重启 journald 服务" || log_warn "重启 journald 服务失败"
+        run_as_root systemctl restart systemd-journald 2>/dev/null && log_info "重启 journald 服务" || log_warn "重启 journald 服务失败"
     fi
     
     log_info "========== journald配置完成 =========="
@@ -563,14 +574,14 @@ configure_cron() {
     # 如果存在 cron.deny，需要处理
     if [ -f "$cron_deny" ]; then
         # 备份
-        mv "$cron_deny" "${cron_deny}.bak" 2>/dev/null
+        run_as_root mv "$cron_deny" "${cron_deny}.bak" 2>/dev/null
         log_info "备份 cron.deny -> cron.deny.bak"
     fi
     
     # 创建 cron.allow 文件
     if [ ! -f "$cron_allow" ]; then
-        touch "$cron_allow"
-        chmod 600 "$cron_allow"
+        run_as_root touch "$cron_allow"
+        run_as_root chmod 600 "$cron_allow"
         log_info "创建 cron.allow 文件"
     fi
     
@@ -581,7 +592,7 @@ configure_cron() {
         if grep -q "^${user}$" "$cron_allow" 2>/dev/null; then
             log_info "用户已有 crontab 权限: $user"
         else
-            echo "$user" >> "$cron_allow"
+            run_as_root bash -c "echo '$user' >> '$cron_allow'"
             log_info "添加 crontab 权限: $user"
         fi
     done
@@ -589,10 +600,10 @@ configure_cron() {
     # 确保 crond 服务运行
     if command_exists systemctl; then
         if ! systemctl is-active crond >/dev/null 2>&1; then
-            systemctl start crond && log_info "启动 crond 服务" || log_warn "启动 crond 服务失败"
+            run_as_root systemctl start crond && log_info "启动 crond 服务" || log_warn "启动 crond 服务失败"
         fi
         if ! systemctl is-enabled crond >/dev/null 2>&1; then
-            systemctl enable crond && log_info "设置 crond 开机自启" || true
+            run_as_root systemctl enable crond && log_info "设置 crond 开机自启" || true
         fi
     fi
     
@@ -628,7 +639,7 @@ main() {
     configure_cron
     
     # 创建完成标记
-    touch "$MARKER_FILE"
+    run_as_root touch "$MARKER_FILE"
     
     log_info "============================================"
     log_info "服务器初始化完成！"

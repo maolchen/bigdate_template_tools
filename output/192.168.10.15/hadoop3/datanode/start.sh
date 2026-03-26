@@ -1,0 +1,172 @@
+#!/bin/bash
+# Hadoop DataNode 启动脚本
+# 使用方法: bash start.sh
+
+set -e
+
+# ============================================================
+# 全局变量
+# ============================================================
+INSTALL_BASE_DIR="/data/localization"
+DATA_BASE_DIR="/data"
+RUN_USER="bigdata"
+RUN_GROUP="bigdata"
+JAVA_HOME="/data/jdk/"
+
+# 辅助函数：以root权限执行命令
+run_as_root() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+# ============================================================
+# Hadoop配置
+# ============================================================
+HADOOP_HOME="${INSTALL_BASE_DIR}/hadoop"
+DATANODE_DATA_DIR="${DATA_BASE_DIR}/dfs/dn"
+DATANODE_DATA_PORT="9866"
+DATANODE_HTTP_PORT="9864"
+NAMESERVICE="<no value>"
+
+# ============================================================
+# 检查环境
+# ============================================================
+echo "============================================"
+echo "Hadoop DataNode 启动脚本"
+echo "============================================"
+echo "主机名: $(hostname)"
+echo "HADOOP_HOME: ${HADOOP_HOME}"
+echo "数据目录: ${DATANODE_DATA_DIR}"
+echo "数据端口: ${DATANODE_DATA_PORT}"
+echo "HTTP端口: ${DATANODE_HTTP_PORT}"
+echo "运行用户: ${RUN_USER}"
+echo "============================================"
+
+# 检查Java环境
+if [ ! -d "${JAVA_HOME}" ]; then
+    echo "错误: JAVA_HOME 目录不存在: ${JAVA_HOME}"
+    exit 1
+fi
+
+# 检查Hadoop安装
+if [ ! -d "${HADOOP_HOME}" ]; then
+    echo "错误: HADOOP_HOME 目录不存在: ${HADOOP_HOME}"
+    echo "请先执行 install.sh 完成安装"
+    exit 1
+fi
+
+# ============================================================
+# 检查NameNode状态
+# ============================================================
+echo ""
+echo "检查NameNode状态..."
+
+NN_PORT="<no value>"
+NN_READY=false
+echo "  检查 NameNode: dw-master1:192.168.10.10:${NN_PORT}"
+if timeout 5 bash -c "echo > /dev/tcp/192.168.10.10/${NN_PORT}" 2>/dev/null; then
+    echo "    [✓] 连接正常"
+    NN_READY=true
+fi
+echo "  检查 NameNode: dw-master2:192.168.10.11:${NN_PORT}"
+if timeout 5 bash -c "echo > /dev/tcp/192.168.10.11/${NN_PORT}" 2>/dev/null; then
+    echo "    [✓] 连接正常"
+    NN_READY=true
+fi
+
+if [ "$NN_READY" = "false" ]; then
+    echo ""
+    echo "警告: 无法连接到任何NameNode节点"
+    echo "请确保NameNode已启动并处于Active状态"
+    read -p "是否继续启动DataNode? (y/n): " CONTINUE
+    if [ "$CONTINUE" != "y" ]; then
+        echo "启动已取消"
+        exit 1
+    fi
+fi
+
+# ============================================================
+# 准备数据目录
+# ============================================================
+echo ""
+echo "准备DataNode数据目录..."
+run_as_root mkdir -p "${DATANODE_DATA_DIR}"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${DATANODE_DATA_DIR}"
+
+# 创建短路读取socket目录
+SOCKET_DIR="${DATA_BASE_DIR}/hadoop/hdfs-sockets/dn"
+run_as_root mkdir -p "${SOCKET_DIR}"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${SOCKET_DIR}"
+
+# ============================================================
+# 设置环境变量
+# ============================================================
+export JAVA_HOME=${JAVA_HOME}
+export HADOOP_HOME=${HADOOP_HOME}
+export HADOOP_CONF_DIR=${HADOOP_HOME}/etc/hadoop
+export PATH=${PATH}:${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin
+
+cd ${HADOOP_HOME}
+
+# ============================================================
+# 检查是否已运行
+# ============================================================
+if pgrep -f "org.apache.hadoop.hdfs.server.datanode.DataNode" > /dev/null 2>&1; then
+    echo ""
+    echo "DataNode 已在运行中"
+    echo "进程ID: $(pgrep -f 'org.apache.hadoop.hdfs.server.datanode.DataNode')"
+    exit 0
+fi
+
+# ============================================================
+# 启动DataNode
+# ============================================================
+echo ""
+echo "启动DataNode..."
+
+if [ "$RUN_USER" = "root" ]; then
+    ${HADOOP_HOME}/bin/hdfs --daemon start datanode
+else
+    run_as_root -u ${RUN_USER} ${HADOOP_HOME}/bin/hdfs --daemon start datanode
+fi
+
+# ============================================================
+# 验证启动
+# ============================================================
+echo ""
+echo "等待服务启动..."
+sleep 10
+
+if pgrep -f "org.apache.hadoop.hdfs.server.datanode.DataNode" > /dev/null 2>&1; then
+    echo "DataNode 启动成功！"
+    echo "进程ID: $(pgrep -f 'org.apache.hadoop.hdfs.server.datanode.DataNode')"
+    echo "数据端口: ${DATANODE_DATA_PORT}"
+    echo "HTTP端口: ${DATANODE_HTTP_PORT}"
+    
+    # 检查端口
+    if command -v ss > /dev/null 2>&1; then
+        echo ""
+        echo "端口监听状态:"
+        ss -tlnp 2>/dev/null | grep -E "${DATANODE_DATA_PORT}|${DATANODE_HTTP_PORT}" || echo "端口未监听"
+    fi
+    
+    # 等待注册到NameNode
+    echo ""
+    echo "等待注册到NameNode..."
+    sleep 5
+else
+    echo "错误: DataNode 启动失败"
+    echo "请检查日志: ${HADOOP_HOME}/logs/hadoop-*-datanode-*.log"
+    exit 1
+fi
+
+echo ""
+echo "============================================"
+echo "DataNode 启动完成"
+echo "============================================"
+echo ""
+echo "验证命令:"
+echo "  在NameNode节点执行: hdfs dfsadmin -report"

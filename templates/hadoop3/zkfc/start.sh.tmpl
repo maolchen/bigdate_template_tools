@@ -1,0 +1,153 @@
+#!/bin/bash
+# Hadoop ZKFC (ZooKeeper Failover Controller) 启动脚本
+# 使用方法: bash start.sh
+
+set -e
+
+# ============================================================
+# 全局变量
+# ============================================================
+INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
+DATA_BASE_DIR="{{.Global.data_base_dir}}"
+RUN_USER="{{.Global.user}}"
+RUN_GROUP="{{.Global.group}}"
+JAVA_HOME="{{.Global.java_home}}"
+
+# 辅助函数：以root权限执行命令
+run_as_root() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+# ============================================================
+# Hadoop配置
+# ============================================================
+HADOOP_HOME="${INSTALL_BASE_DIR}/{{.Instance.Vars.install_subdir}}"
+NAMESERVICE="{{.Instance.Vars.nameservice}}"
+
+# ============================================================
+# 检查环境
+# ============================================================
+echo "============================================"
+echo "Hadoop ZKFC 启动脚本"
+echo "============================================"
+echo "主机名: $(hostname)"
+echo "Nameservice: ${NAMESERVICE}"
+echo "HADOOP_HOME: ${HADOOP_HOME}"
+echo "运行用户: ${RUN_USER}"
+echo "============================================"
+
+# 检查Java环境
+if [ ! -d "${JAVA_HOME}" ]; then
+    echo "错误: JAVA_HOME 目录不存在: ${JAVA_HOME}"
+    exit 1
+fi
+
+# 检查Hadoop安装
+if [ ! -d "${HADOOP_HOME}" ]; then
+    echo "错误: HADOOP_HOME 目录不存在: ${HADOOP_HOME}"
+    echo "请先执行 install.sh 完成安装"
+    exit 1
+fi
+
+# ============================================================
+# 检查依赖服务
+# ============================================================
+echo ""
+echo "检查依赖服务..."
+
+# 检查NameNode是否运行
+if ! pgrep -f "org.apache.hadoop.hdfs.server.namenode.NameNode" > /dev/null 2>&1; then
+    echo "警告: NameNode 未运行"
+    echo "建议先启动 NameNode"
+fi
+
+# 检查ZooKeeper
+ZK_PORT=2181
+ZK_READY=false
+
+{{- range $i, $inst := (serviceNodes "zookeeper") }}
+echo "  检查 ZooKeeper: {{$inst.Node.Hostname}}:{{$inst.Node.IP}}:${ZK_PORT}"
+if timeout 5 bash -c "echo > /dev/tcp/{{$inst.Node.IP}}/${ZK_PORT}" 2>/dev/null; then
+    echo "    [✓] 连接正常"
+    ZK_READY=true
+fi
+{{- end }}
+
+if [ "$ZK_READY" = "false" ]; then
+    echo ""
+    echo "错误: 无法连接到任何ZooKeeper节点"
+    echo "请确保ZooKeeper集群已启动"
+    exit 1
+fi
+
+# ============================================================
+# 设置环境变量
+# ============================================================
+export JAVA_HOME=${JAVA_HOME}
+export HADOOP_HOME=${HADOOP_HOME}
+export HADOOP_CONF_DIR=${HADOOP_HOME}/etc/hadoop
+export PATH=${PATH}:${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin
+
+cd ${HADOOP_HOME}
+
+# ============================================================
+# 检查是否已运行
+# ============================================================
+if pgrep -f "org.apache.hadoop.hdfs.tools.DFSZKFailoverController" > /dev/null 2>&1; then
+    echo ""
+    echo "ZKFC 已在运行中"
+    echo "进程ID: $(pgrep -f 'org.apache.hadoop.hdfs.tools.DFSZKFailoverController')"
+    exit 0
+fi
+
+# ============================================================
+# 启动ZKFC
+# ============================================================
+echo ""
+echo "启动ZKFC..."
+
+if [ "$RUN_USER" = "root" ]; then
+    ${HADOOP_HOME}/bin/hdfs --daemon start zkfc
+else
+    run_as_root -u ${RUN_USER} ${HADOOP_HOME}/bin/hdfs --daemon start zkfc
+fi
+
+# ============================================================
+# 验证启动
+# ============================================================
+echo ""
+echo "等待服务启动..."
+sleep 5
+
+if pgrep -f "org.apache.hadoop.hdfs.tools.DFSZKFailoverController" > /dev/null 2>&1; then
+    echo "ZKFC 启动成功！"
+    echo "进程ID: $(pgrep -f 'org.apache.hadoop.hdfs.tools.DFSZKFailoverController')"
+    
+    # 检查HA状态
+    sleep 3
+    echo ""
+    echo "检查HA状态..."
+    
+    # 尝试获取当前Active节点
+    ACTIVE_NN=$(${HADOOP_HOME}/bin/hdfs haadmin -getAllServiceState 2>/dev/null | grep "active" | head -1 | awk '{print $1}')
+    if [ -n "${ACTIVE_NN}" ]; then
+        echo "  当前Active NameNode: ${ACTIVE_NN}"
+    else
+        echo "  警告: 无法确定Active NameNode"
+    fi
+else
+    echo "错误: ZKFC 启动失败"
+    echo "请检查日志: ${HADOOP_HOME}/logs/hadoop-*-zkfc-*.log"
+    exit 1
+fi
+
+echo ""
+echo "============================================"
+echo "ZKFC 启动完成"
+echo "============================================"
+echo ""
+echo "提示: ZKFC会自动监控NameNode状态并实现故障转移"

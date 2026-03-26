@@ -23,6 +23,15 @@ RUN_USER="bigdata"
 RUN_GROUP="bigdata"
 DATA_BASE_DIR="/data"
 
+# ==================== 权限辅助函数 ====================
+run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 # ==================== 日志函数 ====================
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -102,17 +111,17 @@ stop_all_instances() {
 # ==================== 创建数据目录 ====================
 create_data_dirs() {
     log_info "创建数据目录..."
-    mkdir -p "${DATA_BASE_DIR}/data2"
+    run_as_root mkdir -p "${DATA_BASE_DIR}/data2"
     log_info "创建目录: ${DATA_BASE_DIR}/data2"
-    mkdir -p "${DATA_BASE_DIR}/data3"
+    run_as_root mkdir -p "${DATA_BASE_DIR}/data3"
     log_info "创建目录: ${DATA_BASE_DIR}/data3"
-    mkdir -p "${DATA_BASE_DIR}/data4"
+    run_as_root mkdir -p "${DATA_BASE_DIR}/data4"
     log_info "创建目录: ${DATA_BASE_DIR}/data4"
-    mkdir -p "${DATA_BASE_DIR}/data5"
+    run_as_root mkdir -p "${DATA_BASE_DIR}/data5"
     log_info "创建目录: ${DATA_BASE_DIR}/data5"
-    mkdir -p "${DATA_BASE_DIR}/data7"
+    run_as_root mkdir -p "${DATA_BASE_DIR}/data7"
     log_info "创建目录: ${DATA_BASE_DIR}/data7"
-    mkdir -p "${DATA_BASE_DIR}/data8"
+    run_as_root mkdir -p "${DATA_BASE_DIR}/data8"
     log_info "创建目录: ${DATA_BASE_DIR}/data8"
     
     log_success "数据目录创建完成"
@@ -123,11 +132,11 @@ extract_package() {
     log_info "解压SSDB安装包..."
     
     # 创建临时目录
-    mkdir -p "$TEMP_DIR"
+    run_as_root mkdir -p "$TEMP_DIR"
     
     # 解压 zip 文件
     if command -v unzip &> /dev/null; then
-        unzip -o "$SOURCE_PACKAGE" -d "$TEMP_DIR"
+        run_as_root unzip -o "$SOURCE_PACKAGE" -d "$TEMP_DIR"
     else
         log_error "unzip 命令不存在，请先安装 unzip"
         exit 1
@@ -156,7 +165,7 @@ compile_install() {
     
     # 安装（安装到默认目录 /usr/local/ssdb）
     log_info "执行 make install..."
-    make install
+    run_as_root make install
     
     if [ ! -f "${INSTALL_DIR}/ssdb-server" ]; then
         log_error "SSDB 安装失败，找不到 ssdb-server"
@@ -561,13 +570,13 @@ STOP_SCRIPT_EOF
 set_permissions() {
     log_info "设置目录权限..."
     
-    chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_DIR"
-    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data2"
-    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data3"
-    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data4"
-    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data5"
-    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data7"
-    chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data8"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_DIR"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data2"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data3"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data4"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data5"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data7"
+    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${DATA_BASE_DIR}/data8"
     
     log_success "权限设置完成"
 }
@@ -638,16 +647,16 @@ add_startup_scripts() {
     
     # 确保 rc.local 可执行
     if [ -f /etc/rc.local ]; then
-        chmod +x /etc/rc.local
+        run_as_root chmod +x /etc/rc.local
     fi
     
     START_CMD="su - ${RUN_USER} -c 'sh ${INSTALL_DIR}/start_ssdb_all.sh'"
     
     if ! grep -q "start_ssdb_all.sh" /etc/rc.local 2>/dev/null; then
         if grep -q "^exit 0" /etc/rc.local 2>/dev/null; then
-            sed -i "/^exit 0/i ${START_CMD}" /etc/rc.local
+            run_as_root sed -i "/^exit 0/i ${START_CMD}" /etc/rc.local
         else
-            echo "${START_CMD}" >> /etc/rc.local
+            run_as_root bash -c "echo '${START_CMD}' >> /etc/rc.local"
         fi
         log_info "已添加到开机启动"
     fi

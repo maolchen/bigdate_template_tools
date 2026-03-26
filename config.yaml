@@ -144,28 +144,28 @@ serviceTop:
     nodes: [realtime-kafka1, realtime-kafka2, realtime-kafka3]
     id_auto_derive: true
   
-  # ==================== 第四步：Hadoop生态 ====================
+  # ==================== 第四步：Hadoop 3 生态 ====================
   # HDFS HA组件
-  hadoop_namenode:
+  hadoop3/namenode:
     nodes: [dw-master1, dw-master2]
     id_auto_derive: true
   
-  hadoop_journalnode:
+  hadoop3/journalnode:
     nodes: [dw-master1, dw-master2, dw-master3]
     id_auto_derive: true
   
-  hadoop_datanode:
+  hadoop3/datanode:
     nodes: [dw-worker1, dw-worker2, dw-worker3]
   
-  hadoop_zkfc:
+  hadoop3/zkfc:
     nodes: [dw-master1, dw-master2]
   
   # YARN HA组件
-  hadoop_resourcemanager:
+  hadoop3/resourcemanager:
     nodes: [dw-master1, dw-master2]
     id_auto_derive: true
   
-  hadoop_nodemanager:
+  hadoop3/nodemanager:
     nodes: [dw-worker1, dw-worker2, dw-worker3]
   
   spark_master:
@@ -478,8 +478,8 @@ serverConfig:
           partitions: 1
           replication_factor: 1
   
-  # ==================== Hadoop生态 ====================
-  hadoop_namenode:
+  # ==================== Hadoop 3 生态 ====================
+  hadoop3/namenode:
     id_field: "namenode_id"
     id_format: "nn{index+1}"
     description: "HDFS NameNode（HA模式）"
@@ -512,7 +512,7 @@ serverConfig:
       # HDFS块大小
       blocksize: "268435456"
   
-  hadoop_journalnode:
+  hadoop3/journalnode:
     id_field: "journalnode_id"
     id_format: "jn{index+1}"
     description: "HDFS JournalNode（HA模式）"
@@ -522,7 +522,7 @@ serverConfig:
       journalnode_data_subdir: "dfs/jn"
       journalnode_port: 8485
   
-  hadoop_datanode:
+  hadoop3/datanode:
     description: "HDFS DataNode"
     vars:
       # 共享NameNode的安装目录和配置
@@ -532,14 +532,14 @@ serverConfig:
       datanode_http_port: 9864
       blocksize: "268435456"
   
-  hadoop_zkfc:
+  hadoop3/zkfc:
     description: "HDFS ZKFailoverController（HA模式）"
     vars:
       # 共享NameNode的安装目录和配置
       install_subdir: "hadoop"
       nameservice: "zhugeio"
   
-  hadoop_resourcemanager:
+  hadoop3/resourcemanager:
     id_field: "rm_id"
     id_format: "rm{index+1}"
     description: "YARN ResourceManager（HA模式）"
@@ -565,7 +565,7 @@ serverConfig:
       nodemanager_log_subdir: "hadoop3/hadoop-yarn/containers"
       remote_app_log_dir: "hdfs://zhugeio/var/log/hadoop-yarn/apps"
   
-  hadoop_nodemanager:
+  hadoop3/nodemanager:
     description: "YARN NodeManager"
     vars:
       # 共享NameNode的安装目录和配置
