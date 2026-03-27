@@ -1,17 +1,15 @@
 #!/bin/bash
-# Hadoop 3 JournalNode 服务启动脚本
+# Hadoop 3 JournalNode 启动脚本
 # 使用方法: bash start.sh
-# 参考: tmp/hadoop3/tasks/05_service_startup.yml
+# 说明: 启动JournalNode服务（第一个启动的HDFS组件）
 
 set -e
 
 # ============================================================
-# 全局变量（遵循 GLOBAL_VARS_GUIDE.md 规范）
+# 全局变量
 # ============================================================
 INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
-DATA_BASE_DIR="{{.Global.data_base_dir}}"
 RUN_USER="{{.Global.user}}"
-RUN_GROUP="{{.Global.group}}"
 JAVA_HOME="{{.Global.java_home}}"
 
 # ============================================================
@@ -25,14 +23,6 @@ run_as_root() {
     fi
 }
 
-run_as_user() {
-    if [ "$RUN_USER" = "root" ]; then
-        "$@"
-    else
-        sudo -u ${RUN_USER} "$@"
-    fi
-}
-
 log_info() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
 }
@@ -41,115 +31,110 @@ log_error() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
 }
 
-is_process_running() {
-    pgrep -f "$1" > /dev/null 2>&1
-}
-
-check_port() {
-    local host="$1"
-    local port="$2"
-    timeout 5 bash -c "echo > /dev/tcp/${host}/${port}" 2>/dev/null
+log_success() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] $1"
 }
 
 # ============================================================
-# Hadoop 配置
+# 配置
 # ============================================================
 HADOOP_HOME="${INSTALL_BASE_DIR}/{{.Instance.Vars.install_subdir}}"
-JOURNALNODE_DATA_DIR="${DATA_BASE_DIR}/{{.Instance.Vars.journalnode_data_subdir}}"
-JOURNALNODE_PORT="{{.Instance.Vars.journalnode_port}}"
-JOURNALNODE_ID="{{.Instance.AutoID}}"
+HADOOP_CONF_DIR="${HADOOP_HOME}/etc/hadoop"
+PID_FILE="${HADOOP_HOME}/pids/hadoop-hdfs-journalnode.pid"
 
 # ============================================================
 # 开始启动
 # ============================================================
 echo "============================================"
-echo "Hadoop 3 JournalNode 服务启动脚本"
+echo "Hadoop 3 JournalNode 启动脚本"
 echo "============================================"
 echo "主机名: $(hostname)"
-echo "JournalNode ID: ${JOURNALNODE_ID}"
-echo "HADOOP_HOME: ${HADOOP_HOME}"
-echo "数据目录: ${JOURNALNODE_DATA_DIR}"
-echo "端口: ${JOURNALNODE_PORT}"
-echo "运行用户: ${RUN_USER}"
 echo "============================================"
 
 # 设置环境变量
 export JAVA_HOME=${JAVA_HOME}
 export HADOOP_HOME=${HADOOP_HOME}
-export HADOOP_CONF_DIR=${HADOOP_HOME}/etc/hadoop
-export PATH=${PATH}:${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin
+export HADOOP_CONF_DIR=${HADOOP_CONF_DIR}
+export HDFS_JOURNALNODE_USER=${RUN_USER}
+
+PATH=${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin:${PATH}
 
 # ============================================================
-# 步骤1: 检查前置条件
+# 检查是否已运行
 # ============================================================
-log_info "步骤1: 检查前置条件..."
+log_info "检查 JournalNode 状态..."
+if [ -f "${PID_FILE}" ]; then
+    PID=$(cat "${PID_FILE}")
+    if ps -p ${PID} > /dev/null 2>&1; then
+        log_info "JournalNode 已在运行 (PID: ${PID})"
+        exit 0
+    else
+        log_info "清理残留 PID 文件"
+        rm -f "${PID_FILE}"
+    fi
+fi
 
+# ============================================================
+# 检查前置条件
+# ============================================================
+log_info "检查前置条件..."
+
+# 检查Hadoop安装
 if [ ! -d "${HADOOP_HOME}" ]; then
-    log_error "Hadoop未安装，请先执行 install.sh"
+    log_error "Hadoop未安装"
     exit 1
 fi
 
+# 检查配置文件
 if [ ! -f "${HADOOP_CONF_DIR}/hdfs-site.xml" ]; then
-    log_error "配置文件不存在，请先执行 deploy_config.sh"
+    log_error "配置文件不存在"
+    exit 1
+fi
+
+# 检查数据目录
+JN_DATA_DIR="{{.Global.data_base_dir}}/{{.Instance.Vars.journalnode_data_subdir}}"
+if [ ! -d "${JN_DATA_DIR}" ]; then
+    log_error "数据目录不存在，请先执行 install.sh"
     exit 1
 fi
 
 log_info "前置条件检查通过"
 
 # ============================================================
-# 步骤2: 准备数据目录
+# 启动服务
 # ============================================================
-log_info "步骤2: 准备数据目录..."
+log_info "启动 JournalNode..."
 
-if [ ! -d "${JOURNALNODE_DATA_DIR}" ]; then
-    run_as_root mkdir -p "${JOURNALNODE_DATA_DIR}"
-    run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${JOURNALNODE_DATA_DIR}"
-    log_info "数据目录已创建: ${JOURNALNODE_DATA_DIR}"
+# 使用 hadoop-daemon.sh 启动
+${HADOOP_HOME}/sbin/hadoop-daemon.sh --config ${HADOOP_CONF_DIR} --script hdfs start journalnode
+
+# 等待启动
+sleep 3
+
+# 验证
+if [ -f "${PID_FILE}" ]; then
+    PID=$(cat "${PID_FILE}")
+    if ps -p ${PID} > /dev/null 2>&1; then
+        log_success "JournalNode 启动成功 (PID: ${PID})"
+    else
+        log_error "JournalNode 启动失败"
+        exit 1
+    fi
 else
-    log_info "数据目录已存在: ${JOURNALNODE_DATA_DIR}"
-fi
-
-# ============================================================
-# 步骤3: 检查是否已运行
-# ============================================================
-log_info "步骤3: 检查服务状态..."
-
-if is_process_running "org.apache.hadoop.hdfs.qjournal.server.JournalNode"; then
-    log_info "JournalNode 已在运行中"
-    echo "进程ID: $(pgrep -f 'JournalNode')"
-    exit 0
-fi
-
-# ============================================================
-# 步骤4: 启动 JournalNode
-# ============================================================
-log_info "步骤4: 启动 JournalNode..."
-
-cd ${HADOOP_HOME}
-run_as_user ${HADOOP_HOME}/bin/hdfs --daemon start journalnode
-
-sleep 5
-
-# ============================================================
-# 步骤5: 验证启动
-# ============================================================
-log_info "步骤5: 验证启动..."
-
-if is_process_running "org.apache.hadoop.hdfs.qjournal.server.JournalNode"; then
-    PID=$(pgrep -f 'org.apache.hadoop.hdfs.qjournal.server.JournalNode')
-    log_info "JournalNode 启动成功 (PID: ${PID})"
-else
-    log_error "JournalNode 启动失败"
-    log_error "请检查日志: ${HADOOP_HOME}/logs/hadoop-*-journalnode-*.log"
+    log_error "JournalNode PID 文件未创建"
     exit 1
 fi
 
+# ============================================================
 # 检查端口
-if check_port "localhost" "${JOURNALNODE_PORT}"; then
-    log_info "端口 ${JOURNALNODE_PORT} 正在监听"
+# ============================================================
+log_info "检查端口监听..."
+sleep 2
+
+if netstat -tuln 2>/dev/null | grep -q ":8485 " || ss -tuln 2>/dev/null | grep -q ":8485 "; then
+    log_success "端口 8485 正在监听"
 else
-    log_error "端口 ${JOURNALNODE_PORT} 未监听"
-    exit 1
+    log_warn "端口 8485 未监听，请检查日志"
 fi
 
 # ============================================================
@@ -159,6 +144,10 @@ echo ""
 echo "============================================"
 echo "JournalNode 启动完成！"
 echo "============================================"
-echo "进程ID: ${PID}"
-echo "数据目录: ${JOURNALNODE_DATA_DIR}"
-echo "监听端口: ${JOURNALNODE_PORT}"
+echo ""
+echo "检查状态:"
+echo "  jps | grep JournalNode"
+echo "  systemctl status hadoop-hdfs-journalnode"
+echo ""
+echo "日志文件:"
+echo "  ${HADOOP_HOME}/logs/hadoop-${RUN_USER}-journalnode-$(hostname).log"

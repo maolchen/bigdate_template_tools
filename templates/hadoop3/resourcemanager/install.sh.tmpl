@@ -1,17 +1,18 @@
 #!/bin/bash
-# Hadoop 3 YARN ResourceManager 准备脚本
+# Hadoop 3 ResourceManager 服务脚本
 # 使用方法: bash install.sh
-# 说明: Hadoop是统一安装的，此脚本仅准备YARN目录
+# 说明: 在ResourceManager节点执行，准备ResourceManager运行环境
 
 set -e
 
 # ============================================================
-# 全局变量（遵循 GLOBAL_VARS_GUIDE.md 规范）
+# 全局变量
 # ============================================================
 INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
 DATA_BASE_DIR="{{.Global.data_base_dir}}"
 RUN_USER="{{.Global.user}}"
 RUN_GROUP="{{.Global.group}}"
+JAVA_HOME="{{.Global.java_home}}"
 
 # ============================================================
 # 辅助函数
@@ -32,74 +33,99 @@ log_error() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
 }
 
+log_warn() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1"
+}
+
 # ============================================================
-# 配置
+# ResourceManager 配置
 # ============================================================
 HADOOP_HOME="${INSTALL_BASE_DIR}/{{.Instance.Vars.install_subdir}}"
 YARN_DIR="${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/hadoop-yarn"
 
 # ============================================================
-# 开始准备
+# 开始部署
 # ============================================================
 echo "============================================"
 echo "Hadoop 3 ResourceManager 准备脚本"
 echo "============================================"
 echo "主机名: $(hostname)"
-echo "HADOOP_HOME: ${HADOOP_HOME}"
-echo "YARN目录: ${YARN_DIR}"
-echo "运行用户: ${RUN_USER}"
 echo "============================================"
 
 # ============================================================
 # 步骤1: 检查Hadoop安装
 # ============================================================
 log_info "步骤1: 检查Hadoop安装..."
-
 if [ ! -d "${HADOOP_HOME}" ]; then
-    log_error "Hadoop未安装: ${HADOOP_HOME}"
-    log_error "请先在NameNode节点执行 install.sh 完成Hadoop安装"
+    log_error "Hadoop未安装，请先执行 install_binary.sh"
     exit 1
 fi
-
-if [ ! -f "${HADOOP_HOME}/bin/yarn" ]; then
-    log_error "YARN二进制文件不存在"
-    exit 1
-fi
-
 log_info "Hadoop安装检查通过"
 
 # ============================================================
-# 步骤2: 创建YARN目录
+# 步骤2: 检查配置文件
 # ============================================================
-log_info "步骤2: 创建YARN目录..."
+log_info "步骤2: 检查配置文件..."
+if [ ! -f "${HADOOP_HOME}/etc/hadoop/yarn-site.xml" ]; then
+    log_error "配置文件不存在，请先执行 deploy_config.sh"
+    exit 1
+fi
+log_info "配置文件检查通过"
 
+# ============================================================
+# 步骤3: 创建YARN目录
+# ============================================================
+log_info "步骤3: 创建YARN目录..."
 run_as_root mkdir -p "${YARN_DIR}"
-run_as_root mkdir -p "${YARN_DIR}/cache"
-run_as_root mkdir -p "${YARN_DIR}/containers"
 run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${YARN_DIR}"
-run_as_root chmod -R 755 "${YARN_DIR}"
-log_info "YARN目录创建完成: ${YARN_DIR}"
+run_as_root chmod 755 "${YARN_DIR}"
+log_info "YARN目录创建完成"
 
 # ============================================================
-# 步骤3: 创建日志和PID目录
+# 步骤4: 创建PID和日志目录
 # ============================================================
-log_info "步骤3: 创建日志和PID目录..."
+log_info "步骤4: 创建PID和日志目录..."
+
+run_as_root mkdir -p "${HADOOP_HOME}/pids"
+run_as_root chmod 755 "${HADOOP_HOME}/pids"
+run_as_root chown ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/pids"
 
 run_as_root mkdir -p "${HADOOP_HOME}/logs"
-run_as_root mkdir -p "${HADOOP_HOME}/pids"
-run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/logs"
-run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/pids"
-log_info "日志目录: ${HADOOP_HOME}/logs"
-log_info "PID目录: ${HADOOP_HOME}/pids"
+run_as_root chmod 755 "${HADOOP_HOME}/logs"
+run_as_root chown ${RUN_USER}:${RUN_GROUP} "${HADOOP_HOME}/logs"
+
+log_info "目录准备完成"
 
 # ============================================================
-# 准备完成
+# 步骤5: 部署systemd服务文件
+# ============================================================
+log_info "步骤5: 部署systemd服务文件..."
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE_FILE="hadoop-yarn-resourcemanager.service"
+
+if [ -f "${SCRIPT_DIR}/${SERVICE_FILE}" ]; then
+    run_as_root cp "${SCRIPT_DIR}/${SERVICE_FILE}" /etc/systemd/system/
+    run_as_root chmod 644 "/etc/systemd/system/${SERVICE_FILE}"
+    run_as_root systemctl daemon-reload
+    log_info "systemd服务文件部署完成"
+else
+    log_warn "systemd服务文件不存在"
+fi
+
+# ============================================================
+# 部署完成
 # ============================================================
 echo ""
 echo "============================================"
 echo "ResourceManager 准备完成！"
 echo "============================================"
 echo ""
-echo "后续步骤:"
-echo "1. 确保HDFS已启动"
-echo "2. 启动服务: bash start.sh"
+echo "启动ResourceManager (在HDFS启动后):"
+echo "  systemctl start hadoop-yarn-resourcemanager"
+echo ""
+echo "设置开机自启:"
+echo "  systemctl enable hadoop-yarn-resourcemanager"
+echo ""
+echo "Web UI:"
+echo "  http://$(hostname -f):8088"

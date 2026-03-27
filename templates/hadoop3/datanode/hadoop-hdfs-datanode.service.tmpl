@@ -1,9 +1,8 @@
 [Unit]
 Description=Hadoop HDFS DataNode
-Documentation=https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HDFSHighAvailabilityWithQJM.html
-After=network.target network-online.target hadoop-hdfs-namenode.service
+Documentation=https://hadoop.apache.org/docs/r{{.Instance.Vars.version}}/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html
+After=network-online.target
 Wants=network-online.target
-Requires=hadoop-hdfs-namenode.service
 
 [Service]
 Type=forking
@@ -12,13 +11,19 @@ Group={{.Global.group}}
 Environment="JAVA_HOME={{.Global.java_home}}"
 Environment="HADOOP_HOME={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}"
 Environment="HADOOP_CONF_DIR={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/etc/hadoop"
-ExecStart={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/bin/hdfs --daemon start datanode
-ExecStop={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/bin/hdfs --daemon stop datanode
-PIDFile={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/pids/hadoop-{{.Global.user}}-datanode.pid
+Environment="HADOOP_PID_DIR={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/pids"
+Environment="HDFS_NAMENODE_USER={{.Global.user}}"
+Environment="HDFS_DATANODE_USER={{.Global.user}}"
+Environment="HDFS_JOURNALNODE_USER={{.Global.user}}"
+Environment="HDFS_ZKFC_USER={{.Global.user}}"
+Environment="YARN_RESOURCEMANAGER_USER={{.Global.user}}"
+Environment="YARN_NODEMANAGER_USER={{.Global.user}}"
+ExecStart={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/sbin/hadoop-daemon.sh --config {{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/etc/hadoop --script hdfs start datanode
+ExecStop={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/sbin/hadoop-daemon.sh --config {{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/etc/hadoop --script hdfs stop datanode
+PIDFile={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/pids/hadoop-hdfs-datanode.pid
 Restart=on-failure
 RestartSec=10
-
-# 安全加固
+TimeoutSec=300
 LimitNOFILE=65536
 LimitNPROC=65536
 

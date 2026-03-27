@@ -1,27 +1,26 @@
 #!/bin/bash
 # Hadoop 3 服务停止脚本
-# 使用方法: bash stop.sh [服务名]
-#   服务名: all, hdfs, yarn, namenode, datanode, resourcemanager, nodemanager, journalnode, zkfc
-# 参考: tmp/hadoop3/tasks/05_service_startup.yml
+# 使用方法: bash stop.sh [--all] [--component <name>]
+# 说明: 停止Hadoop服务，支持停止单个组件或全部组件
+# 注意: 停止顺序与启动顺序相反
 
 set -e
 
 # ============================================================
-# 全局变量（遵循 GLOBAL_VARS_GUIDE.md 规范）
+# 全局变量
 # ============================================================
 INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
 RUN_USER="{{.Global.user}}"
-RUN_GROUP="{{.Global.group}}"
 JAVA_HOME="{{.Global.java_home}}"
 
 # ============================================================
 # 辅助函数
 # ============================================================
-run_as_user() {
+run_as_root() {
     if [ "$RUN_USER" = "root" ]; then
         "$@"
     else
-        sudo -u ${RUN_USER} "$@"
+        sudo "$@"
     fi
 }
 
@@ -29,53 +28,140 @@ log_info() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
 }
 
-log_warn() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1"
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
 }
 
-stop_service() {
-    local service_name="$1"
-    local process_pattern="$2"
-    local stop_cmd="$3"
-    
-    if pgrep -f "${process_pattern}" > /dev/null 2>&1; then
-        log_info "停止 ${service_name}..."
-        run_as_user ${stop_cmd}
-        sleep 3
-        
-        if pgrep -f "${process_pattern}" > /dev/null 2>&1; then
-            log_warn "${service_name} 停止超时，尝试强制终止"
-            pkill -9 -f "${process_pattern}" 2>/dev/null || true
-            sleep 2
-        fi
-        
-        if pgrep -f "${process_pattern}" > /dev/null 2>&1; then
-            log_warn "${service_name} 停止失败"
-            return 1
-        else
-            log_info "${service_name} 已停止"
-        fi
-    else
-        log_info "${service_name} 未运行"
-    fi
-    return 0
+log_success() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] $1"
 }
 
 # ============================================================
 # Hadoop 配置
 # ============================================================
 HADOOP_HOME="${INSTALL_BASE_DIR}/{{.Instance.Vars.install_subdir}}"
+HADOOP_CONF_DIR="${HADOOP_HOME}/etc/hadoop"
 
 # 设置环境变量
 export JAVA_HOME=${JAVA_HOME}
 export HADOOP_HOME=${HADOOP_HOME}
-export HADOOP_CONF_DIR=${HADOOP_HOME}/etc/hadoop
-export PATH=${PATH}:${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin
+export HADOOP_CONF_DIR=${HADOOP_CONF_DIR}
+export HDFS_NAMENODE_USER=${RUN_USER}
+export HDFS_DATANODE_USER=${RUN_USER}
+export HDFS_JOURNALNODE_USER=${RUN_USER}
+export HDFS_ZKFC_USER=${RUN_USER}
+export YARN_RESOURCEMANAGER_USER=${RUN_USER}
+export YARN_NODEMANAGER_USER=${RUN_USER}
+
+PATH=${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin:${PATH}
+
+# ============================================================
+# 停止函数
+# ============================================================
+stop_component() {
+    local component=$1
+    local daemon_script=$2
+    local service_name=$3
+    local pid_file="${HADOOP_HOME}/pids/${service_name}.pid"
+    
+    log_info "停止 ${component}..."
+    
+    # 首先尝试systemd
+    if systemctl is-active ${service_name} >/dev/null 2>&1; then
+        run_as_root systemctl stop ${service_name}
+        sleep 2
+        if systemctl is-active ${service_name} >/dev/null 2>&1; then
+            log_error "systemd 停止 ${component} 失败"
+            return 1
+        else
+            log_success "${component} 已通过 systemd 停止"
+            return 0
+        fi
+    fi
+    
+    # 使用 hadoop-daemon.sh 或 yarn-daemon.sh 停止
+    if [ -f "${pid_file}" ]; then
+        local pid=$(cat "${pid_file}")
+        if ps -p ${pid} > /dev/null 2>&1; then
+            ${HADOOP_HOME}/sbin/${daemon_script} --config ${HADOOP_CONF_DIR} --script ${component%%-*} stop ${component#*-}
+            sleep 3
+            if ps -p ${pid} > /dev/null 2>&1; then
+                log_warn "正常停止失败，强制终止进程 ${pid}"
+                kill -9 ${pid}
+            fi
+            log_success "${component} 已停止"
+        else
+            log_info "${component} 未运行"
+            rm -f "${pid_file}"
+        fi
+    else
+        log_info "${component} 未运行"
+    fi
+    
+    return 0
+}
+
+stop_nodemanager() {
+    stop_component "yarn-nodemanager" "yarn-daemon.sh" "yarn-yarn-nodemanager"
+}
+
+stop_resourcemanager() {
+    stop_component "yarn-resourcemanager" "yarn-daemon.sh" "yarn-yarn-resourcemanager"
+}
+
+stop_datanode() {
+    stop_component "hdfs-datanode" "hadoop-daemon.sh" "hadoop-hdfs-datanode"
+}
+
+stop_zkfc() {
+    stop_component "hdfs-zkfc" "hadoop-daemon.sh" "hadoop-hdfs-zkfc"
+}
+
+stop_namenode() {
+    stop_component "hdfs-namenode" "hadoop-daemon.sh" "hadoop-hdfs-namenode"
+}
+
+stop_journalnode() {
+    stop_component "hdfs-journalnode" "hadoop-daemon.sh" "hadoop-hdfs-journalnode"
+}
+
+stop_all() {
+    log_info "停止所有Hadoop服务..."
+    log_info "停止顺序: NodeManager -> ResourceManager -> DataNode -> ZKFC -> NameNode -> JournalNode"
+    echo ""
+    
+    stop_nodemanager
+    stop_resourcemanager
+    stop_datanode
+    stop_zkfc
+    stop_namenode
+    stop_journalnode
+    
+    echo ""
+    log_success "所有Hadoop服务已停止"
+}
 
 # ============================================================
 # 参数解析
 # ============================================================
-SERVICE="${1:-all}"
+STOP_ALL=false
+COMPONENT=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --all|-a)
+            STOP_ALL=true
+            shift
+            ;;
+        --component|-c)
+            COMPONENT="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 # ============================================================
 # 开始停止
@@ -84,130 +170,47 @@ echo "============================================"
 echo "Hadoop 3 服务停止脚本"
 echo "============================================"
 echo "主机名: $(hostname)"
-echo "停止范围: ${SERVICE}"
-echo "HADOOP_HOME: ${HADOOP_HOME}"
 echo "============================================"
 
-cd ${HADOOP_HOME}
-
-case "$SERVICE" in
-    all)
-        log_info "停止所有服务..."
-        
-        # 停止顺序（与启动顺序相反）
-        # 1. NodeManager
-        stop_service "NodeManager" \
-            "org.apache.hadoop.yarn.server.nodemanager.NodeManager" \
-            "${HADOOP_HOME}/bin/yarn --daemon stop nodemanager"
-        
-        # 2. ResourceManager
-        stop_service "ResourceManager" \
-            "org.apache.hadoop.yarn.server.resourcemanager.ResourceManager" \
-            "${HADOOP_HOME}/bin/yarn --daemon stop resourcemanager"
-        
-        # 3. DataNode
-        stop_service "DataNode" \
-            "org.apache.hadoop.hdfs.server.datanode.DataNode" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop datanode"
-        
-        # 4. NameNode
-        stop_service "NameNode" \
-            "org.apache.hadoop.hdfs.server.namenode.NameNode" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop namenode"
-        
-        # 5. ZKFC
-        stop_service "ZKFC" \
-            "org.apache.hadoop.hdfs.tools.DFSZKFailoverController" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop zkfc"
-        
-        # 6. JournalNode
-        stop_service "JournalNode" \
-            "org.apache.hadoop.hdfs.qjournal.server.JournalNode" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop journalnode"
-        ;;
-    
-    hdfs)
-        log_info "停止 HDFS 服务..."
-        
-        stop_service "DataNode" \
-            "org.apache.hadoop.hdfs.server.datanode.DataNode" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop datanode"
-        
-        stop_service "NameNode" \
-            "org.apache.hadoop.hdfs.server.namenode.NameNode" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop namenode"
-        
-        stop_service "ZKFC" \
-            "org.apache.hadoop.hdfs.tools.DFSZKFailoverController" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop zkfc"
-        
-        stop_service "JournalNode" \
-            "org.apache.hadoop.hdfs.qjournal.server.JournalNode" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop journalnode"
-        ;;
-    
-    yarn)
-        log_info "停止 YARN 服务..."
-        
-        stop_service "NodeManager" \
-            "org.apache.hadoop.yarn.server.nodemanager.NodeManager" \
-            "${HADOOP_HOME}/bin/yarn --daemon stop nodemanager"
-        
-        stop_service "ResourceManager" \
-            "org.apache.hadoop.yarn.server.resourcemanager.ResourceManager" \
-            "${HADOOP_HOME}/bin/yarn --daemon stop resourcemanager"
-        ;;
-    
-    namenode)
-        stop_service "NameNode" \
-            "org.apache.hadoop.hdfs.server.namenode.NameNode" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop namenode"
-        ;;
-    
-    datanode)
-        stop_service "DataNode" \
-            "org.apache.hadoop.hdfs.server.datanode.DataNode" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop datanode"
-        ;;
-    
-    resourcemanager)
-        stop_service "ResourceManager" \
-            "org.apache.hadoop.yarn.server.resourcemanager.ResourceManager" \
-            "${HADOOP_HOME}/bin/yarn --daemon stop resourcemanager"
-        ;;
-    
-    nodemanager)
-        stop_service "NodeManager" \
-            "org.apache.hadoop.yarn.server.nodemanager.NodeManager" \
-            "${HADOOP_HOME}/bin/yarn --daemon stop nodemanager"
-        ;;
-    
-    journalnode)
-        stop_service "JournalNode" \
-            "org.apache.hadoop.hdfs.qjournal.server.JournalNode" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop journalnode"
-        ;;
-    
-    zkfc)
-        stop_service "ZKFC" \
-            "org.apache.hadoop.hdfs.tools.DFSZKFailoverController" \
-            "${HADOOP_HOME}/bin/hdfs --daemon stop zkfc"
-        ;;
-    
-    *)
-        echo "未知服务: ${SERVICE}"
-        echo "使用方法: bash stop.sh [all|hdfs|yarn|namenode|datanode|resourcemanager|nodemanager|journalnode|zkfc]"
-        exit 1
-        ;;
-esac
-
-# ============================================================
-# 停止完成
-# ============================================================
-echo ""
-echo "============================================"
-echo "服务停止完成！"
-echo "============================================"
-echo ""
-echo "剩余进程:"
-jps 2>/dev/null | grep -E "NameNode|DataNode|JournalNode|DFSZKFailoverController|ResourceManager|NodeManager" || echo "  无 Hadoop 进程"
+if [ "$STOP_ALL" = "true" ]; then
+    stop_all
+elif [ -n "$COMPONENT" ]; then
+    case "$COMPONENT" in
+        nodemanager|nm)
+            stop_nodemanager
+            ;;
+        resourcemanager|rm)
+            stop_resourcemanager
+            ;;
+        datanode|dn)
+            stop_datanode
+            ;;
+        zkfc)
+            stop_zkfc
+            ;;
+        namenode|nn)
+            stop_namenode
+            ;;
+        journalnode|jn)
+            stop_journalnode
+            ;;
+        *)
+            log_error "未知组件: ${COMPONENT}"
+            echo "可用组件: namenode, datanode, journalnode, zkfc, resourcemanager, nodemanager"
+            exit 1
+            ;;
+    esac
+else
+    echo "使用方法:"
+    echo "  bash stop.sh --all              # 停止所有服务"
+    echo "  bash stop.sh --component <name> # 停止指定组件"
+    echo ""
+    echo "可用组件:"
+    echo "  namenode (nn)      - NameNode"
+    echo "  datanode (dn)      - DataNode"
+    echo "  journalnode (jn)   - JournalNode"
+    echo "  zkfc               - ZKFC"
+    echo "  resourcemanager (rm) - ResourceManager"
+    echo "  nodemanager (nm)   - NodeManager"
+    exit 1
+fi

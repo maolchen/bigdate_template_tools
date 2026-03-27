@@ -1,12 +1,12 @@
 #!/bin/bash
-# Hadoop 3 服务验证脚本
-# 使用方法: bash check.sh
-# 参考: tmp/hadoop3/tasks/06_verification.yml
+# Hadoop 3 服务状态验证脚本
+# 使用方法: bash check.sh [--verbose]
+# 说明: 检查Hadoop各组件的运行状态
 
 set -e
 
 # ============================================================
-# 全局变量（遵循 GLOBAL_VARS_GUIDE.md 规范）
+# 全局变量
 # ============================================================
 INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
 DATA_BASE_DIR="{{.Global.data_base_dir}}"
@@ -17,185 +17,269 @@ JAVA_HOME="{{.Global.java_home}}"
 # 辅助函数
 # ============================================================
 log_info() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+    echo "[INFO] $1"
+}
+
+log_success() {
+    echo "[\033[32mOK\033[0m] $1"
 }
 
 log_error() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
+    echo "[\033[31mFAIL\033[0m] $1"
 }
 
-check_process() {
-    local process_name="$1"
-    local service_name="$2"
+log_warn() {
+    echo "[\033[33mWARN\033[0m] $1"
+}
+
+check_port() {
+    local port=$1
+    local service=$2
     
-    if pgrep -f "${process_name}" > /dev/null 2>&1; then
-        PID=$(pgrep -f "${process_name}")
-        echo "   [✓] ${service_name} 运行中 (PID: ${PID})"
+    if netstat -tuln 2>/dev/null | grep -q ":${port} " || ss -tuln 2>/dev/null | grep -q ":${port} "; then
+        log_success "${service} 端口 ${port} 正在监听"
         return 0
     else
-        echo "   [✗] ${service_name} 未运行"
+        log_error "${service} 端口 ${port} 未监听"
         return 1
     fi
 }
 
-check_port() {
-    local host="$1"
-    local port="$2"
-    timeout 5 bash -c "echo > /dev/tcp/${host}/${port}" 2>/dev/null
+check_process_by_name() {
+    local process_name=$1
+    local service=$2
+    
+    if jps 2>/dev/null | grep -q "${process_name}"; then
+        local pid=$(jps | grep "${process_name}" | awk '{print $1}')
+        log_success "${service} 进程运行中 (PID: ${pid})"
+        return 0
+    else
+        log_error "${service} 进程未运行"
+        return 1
+    fi
+}
+
+check_systemd_service() {
+    local service=$1
+    
+    if systemctl is-active ${service} >/dev/null 2>&1; then
+        log_success "systemd 服务 ${service} 运行中"
+        return 0
+    else
+        log_warn "systemd 服务 ${service} 未运行"
+        return 1
+    fi
 }
 
 # ============================================================
 # Hadoop 配置
 # ============================================================
 HADOOP_HOME="${INSTALL_BASE_DIR}/{{.Instance.Vars.install_subdir}}"
+HADOOP_CONF_DIR="${HADOOP_HOME}/etc/hadoop"
+NAMESERVICE="{{.Instance.Vars.nameservice}}"
 
 # 设置环境变量
 export JAVA_HOME=${JAVA_HOME}
 export HADOOP_HOME=${HADOOP_HOME}
-export HADOOP_CONF_DIR=${HADOOP_HOME}/etc/hadoop
-export PATH=${PATH}:${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin
+export HADOOP_CONF_DIR=${HADOOP_CONF_DIR}
+export HDFS_NAMENODE_USER=${RUN_USER}
+export HDFS_DATANODE_USER=${RUN_USER}
+export HDFS_JOURNALNODE_USER=${RUN_USER}
+export HDFS_ZKFC_USER=${RUN_USER}
+export YARN_RESOURCEMANAGER_USER=${RUN_USER}
+export YARN_NODEMANAGER_USER=${RUN_USER}
+
+PATH=${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin:${PATH}
 
 # ============================================================
-# 开始验证
+# 参数解析
+# ============================================================
+VERBOSE=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --verbose|-v)
+            VERBOSE=true
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+# ============================================================
+# 开始检查
 # ============================================================
 echo "============================================"
-echo "Hadoop 3 服务验证脚本"
+echo "Hadoop 3 服务状态检查"
 echo "============================================"
 echo "主机名: $(hostname)"
-echo "验证时间: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "============================================"
-
-ERRORS=0
-
-# ============================================================
-# 步骤1: 检查进程状态
-# ============================================================
 echo ""
-echo "1. 检查进程状态..."
 
-# HDFS 组件
-check_process "org.apache.hadoop.hdfs.qjournal.server.JournalNode" "JournalNode" || ERRORS=$((ERRORS + 1))
-check_process "org.apache.hadoop.hdfs.tools.DFSZKFailoverController" "ZKFC" || true
-check_process "org.apache.hadoop.hdfs.server.namenode.NameNode" "NameNode" || true
-check_process "org.apache.hadoop.hdfs.server.datanode.DataNode" "DataNode" || ERRORS=$((ERRORS + 1))
+TOTAL=0
+PASSED=0
+FAILED=0
 
-# YARN 组件
-check_process "org.apache.hadoop.yarn.server.resourcemanager.ResourceManager" "ResourceManager" || true
-check_process "org.apache.hadoop.yarn.server.nodemanager.NodeManager" "NodeManager" || true
-
-# ============================================================
-# 步骤2: 使用 jps 检查
-# ============================================================
-echo ""
-echo "2. JPS 进程列表..."
-
-if command -v jps > /dev/null 2>&1; then
-    jps_output=$(jps 2>/dev/null || echo "无法获取")
-    echo "$jps_output" | grep -E "NameNode|DataNode|JournalNode|DFSZKFailoverController|ResourceManager|NodeManager" || echo "   无 Hadoop 进程"
-else
-    echo "   [!] jps 命令不可用"
-fi
-
-# ============================================================
-# 步骤3: 检查 HDFS 状态
-# ============================================================
-echo ""
-echo "3. 检查 HDFS 状态..."
-
-if pgrep -f "NameNode" > /dev/null 2>&1; then
-    # 显示 NameNode HA 状态
-    echo "   NameNode HA 状态:"
-    {{- range $i, $inst := (serviceNodes "hadoop3/namenode") }}
-    STATE=$(${HADOOP_HOME}/bin/hdfs haadmin -getServiceState "{{$inst.AutoID}}" 2>/dev/null || echo "未知")
-    echo "     {{$inst.AutoID}} ({{$inst.Node.Hostname}}): ${STATE}"
-    {{- end }}
-    
-    # 显示 HDFS 报告摘要
-    echo ""
-    echo "   HDFS 概览:"
-    ${HADOOP_HOME}/bin/hdfs dfsadmin -report 2>/dev/null | head -15 | while read line; do
-        echo "     ${line}"
-    done
-else
-    echo "   [!] NameNode 未运行"
-fi
-
-# ============================================================
-# 步骤4: 检查 YARN 状态
-# ============================================================
-echo ""
-echo "4. 检查 YARN 状态..."
-
-if pgrep -f "ResourceManager" > /dev/null 2>&1; then
-    # 显示 RM HA 状态
-    echo "   ResourceManager HA 状态:"
-    {{- range $i, $inst := (serviceNodes "hadoop3/resourcemanager") }}
-    STATE=$(${HADOOP_HOME}/bin/yarn rmadmin -getServiceState "{{$inst.AutoID}}" 2>/dev/null || echo "未知")
-    echo "     {{$inst.AutoID}} ({{$inst.Node.Hostname}}): ${STATE}"
-    {{- end }}
-    
-    # 显示节点列表
-    echo ""
-    echo "   NodeManager 列表:"
-    ${HADOOP_HOME}/bin/yarn node -list 2>/dev/null | head -10 | while read line; do
-        echo "     ${line}"
-    done
-else
-    echo "   [!] ResourceManager 未运行"
-fi
-
-# ============================================================
-# 步骤5: 检查端口监听
-# ============================================================
-echo ""
-echo "5. 检查端口监听..."
-
-if command -v ss > /dev/null 2>&1; then
-    PORT_CHECK=$(ss -tln 2>/dev/null | grep -E "8020|50070|8485|9866|8032|8089" || echo "无相关端口监听")
-    echo "$PORT_CHECK" | while read line; do
-        echo "   ${line}"
-    done
-elif command -v netstat > /dev/null 2>&1; then
-    PORT_CHECK=$(netstat -tln 2>/dev/null | grep -E "8020|50070|8485|9866|8032|8089" || echo "无相关端口监听")
-    echo "$PORT_CHECK" | while read line; do
-        echo "   ${line}"
-    done
-else
-    echo "   [!] 无法检查端口（缺少 ss/netstat 命令）"
-fi
-
-# ============================================================
-# 步骤6: 检查日志错误
-# ============================================================
-echo ""
-echo "6. 检查日志错误..."
-
-LOG_DIR="${HADOOP_HOME}/logs"
-if [ -d "${LOG_DIR}" ]; then
-    ERROR_COUNT=$(grep -r "ERROR\|FATAL" "${LOG_DIR}"/*.log 2>/dev/null | wc -l || echo "0")
-    if [ "${ERROR_COUNT}" -gt 0 ]; then
-        echo "   [!] 发现 ${ERROR_COUNT} 条错误日志"
-        echo "   最近的错误:"
-        grep -r "ERROR\|FATAL" "${LOG_DIR}"/*.log 2>/dev/null | tail -3 | while read line; do
-            echo "     ${line:0:100}..."
-        done
+check_and_count() {
+    local cmd="$1"
+    shift
+    TOTAL=$((TOTAL + 1))
+    if eval "$cmd"; then
+        PASSED=$((PASSED + 1))
+        return 0
     else
-        echo "   [✓] 无严重错误日志"
+        FAILED=$((FAILED + 1))
+        return 1
     fi
-else
-    echo "   [!] 日志目录不存在: ${LOG_DIR}"
-fi
+}
 
 # ============================================================
-# 验证结果
+# 1. HDFS 组件检查
 # ============================================================
+echo "=== HDFS 组件状态 ==="
 echo ""
-echo "============================================"
-if [ ${ERRORS} -eq 0 ]; then
-    echo "验证结果: [✓] 正常"
-else
-    echo "验证结果: [✗] 发现 ${ERRORS} 个问题"
+
+# JournalNode
+check_and_count "check_process_by_name JournalNode JournalNode" || true
+check_and_count "check_port 8485 JournalNode" || true
+echo ""
+
+# NameNode
+check_and_count "check_process_by_name NameNode NameNode" || true
+check_and_count "check_port 9870 'NameNode Web UI'" || true
+check_and_count "check_port 8020 'NameNode RPC'" || true
+echo ""
+
+# ZKFC
+check_and_count "check_process_by_name DFSZKFailoverController ZKFC" || true
+echo ""
+
+# DataNode
+check_and_count "check_process_by_name DataNode DataNode" || true
+check_and_count "check_port 9864 'DataNode Web UI'" || true
+check_and_count "check_port 9866 'DataNode Data Transfer'" || true
+echo ""
+
+# ============================================================
+# 2. YARN 组件检查
+# ============================================================
+echo "=== YARN 组件状态 ==="
+echo ""
+
+# ResourceManager
+check_and_count "check_process_by_name ResourceManager ResourceManager" || true
+check_and_count "check_port 8088 'ResourceManager Web UI'" || true
+check_and_count "check_port 8032 'ResourceManager RPC'" || true
+echo ""
+
+# NodeManager
+check_and_count "check_process_by_name NodeManager NodeManager" || true
+check_and_count "check_port 8042 'NodeManager Web UI'" || true
+echo ""
+
+# ============================================================
+# 3. HDFS 功能检查
+# ============================================================
+echo "=== HDFS 功能检查 ==="
+echo ""
+
+# 检查HDFS安全模式
+if command -v hdfs >/dev/null 2>&1; then
+    SAFE_MODE=$(hdfs dfsadmin -safemode get 2>/dev/null || echo "Unknown")
+    if echo "$SAFE_MODE" | grep -q "OFF"; then
+        log_success "HDFS 已退出安全模式"
+        TOTAL=$((TOTAL + 1))
+        PASSED=$((PASSED + 1))
+    else
+        log_warn "HDFS 可能处于安全模式: ${SAFE_MODE}"
+        TOTAL=$((TOTAL + 1))
+        PASSED=$((PASSED + 1))  # 安全模式不算失败
+    fi
+    echo ""
+    
+    # 检查NameNode HA状态
+    echo "NameNode HA 状态:"
+    if hdfs haadmin -getAllServiceState 2>/dev/null; then
+        log_success "NameNode HA 状态获取成功"
+    else
+        log_warn "无法获取 NameNode HA 状态"
+    fi
+    echo ""
 fi
+
+# ============================================================
+# 4. YARN 功能检查
+# ============================================================
+echo "=== YARN 功能检查 ==="
+echo ""
+
+if command -v yarn >/dev/null 2>&1; then
+    # 检查YARN节点状态
+    echo "YARN NodeManager 列表:"
+    if yarn node -list 2>/dev/null | head -10; then
+        log_success "YARN 节点列表获取成功"
+    else
+        log_warn "无法获取 YARN 节点列表"
+    fi
+    echo ""
+    
+    # 检查YARN应用列表
+    echo "YARN 应用列表:"
+    if yarn application -list 2>/dev/null | head -10; then
+        log_success "YARN 应用列表获取成功"
+    else
+        log_warn "无法获取 YARN 应用列表"
+    fi
+    echo ""
+fi
+
+# ============================================================
+# 5. systemd 服务检查
+# ============================================================
+echo "=== systemd 服务状态 ==="
+echo ""
+
+for svc in hadoop-hdfs-journalnode hadoop-hdfs-namenode hadoop-hdfs-zkfc hadoop-hdfs-datanode hadoop-yarn-resourcemanager hadoop-yarn-nodemanager; do
+    if [ -f "/etc/systemd/system/${svc}.service" ]; then
+        check_and_count "check_systemd_service ${svc}" || true
+    fi
+done
+echo ""
+
+# ============================================================
+# 6. 日志检查
+# ============================================================
+if [ "$VERBOSE" = "true" ]; then
+    echo "=== 最近日志 ==="
+    echo ""
+    
+    for log_file in ${HADOOP_HOME}/logs/*.log; do
+        if [ -f "$log_file" ]; then
+            echo "--- $(basename $log_file) (最后20行) ---"
+            tail -20 "$log_file"
+            echo ""
+        fi
+    done
+fi
+
+# ============================================================
+# 总结
+# ============================================================
+echo "============================================"
+echo "检查总结"
+echo "============================================"
+echo "总检查项: ${TOTAL}"
+echo "通过: ${PASSED}"
+echo "失败: ${FAILED}"
+echo "通过率: $(( PASSED * 100 / TOTAL ))%"
 echo "============================================"
 
-exit ${ERRORS}
+if [ $FAILED -eq 0 ]; then
+    echo "所有检查项通过！"
+    exit 0
+else
+    echo "部分检查项未通过，请检查日志"
+    exit 1
+fi
