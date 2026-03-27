@@ -3,8 +3,8 @@
 # 使用方法: bash init_namenode_standby.sh
 # 说明: 在备 NameNode 节点执行，完成以下步骤：
 #   1. 引导备 NameNode (bootstrapStandby)
-#   2. 启动 NameNode
 # 注意: 必须确保主 NameNode 已启动！
+# 注意: 此脚本只执行初始化，不启动服务。启动服务请使用 systemctl 或 start_namenode.sh
 
 set -e
 
@@ -70,7 +70,7 @@ NN_DATA_DIR="${DATA_BASE_DIR}/{{.Instance.Vars.namenode_data_subdir}}"
 NAMESERVICE="{{.Instance.Vars.nameservice}}"
 NN_RPC_PORT="{{.Instance.Vars.namenode_rpc_port}}"
 NN_HTTP_PORT="{{.Instance.Vars.namenode_http_port}}"
-PID_FILE="${HADOOP_HOME}/pids/hadoop-hdfs-namenode.pid"
+SERVICE_NAME="hadoop-hdfs-namenode"
 
 # ============================================================
 # 开始初始化
@@ -81,6 +81,10 @@ echo "============================================"
 echo "主机名: $(hostname)"
 echo "Nameservice: ${NAMESERVICE}"
 echo "NameNode 数据目录: ${NN_DATA_DIR}"
+echo "============================================"
+echo ""
+echo "注意: 此脚本只执行初始化操作（bootstrapStandby），不启动服务。"
+echo "      服务启动请使用: sudo systemctl start ${SERVICE_NAME}"
 echo "============================================"
 
 # 设置环境变量
@@ -142,7 +146,7 @@ fi
 {{- end }}
 
 if [ "$NN_READY" = "false" ]; then
-    log_error "无法连接到主 NameNode，请先在主节点执行: bash init_namenode_master.sh"
+    log_error "无法连接到主 NameNode，请先在主节点执行 init_namenode_master.sh 并启动 NameNode"
     exit 1
 fi
 
@@ -171,86 +175,24 @@ else
 fi
 
 # ============================================================
-# 步骤4: 启动 NameNode
+# 步骤4: 部署 systemd 服务文件
 # ============================================================
-log_info "步骤4: 启动 NameNode (备)..."
+log_info "步骤4: 部署 systemd 服务文件..."
 
-# 检查是否已运行
-if [ -f "${PID_FILE}" ]; then
-    PID=$(cat "${PID_FILE}")
-    if ps -p ${PID} > /dev/null 2>&1; then
-        log_info "NameNode 已在运行 (PID: ${PID})"
-    else
-        rm -f "${PID_FILE}"
-        # 启动 NameNode
-        ${HADOOP_HOME}/bin/hdfs --daemon start namenode
-    fi
-else
-    # 启动 NameNode
-    ${HADOOP_HOME}/bin/hdfs --daemon start namenode
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE_FILE="${SCRIPT_DIR}/systemd/${SERVICE_NAME}.service"
 
-# 等待启动
-sleep 5
-
-# ============================================================
-# 步骤5: 验证启动
-# ============================================================
-log_info "步骤5: 验证启动..."
-
-# 检查进程
-if [ -f "${PID_FILE}" ]; then
-    PID=$(cat "${PID_FILE}")
-    if ps -p ${PID} > /dev/null 2>&1; then
-        log_success "NameNode 启动成功 (PID: ${PID})"
-    else
-        log_error "NameNode 启动失败"
-        exit 1
-    fi
-else
-    log_error "NameNode PID 文件未创建"
+if [ ! -f "${SERVICE_FILE}" ]; then
+    log_error "未找到 systemd 服务文件: ${SERVICE_FILE}"
     exit 1
 fi
 
-# 检查端口
-sleep 3
-if check_port "localhost" "${NN_RPC_PORT}"; then
-    log_success "RPC 端口 ${NN_RPC_PORT} 正在监听"
-else
-    log_warn "RPC 端口 ${NN_RPC_PORT} 未监听"
-fi
-
-if check_port "localhost" "${NN_HTTP_PORT}"; then
-    log_success "HTTP 端口 ${NN_HTTP_PORT} 正在监听"
-else
-    log_warn "HTTP 端口 ${NN_HTTP_PORT} 未监听"
-fi
-
-# ============================================================
-# 步骤6: 验证 NameNode HA 状态
-# ============================================================
-log_info "步骤6: 验证 NameNode HA 状态..."
-
-sleep 5
-
-echo ""
-echo "NameNode HA 状态:"
-${HADOOP_HOME}/bin/hdfs haadmin -getAllServiceState 2>/dev/null || log_warn "无法获取 HA 状态"
-
-# ============================================================
-# 步骤7: 部署 systemd 服务文件（可选）
-# ============================================================
-log_info "步骤7: 部署 systemd 服务文件（可选）..."
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_FILE="${SCRIPT_DIR}/systemd/hadoop-hdfs-namenode.service"
-
-if [ -f "${SERVICE_FILE}" ]; then
-    run_as_root cp "${SERVICE_FILE}" /etc/systemd/system/
-    run_as_root chmod 644 /etc/systemd/system/hadoop-hdfs-namenode.service
-    run_as_root systemctl daemon-reload
-    log_info "systemd 服务文件已部署"
-fi
+# 部署服务文件
+run_as_root cp "${SERVICE_FILE}" /etc/systemd/system/
+run_as_root chmod 644 /etc/systemd/system/${SERVICE_NAME}.service
+run_as_root systemctl daemon-reload
+run_as_root systemctl enable ${SERVICE_NAME}
+log_success "systemd 服务文件已部署并启用"
 
 # ============================================================
 # 初始化完成
@@ -260,6 +202,20 @@ echo "============================================"
 echo "备 NameNode 初始化完成！"
 echo "============================================"
 echo ""
+echo "初始化内容:"
+echo "  - bootstrapStandby: 完成（如未执行过）"
+echo "  - systemd 服务: 已部署并启用"
+echo ""
+echo "重要: 此脚本只执行了初始化，NameNode 服务尚未启动！"
+echo ""
+echo "启动 NameNode 服务:"
+echo "  sudo systemctl start ${SERVICE_NAME}"
+echo ""
+echo "管理命令:"
+echo "  查看状态: sudo systemctl status ${SERVICE_NAME}"
+echo "  停止服务: sudo systemctl stop ${SERVICE_NAME}"
+echo "  查看日志: sudo journalctl -u ${SERVICE_NAME} -f"
+echo ""
 echo "Web UI: http://$(hostname):${NN_HTTP_PORT}"
 echo ""
 echo "检查状态:"
@@ -267,5 +223,6 @@ echo "  jps | grep NameNode"
 echo "  hdfs haadmin -getAllServiceState"
 echo ""
 echo "后续步骤:"
-echo "1. 启动 DataNode: bash start_datanode.sh"
-echo "2. 启动 ZKFC: bash start_zkfc.sh"
+echo "1. 启动 NameNode: sudo systemctl start ${SERVICE_NAME}"
+echo "2. 在所有 NameNode 节点启动 ZKFC: bash start_zkfc.sh"
+echo "3. 在所有 DataNode 节点启动 DataNode: bash start_datanode.sh"

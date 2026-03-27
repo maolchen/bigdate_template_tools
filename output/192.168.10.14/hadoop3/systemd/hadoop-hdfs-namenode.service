@@ -1,0 +1,31 @@
+[Unit]
+Description=Hadoop HDFS NameNode
+Documentation=https://hadoop.apache.org/docs/r3.3.6/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html
+After=network-online.target hadoop-hdfs-journalnode.service
+Wants=network-online.target
+
+[Service]
+Type=forking
+User=bigdata
+Group=bigdata
+Environment="JAVA_HOME=/data/jdk/"
+Environment="HADOOP_HOME=/data/localization/hadoop"
+Environment="HADOOP_CONF_DIR=/data/localization/hadoop/etc/hadoop"
+Environment="HADOOP_PID_DIR=/data/localization/hadoop/pids"
+Environment="HDFS_NAMENODE_USER=bigdata"
+Environment="HDFS_DATANODE_USER=bigdata"
+Environment="HDFS_JOURNALNODE_USER=bigdata"
+Environment="HDFS_ZKFC_USER=bigdata"
+Environment="YARN_RESOURCEMANAGER_USER=bigdata"
+Environment="YARN_NODEMANAGER_USER=bigdata"
+ExecStart=/data/localization/hadoop/bin/hdfs --daemon start namenode
+ExecStop=/data/localization/hadoop/bin/hdfs --daemon stop namenode
+PIDFile=/data/localization/hadoop/pids/hadoop-hdfs-namenode.pid
+Restart=on-failure
+RestartSec=10
+TimeoutSec=300
+LimitNOFILE=65536
+LimitNPROC=65536
+
+[Install]
+WantedBy=multi-user.target

@@ -2,11 +2,11 @@
 # Hadoop 3 主 NameNode 初始化脚本
 # 使用方法: bash init_namenode_master.sh
 # 说明: 在主 NameNode 节点执行，完成以下步骤：
-#   1. 格式化 NameNode
-#   2. 初始化共享存储 (initializeSharedEdits)
-#   3. 格式化 ZKFC
-#   4. 启动 NameNode
+#   1. 格式化 NameNode（仅首次）
+#   2. 初始化共享存储（可选）
+#   3. 格式化 ZKFC（仅首次）
 # 注意: 必须确保所有 JournalNode 已启动！
+# 注意: 此脚本只执行初始化，不启动服务。启动服务请使用 systemctl 或 start_namenode.sh
 
 set -e
 
@@ -73,7 +73,7 @@ NAMESERVICE="{{.Instance.Vars.nameservice}}"
 JN_PORT="{{.Instance.Vars.journalnode_port}}"
 NN_RPC_PORT="{{.Instance.Vars.namenode_rpc_port}}"
 NN_HTTP_PORT="{{.Instance.Vars.namenode_http_port}}"
-PID_FILE="${HADOOP_HOME}/pids/hadoop-hdfs-namenode.pid"
+SERVICE_NAME="hadoop-hdfs-namenode"
 
 # ============================================================
 # 开始初始化
@@ -84,6 +84,10 @@ echo "============================================"
 echo "主机名: $(hostname)"
 echo "Nameservice: ${NAMESERVICE}"
 echo "NameNode 数据目录: ${NN_DATA_DIR}"
+echo "============================================"
+echo ""
+echo "注意: 此脚本只执行初始化操作（格式化），不启动服务。"
+echo "      服务启动请使用: sudo systemctl start ${SERVICE_NAME}"
 echo "============================================"
 
 # 设置环境变量
@@ -152,14 +156,15 @@ if [ ${JN_READY_COUNT} -lt 1 ]; then
 fi
 
 # ============================================================
-# 步骤3: 格式化 NameNode
+# 步骤3: 格式化 NameNode（仅首次执行）
 # ============================================================
-log_info "步骤3: 格式化 NameNode (仅主节点)..."
+log_info "步骤3: 格式化 NameNode (仅主节点，仅首次)..."
 
 # 检查是否已格式化
 if [ -d "${NN_DATA_DIR}/current" ]; then
     log_warn "NameNode 已格式化，跳过格式化步骤"
     log_warn "如需重新格式化，请先清理数据目录: ${NN_DATA_DIR}"
+    log_warn "警告: 重新格式化会丢失所有 HDFS 数据！"
 else
     log_info "开始格式化 NameNode..."
     log_warn "注意：只格式化主节点！"
@@ -176,25 +181,20 @@ else
 fi
 
 # ============================================================
-# 步骤4: 初始化共享存储 (initializeSharedEdits)
-# 注意：此步骤可选，通常不需要手动执行
+# 步骤4: 初始化共享存储 (initializeSharedEdits) - 可选
 # ============================================================
-# log_info "步骤4: 初始化共享存储 (initializeSharedEdits)..."
-# log_warn "此步骤在 JournalNode 中初始化共享编辑日志目录"
-# 
-# # 初始化共享存储
-# run_as_user ${HADOOP_HOME}/bin/hdfs namenode -initializeSharedEdits
-# 
-# if [ $? -eq 0 ]; then
-#     log_success "共享存储初始化完成"
-# else
-#     log_error "共享存储初始化失败"
-#     exit 1
-# fi
+log_info "步骤4: 初始化共享存储 (initializeSharedEdits)..."
+log_info "注意: 此步骤通常在备节点加入时需要，主节点格式化后一般不需要"
 
-log_info "步骤4: 跳过共享存储初始化（如需手动执行，请取消注释）"
+# 检查是否需要在主节点执行
+if [ -d "${NN_DATA_DIR}/current" ]; then
+    log_info "NameNode 已格式化，跳过共享存储初始化"
+else
+    log_warn "如需初始化共享存储，请在主节点启动后，在备节点执行 bootstrapStandby"
+fi
 
-# 步骤5: 格式化 ZKFC (必须在启动 NameNode 之前)
+# ============================================================
+# 步骤5: 格式化 ZKFC（仅首次执行）
 # ============================================================
 log_info "步骤5: 格式化 ZKFC..."
 log_warn "此步骤在 ZooKeeper 中创建 /hadoop-ha 路径"
@@ -216,83 +216,39 @@ if [ "$ZK_READY" = "false" ]; then
     exit 1
 fi
 
-# 格式化 ZKFC
-run_as_user ${HADOOP_HOME}/bin/hdfs zkfc -formatZK -force -nonInteractive
+# 检查是否已格式化 ZKFC
+log_info "检查 ZKFC 是否已格式化..."
+ZK_OUTPUT=$(run_as_user ${HADOOP_HOME}/bin/hdfs zkfc -formatZK -force -nonInteractive 2>&1) || true
 
-if [ $? -eq 0 ]; then
+if echo "$ZK_OUTPUT" | grep -q "is not empty"; then
+    log_warn "ZKFC 已格式化，跳过"
+elif echo "$ZK_OUTPUT" | grep -q "Successfully created"; then
     log_success "ZKFC 格式化完成"
 else
-    log_error "ZKFC 格式化失败"
+    log_error "ZKFC 格式化失败:"
+    echo "$ZK_OUTPUT"
     exit 1
 fi
 
-# 步骤6: 启动 NameNode
 # ============================================================
-log_info "步骤6: 启动 NameNode (主)..."
-
-# 检查是否已运行
-if [ -f "${PID_FILE}" ]; then
-    PID=$(cat "${PID_FILE}")
-    if ps -p ${PID} > /dev/null 2>&1; then
-        log_info "NameNode 已在运行 (PID: ${PID})"
-    else
-        rm -f "${PID_FILE}"
-        # 启动 NameNode
-        ${HADOOP_HOME}/bin/hdfs --daemon start namenode
-    fi
-else
-    # 启动 NameNode
-    ${HADOOP_HOME}/bin/hdfs --daemon start namenode
-fi
-
-# 等待启动
-sleep 5
-
-# 步骤7: 验证启动
+# 步骤6: 部署 systemd 服务文件
 # ============================================================
-log_info "步骤7: 验证启动..."
-
-# 检查进程
-if [ -f "${PID_FILE}" ]; then
-    PID=$(cat "${PID_FILE}")
-    if ps -p ${PID} > /dev/null 2>&1; then
-        log_success "NameNode 启动成功 (PID: ${PID})"
-    else
-        log_error "NameNode 启动失败"
-        exit 1
-    fi
-else
-    log_error "NameNode PID 文件未创建"
-    exit 1
-fi
-
-# 检查端口
-sleep 3
-if check_port "localhost" "${NN_RPC_PORT}"; then
-    log_success "RPC 端口 ${NN_RPC_PORT} 正在监听"
-else
-    log_warn "RPC 端口 ${NN_RPC_PORT} 未监听"
-fi
-
-if check_port "localhost" "${NN_HTTP_PORT}"; then
-    log_success "HTTP 端口 ${NN_HTTP_PORT} 正在监听"
-else
-    log_warn "HTTP 端口 ${NN_HTTP_PORT} 未监听"
-fi
-
-# 步骤8: 部署 systemd 服务文件（可选）
-# ============================================================
-log_info "步骤8: 部署 systemd 服务文件（可选）..."
+log_info "步骤6: 部署 systemd 服务文件..."
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_FILE="${SCRIPT_DIR}/systemd/hadoop-hdfs-namenode.service"
+SERVICE_FILE="${SCRIPT_DIR}/systemd/${SERVICE_NAME}.service"
 
-if [ -f "${SERVICE_FILE}" ]; then
-    run_as_root cp "${SERVICE_FILE}" /etc/systemd/system/
-    run_as_root chmod 644 /etc/systemd/system/hadoop-hdfs-namenode.service
-    run_as_root systemctl daemon-reload
-    log_info "systemd 服务文件已部署"
+if [ ! -f "${SERVICE_FILE}" ]; then
+    log_error "未找到 systemd 服务文件: ${SERVICE_FILE}"
+    exit 1
 fi
+
+# 部署服务文件
+run_as_root cp "${SERVICE_FILE}" /etc/systemd/system/
+run_as_root chmod 644 /etc/systemd/system/${SERVICE_NAME}.service
+run_as_root systemctl daemon-reload
+run_as_root systemctl enable ${SERVICE_NAME}
+log_success "systemd 服务文件已部署并启用"
 
 # ============================================================
 # 初始化完成
@@ -302,13 +258,28 @@ echo "============================================"
 echo "主 NameNode 初始化完成！"
 echo "============================================"
 echo ""
+echo "初始化内容:"
+echo "  - NameNode 格式化: 完成（如未格式化过）"
+echo "  - ZKFC 格式化: 完成（如未格式化过）"
+echo "  - systemd 服务: 已部署并启用"
+echo ""
+echo "重要: 此脚本只执行了初始化，NameNode 服务尚未启动！"
+echo ""
+echo "启动 NameNode 服务:"
+echo "  sudo systemctl start ${SERVICE_NAME}"
+echo ""
+echo "管理命令:"
+echo "  查看状态: sudo systemctl status ${SERVICE_NAME}"
+echo "  停止服务: sudo systemctl stop ${SERVICE_NAME}"
+echo "  查看日志: sudo journalctl -u ${SERVICE_NAME} -f"
+echo ""
 echo "Web UI: http://$(hostname):${NN_HTTP_PORT}"
 echo ""
 echo "检查状态:"
 echo "  jps | grep NameNode"
-echo "  hdfs haadmin -getAllServiceState"
 echo ""
 echo "后续步骤:"
-echo "1. 在备 NameNode 节点执行: bash init_namenode_standby.sh"
-echo "2. 启动 DataNode: bash start_datanode.sh"
-echo "3. 启动 ZKFC: bash start_zkfc.sh"
+echo "1. 启动 NameNode: sudo systemctl start ${SERVICE_NAME}"
+echo "2. 在备 NameNode 节点执行: bash init_namenode_standby.sh"
+echo "3. 在所有 NameNode 节点启动 ZKFC: bash start_zkfc.sh"
+echo "4. 在所有 DataNode 节点启动 DataNode: bash start_datanode.sh"

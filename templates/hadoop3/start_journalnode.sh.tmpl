@@ -1,7 +1,7 @@
 #!/bin/bash
 # Hadoop 3 JournalNode 启动脚本
 # 使用方法: bash start_journalnode.sh
-# 说明: 在所有 JournalNode 节点执行，启动 JournalNode 服务
+# 说明: 使用 systemd 启动 JournalNode 服务
 # 注意: JournalNode 必须首先启动，因为后续步骤需要连接它们
 
 set -e
@@ -58,6 +58,7 @@ HADOOP_CONF_DIR="${HADOOP_HOME}/etc/hadoop"
 JN_DATA_DIR="${DATA_BASE_DIR}/{{.Instance.Vars.journalnode_data_subdir}}"
 JN_PORT="{{.Instance.Vars.journalnode_port}}"
 PID_FILE="${HADOOP_HOME}/pids/hadoop-hdfs-journalnode.pid"
+SERVICE_NAME="hadoop-hdfs-journalnode"
 
 # ============================================================
 # 开始启动
@@ -69,19 +70,6 @@ echo "主机名: $(hostname)"
 echo "JournalNode 数据目录: ${JN_DATA_DIR}"
 echo "JournalNode 端口: ${JN_PORT}"
 echo "============================================"
-
-# 设置环境变量
-export JAVA_HOME=${JAVA_HOME}
-export HADOOP_HOME=${HADOOP_HOME}
-export HADOOP_CONF_DIR=${HADOOP_CONF_DIR}
-export HDFS_JOURNALNODE_USER=${RUN_USER}
-export HDFS_NAMENODE_USER=${RUN_USER}
-export HDFS_DATANODE_USER=${RUN_USER}
-export HDFS_ZKFC_USER=${RUN_USER}
-export YARN_RESOURCEMANAGER_USER=${RUN_USER}
-export YARN_NODEMANAGER_USER=${RUN_USER}
-
-PATH=${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin:${PATH}
 
 # ============================================================
 # 步骤1: 检查前置条件
@@ -109,54 +97,67 @@ fi
 log_info "前置条件检查通过"
 
 # ============================================================
-# 步骤2: 检查是否已运行
+# 步骤2: 部署并启用 systemd 服务
 # ============================================================
-log_info "步骤2: 检查 JournalNode 状态..."
+log_info "步骤2: 部署 systemd 服务文件..."
 
-if [ -f "${PID_FILE}" ]; then
-    PID=$(cat "${PID_FILE}")
-    if ps -p ${PID} > /dev/null 2>&1; then
-        log_info "JournalNode 已在运行 (PID: ${PID})"
-        exit 0
-    else
-        log_info "清理残留 PID 文件"
-        rm -f "${PID_FILE}"
-    fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE_FILE="${SCRIPT_DIR}/systemd/${SERVICE_NAME}.service"
+
+if [ ! -f "${SERVICE_FILE}" ]; then
+    log_error "未找到 systemd 服务文件: ${SERVICE_FILE}"
+    log_error "请确保 systemd 目录存在且包含服务文件"
+    exit 1
 fi
 
-# 检查端口
-if check_port "${JN_PORT}"; then
-    log_warn "端口 ${JN_PORT} 已被占用"
+# 部署服务文件
+run_as_root cp "${SERVICE_FILE}" /etc/systemd/system/
+run_as_root chmod 644 /etc/systemd/system/${SERVICE_NAME}.service
+run_as_root systemctl daemon-reload
+log_info "systemd 服务文件已部署"
+
+# 启用开机自启动
+run_as_root systemctl enable ${SERVICE_NAME}
+log_info "systemd 服务已启用"
+
+# ============================================================
+# 步骤3: 检查服务状态
+# ============================================================
+log_info "步骤3: 检查 JournalNode 状态..."
+
+if systemctl is-active --quiet ${SERVICE_NAME} 2>/dev/null; then
+    log_info "JournalNode 已在运行"
+    systemctl status ${SERVICE_NAME} --no-pager
     exit 0
 fi
 
-# ============================================================
-# 步骤3: 启动 JournalNode
-# ============================================================
-log_info "步骤3: 启动 JournalNode..."
+# 检查端口占用（可能被非 systemd 启动的进程占用）
+if check_port "${JN_PORT}"; then
+    log_warn "端口 ${JN_PORT} 已被占用，可能存在非 systemd 管理的进程"
+    log_warn "请先停止现有进程: sudo lsof -ti:${JN_PORT} | xargs sudo kill -9"
+    exit 1
+fi
 
-# 使用 hdfs --daemon start journalnode
-${HADOOP_HOME}/bin/hdfs --daemon start journalnode
+# ============================================================
+# 步骤4: 使用 systemctl 启动服务
+# ============================================================
+log_info "步骤4: 使用 systemctl 启动 JournalNode..."
 
-# 等待启动
+run_as_root systemctl start ${SERVICE_NAME}
 sleep 3
 
 # ============================================================
-# 步骤4: 验证启动
+# 步骤5: 验证启动
 # ============================================================
-log_info "步骤4: 验证启动..."
+log_info "步骤5: 验证启动..."
 
-# 检查进程
-if [ -f "${PID_FILE}" ]; then
-    PID=$(cat "${PID_FILE}")
-    if ps -p ${PID} > /dev/null 2>&1; then
-        log_success "JournalNode 启动成功 (PID: ${PID})"
-    else
-        log_error "JournalNode 启动失败"
-        exit 1
-    fi
+# 检查 systemd 状态
+if systemctl is-active --quiet ${SERVICE_NAME}; then
+    log_success "JournalNode 启动成功"
+    systemctl status ${SERVICE_NAME} --no-pager
 else
-    log_error "JournalNode PID 文件未创建"
+    log_error "JournalNode 启动失败"
+    log_error "查看日志: sudo journalctl -u ${SERVICE_NAME} -n 50"
     exit 1
 fi
 
@@ -169,22 +170,6 @@ else
 fi
 
 # ============================================================
-# 步骤5: 部署 systemd 服务文件（可选）
-# ============================================================
-log_info "步骤5: 部署 systemd 服务文件（可选）..."
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_FILE="${SCRIPT_DIR}/systemd/hadoop-hdfs-journalnode.service"
-
-if [ -f "${SERVICE_FILE}" ]; then
-    run_as_root cp "${SERVICE_FILE}" /etc/systemd/system/
-    run_as_root chmod 644 /etc/systemd/system/hadoop-hdfs-journalnode.service
-    run_as_root systemctl daemon-reload
-    log_info "systemd 服务文件已部署"
-    log_info "可使用 systemctl 管理服务"
-fi
-
-# ============================================================
 # 启动完成
 # ============================================================
 echo ""
@@ -192,9 +177,11 @@ echo "============================================"
 echo "JournalNode 启动完成！"
 echo "============================================"
 echo ""
-echo "检查状态:"
-echo "  jps | grep JournalNode"
-echo "  netstat -tuln | grep ${JN_PORT}"
+echo "管理命令:"
+echo "  查看状态: sudo systemctl status ${SERVICE_NAME}"
+echo "  停止服务: sudo systemctl stop ${SERVICE_NAME}"
+echo "  重启服务: sudo systemctl restart ${SERVICE_NAME}"
+echo "  查看日志: sudo journalctl -u ${SERVICE_NAME} -f"
 echo ""
 echo "日志文件:"
 echo "  ${HADOOP_HOME}/logs/hadoop-${RUN_USER}-journalnode-$(hostname).log"

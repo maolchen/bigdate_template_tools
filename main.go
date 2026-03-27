@@ -460,8 +460,17 @@ func GenerateOutputs(cfg *Config, instances []ServiceInstance, outputDir string)
 				AllInstances: instances,
 			}
 
-			// 查找模板文件
-			tmplFiles, err := filepath.Glob(filepath.Join(tmplDir, "*.tmpl"))
+			// 递归查找所有模板文件
+			var tmplFiles []string
+			err := filepath.Walk(tmplDir, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !info.IsDir() && strings.HasSuffix(info.Name(), ".tmpl") {
+					tmplFiles = append(tmplFiles, path)
+				}
+				return nil
+			})
 			if err != nil {
 				return fmt.Errorf("查找模板失败: %w", err)
 			}
@@ -473,12 +482,25 @@ func GenerateOutputs(cfg *Config, instances []ServiceInstance, outputDir string)
 					return fmt.Errorf("渲染模板 %s 失败: %w", tmplFile, err)
 				}
 
-				// 生成输出文件名（不再需要节点前缀，因为已经按节点分目录）
-				baseName := filepath.Base(tmplFile)
-				outputName := strings.TrimSuffix(baseName, ".tmpl")
+				// 计算相对路径，保持子目录结构
+				relPath, err := filepath.Rel(tmplDir, tmplFile)
+				if err != nil {
+					return fmt.Errorf("计算相对路径失败: %w", err)
+				}
+
+				// 生成输出文件名
+				outputName := strings.TrimSuffix(relPath, ".tmpl")
+				outputPath := filepath.Join(serviceDir, outputName)
+
+				// 创建子目录（如果需要）
+				outputSubDir := filepath.Dir(outputPath)
+				if outputSubDir != "." && outputSubDir != serviceDir {
+					if err := os.MkdirAll(outputSubDir, 0755); err != nil {
+						return fmt.Errorf("创建输出子目录失败: %w", err)
+					}
+				}
 
 				// 写入文件
-				outputPath := filepath.Join(serviceDir, outputName)
 				if err := os.WriteFile(outputPath, []byte(content), 0644); err != nil {
 					return fmt.Errorf("写入文件失败: %w", err)
 				}
