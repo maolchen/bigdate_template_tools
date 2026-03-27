@@ -32,6 +32,85 @@ Hadoop 3 的部署分为以下几个阶段：
 5. 验证集群状态
 ```
 
+## 服务分布拓扑示例（3节点部署）
+
+以下示例展示在 **3 台节点（dw-master1、dw-master2、dw-master3）** 上部署 Hadoop 3 的服务分布：
+
+### 节点角色分配
+
+| 节点 | JournalNode | NameNode | ZKFC | DataNode | ResourceManager | NodeManager |
+|------|:-----------:|:--------:|:----:|:--------:|:---------------:|:-----------:|
+| **dw-master1** | ✅ | ✅ Active | ✅ | ✅ | ✅ Active | ✅ |
+| **dw-master2** | ✅ | ✅ Standby | ✅ | ✅ | ✅ Standby | ✅ |
+| **dw-master3** | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ |
+
+### 组件分布说明
+
+| 组件 | 部署节点 | 说明 |
+|------|----------|------|
+| **JournalNode** | dw-master1, dw-master2, dw-master3 | 所有 3 节点都部署，提供 HDFS HA 的共享编辑日志 |
+| **NameNode** | dw-master1(Active), dw-master2(Standby) | 主备部署，dw-master1 为主，dw-master2 为备 |
+| **ZKFC** | dw-master1, dw-master2 | 仅部署在 NameNode 节点，自动故障转移 |
+| **DataNode** | dw-master1, dw-master2, dw-master3 | 所有 3 节点都部署，存储数据块 |
+| **ResourceManager** | dw-master1(Active), dw-master2(Standby) | 主备部署，与 NameNode 同节点 |
+| **NodeManager** | dw-master1, dw-master2, dw-master3 | 所有 3 节点都部署，执行 YARN 任务 |
+
+### 部署顺序（3节点场景）
+
+```
+1. 所有节点执行基础准备
+   dw-master1, dw-master2, dw-master3:
+   └─ install_binary.sh
+   └─ deploy_config.sh
+   └─ setup_dirs.sh
+
+2. 启动 JournalNode（所有 3 节点）
+   dw-master1, dw-master2, dw-master3:
+   └─ start_journalnode.sh
+
+3. 初始化并启动 NameNode（dw-master1）
+   dw-master1:
+   └─ init_namenode_master.sh
+   └─ systemctl start hadoop-hdfs-namenode
+
+4. 初始化并启动 NameNode（dw-master2）
+   dw-master2:
+   └─ init_namenode_standby.sh
+   └─ systemctl start hadoop-hdfs-namenode
+
+5. 启动 DataNode（所有 3 节点）
+   dw-master1, dw-master2, dw-master3:
+   └─ start_datanode.sh
+
+6. 启动 ZKFC（NameNode 节点）
+   dw-master1, dw-master2:
+   └─ start_zkfc.sh
+
+7. 启动 YARN（所有 3 节点）
+   dw-master1, dw-master2, dw-master3:
+   └─ start_yarn.sh
+```
+
+### 配置要点（config.yaml）
+
+```yaml
+serviceTop:
+  hadoop3:
+    nodes: [dw-master1, dw-master2, dw-master3]
+
+serverConfig:
+  hadoop3:
+    vars:
+      namenode_nodes: [dw-master1, dw-master2]          # NameNode 只在前 2 节点
+      journalnode_nodes: [dw-master1, dw-master2, dw-master3]  # JournalNode 在全部 3 节点
+      datanode_nodes: [dw-master1, dw-master2, dw-master3]     # DataNode 在全部 3 节点
+      resourcemanager_nodes: [dw-master1, dw-master2]   # RM 只在前 2 节点
+      nodemanager_nodes: [dw-master1, dw-master2, dw-master3]  # NM 在全部 3 节点
+      zkfc_nodes: [dw-master1, dw-master2]              # ZKFC 只在 NameNode 节点
+```
+
+---
+
 ## 正确的启动顺序
 
 **关键顺序（必须严格遵守）**：
