@@ -27,9 +27,9 @@ Hadoop 3 的部署分为以下几个阶段：
 2. 格式化 NameNode（仅主节点）
    └─ hdfs namenode -format
    
-3. 初始化共享存储（仅主节点）
+3. [可选] 初始化共享存储（仅主节点）
    └─ hdfs namenode -initializeSharedEdits
-   └─ 在 JournalNode 中初始化共享编辑日志目录
+   └─ 注：通常不需要手动执行，暂不启用
    
 4. 格式化 ZKFC（仅主节点）
    └─ hdfs zkfc -formatZK
@@ -260,6 +260,19 @@ bash check.sh
 ---
 
 ## 服务管理
+
+### 为什么同时提供 stop.sh 和 systemd？
+
+虽然推荐使用 systemd 管理单个服务，但 `stop.sh` 脚本提供了以下便利：
+
+1. **一键停止所有服务**：可以快速停止所有Hadoop组件
+2. **细粒度控制**：可以停止单个组件（如 `bash stop.sh --component namenode`）
+3. **备用方案**：在没有 systemd 的环境中也可使用
+4. **正确的停止顺序**：自动按正确的逆序停止服务（避免依赖问题）
+
+**建议**：
+- 日常使用：使用 systemd 管理单个服务
+- 维护/升级：使用 stop.sh 批量停止服务
 
 ### 使用脚本停止
 
