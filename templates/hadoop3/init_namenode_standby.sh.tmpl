@@ -1,0 +1,271 @@
+#!/bin/bash
+# Hadoop 3 备 NameNode 初始化脚本
+# 使用方法: bash init_namenode_standby.sh
+# 说明: 在备 NameNode 节点执行，完成以下步骤：
+#   1. 引导备 NameNode (bootstrapStandby)
+#   2. 启动 NameNode
+# 注意: 必须确保主 NameNode 已启动！
+
+set -e
+
+# ============================================================
+# 全局变量
+# ============================================================
+INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
+DATA_BASE_DIR="{{.Global.data_base_dir}}"
+RUN_USER="{{.Global.user}}"
+RUN_GROUP="{{.Global.group}}"
+JAVA_HOME="{{.Global.java_home}}"
+
+# ============================================================
+# 辅助函数
+# ============================================================
+run_as_root() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+run_as_user() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo -u ${RUN_USER} "$@"
+    fi
+}
+
+log_info() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+}
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
+}
+
+log_warn() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1"
+}
+
+log_success() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] $1"
+}
+
+check_port() {
+    local host=$1
+    local port=$2
+    if timeout 5 bash -c "echo > /dev/tcp/${host}/${port}" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+# ============================================================
+# Hadoop 配置
+# ============================================================
+HADOOP_HOME="${INSTALL_BASE_DIR}/{{.Instance.Vars.install_subdir}}"
+HADOOP_CONF_DIR="${HADOOP_HOME}/etc/hadoop"
+NN_DATA_DIR="${DATA_BASE_DIR}/{{.Instance.Vars.namenode_data_subdir}}"
+NAMESERVICE="{{.Instance.Vars.nameservice}}"
+NN_RPC_PORT="{{.Instance.Vars.namenode_rpc_port}}"
+NN_HTTP_PORT="{{.Instance.Vars.namenode_http_port}}"
+PID_FILE="${HADOOP_HOME}/pids/hadoop-hdfs-namenode.pid"
+
+# ============================================================
+# 开始初始化
+# ============================================================
+echo "============================================"
+echo "Hadoop 3 备 NameNode 初始化脚本"
+echo "============================================"
+echo "主机名: $(hostname)"
+echo "Nameservice: ${NAMESERVICE}"
+echo "NameNode 数据目录: ${NN_DATA_DIR}"
+echo "============================================"
+
+# 设置环境变量
+export JAVA_HOME=${JAVA_HOME}
+export HADOOP_HOME=${HADOOP_HOME}
+export HADOOP_CONF_DIR=${HADOOP_CONF_DIR}
+export HDFS_NAMENODE_USER=${RUN_USER}
+export HDFS_DATANODE_USER=${RUN_USER}
+export HDFS_JOURNALNODE_USER=${RUN_USER}
+export HDFS_ZKFC_USER=${RUN_USER}
+export YARN_RESOURCEMANAGER_USER=${RUN_USER}
+export YARN_NODEMANAGER_USER=${RUN_USER}
+
+PATH=${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin:${PATH}
+
+# ============================================================
+# 步骤1: 检查前置条件
+# ============================================================
+log_info "步骤1: 检查前置条件..."
+
+# 检查Hadoop安装
+if [ ! -d "${HADOOP_HOME}" ]; then
+    log_error "Hadoop未安装，请先执行 install_binary.sh"
+    exit 1
+fi
+
+# 检查配置文件
+if [ ! -f "${HADOOP_CONF_DIR}/hdfs-site.xml" ]; then
+    log_error "配置文件不存在，请先执行 deploy_config.sh"
+    exit 1
+fi
+
+# 检查数据目录
+if [ ! -d "${NN_DATA_DIR}" ]; then
+    log_error "数据目录不存在，请先执行 setup_dirs.sh"
+    exit 1
+fi
+
+log_info "前置条件检查通过"
+
+# ============================================================
+# 步骤2: 检查主 NameNode 状态（关键！）
+# ============================================================
+log_info "步骤2: 检查主 NameNode 状态..."
+log_warn "必须确保主 NameNode 已启动！"
+
+NN_READY=false
+
+{{- range $i, $inst := (serviceNodes "hadoop3/namenode") }}
+{{- if eq $i 0 }}
+log_info "检查主 NameNode: {{$inst.Node.Hostname}} ({{$inst.Node.IP}})"
+if check_port "{{$inst.Node.IP}}" "${NN_RPC_PORT}"; then
+    log_success "主 NameNode {{$inst.Node.Hostname}} 可连接"
+    NN_READY=true
+else
+    log_error "主 NameNode {{$inst.Node.Hostname}} 无法连接"
+fi
+{{- end }}
+{{- end }}
+
+if [ "$NN_READY" = "false" ]; then
+    log_error "无法连接到主 NameNode，请先在主节点执行: bash init_namenode_master.sh"
+    exit 1
+fi
+
+# ============================================================
+# 步骤3: 引导备 NameNode (bootstrapStandby)
+# ============================================================
+log_info "步骤3: 引导备 NameNode (bootstrapStandby)..."
+log_warn "此步骤从主节点拉取元数据（fsimage），而不是手动格式化"
+
+# 检查是否已初始化
+if [ -d "${NN_DATA_DIR}/current" ]; then
+    log_warn "NameNode 数据目录已存在，跳过引导步骤"
+    log_warn "如需重新引导，请先清理数据目录: ${NN_DATA_DIR}"
+else
+    log_info "开始引导备 NameNode..."
+    
+    # 引导备 NameNode
+    run_as_user ${HADOOP_HOME}/bin/hdfs namenode -bootstrapStandby -force -nonInteractive
+    
+    if [ $? -eq 0 ]; then
+        log_success "备 NameNode 引导完成"
+    else
+        log_error "备 NameNode 引导失败"
+        exit 1
+    fi
+fi
+
+# ============================================================
+# 步骤4: 启动 NameNode
+# ============================================================
+log_info "步骤4: 启动 NameNode (备)..."
+
+# 检查是否已运行
+if [ -f "${PID_FILE}" ]; then
+    PID=$(cat "${PID_FILE}")
+    if ps -p ${PID} > /dev/null 2>&1; then
+        log_info "NameNode 已在运行 (PID: ${PID})"
+    else
+        rm -f "${PID_FILE}"
+        # 启动 NameNode
+        ${HADOOP_HOME}/bin/hdfs --daemon start namenode
+    fi
+else
+    # 启动 NameNode
+    ${HADOOP_HOME}/bin/hdfs --daemon start namenode
+fi
+
+# 等待启动
+sleep 5
+
+# ============================================================
+# 步骤5: 验证启动
+# ============================================================
+log_info "步骤5: 验证启动..."
+
+# 检查进程
+if [ -f "${PID_FILE}" ]; then
+    PID=$(cat "${PID_FILE}")
+    if ps -p ${PID} > /dev/null 2>&1; then
+        log_success "NameNode 启动成功 (PID: ${PID})"
+    else
+        log_error "NameNode 启动失败"
+        exit 1
+    fi
+else
+    log_error "NameNode PID 文件未创建"
+    exit 1
+fi
+
+# 检查端口
+sleep 3
+if check_port "localhost" "${NN_RPC_PORT}"; then
+    log_success "RPC 端口 ${NN_RPC_PORT} 正在监听"
+else
+    log_warn "RPC 端口 ${NN_RPC_PORT} 未监听"
+fi
+
+if check_port "localhost" "${NN_HTTP_PORT}"; then
+    log_success "HTTP 端口 ${NN_HTTP_PORT} 正在监听"
+else
+    log_warn "HTTP 端口 ${NN_HTTP_PORT} 未监听"
+fi
+
+# ============================================================
+# 步骤6: 验证 NameNode HA 状态
+# ============================================================
+log_info "步骤6: 验证 NameNode HA 状态..."
+
+sleep 5
+
+echo ""
+echo "NameNode HA 状态:"
+${HADOOP_HOME}/bin/hdfs haadmin -getAllServiceState 2>/dev/null || log_warn "无法获取 HA 状态"
+
+# ============================================================
+# 步骤7: 部署 systemd 服务文件（可选）
+# ============================================================
+log_info "步骤7: 部署 systemd 服务文件（可选）..."
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE_FILE="${SCRIPT_DIR}/systemd/hadoop-hdfs-namenode.service"
+
+if [ -f "${SERVICE_FILE}" ]; then
+    run_as_root cp "${SERVICE_FILE}" /etc/systemd/system/
+    run_as_root chmod 644 /etc/systemd/system/hadoop-hdfs-namenode.service
+    run_as_root systemctl daemon-reload
+    log_info "systemd 服务文件已部署"
+fi
+
+# ============================================================
+# 初始化完成
+# ============================================================
+echo ""
+echo "============================================"
+echo "备 NameNode 初始化完成！"
+echo "============================================"
+echo ""
+echo "Web UI: http://$(hostname):${NN_HTTP_PORT}"
+echo ""
+echo "检查状态:"
+echo "  jps | grep NameNode"
+echo "  hdfs haadmin -getAllServiceState"
+echo ""
+echo "后续步骤:"
+echo "1. 启动 DataNode: bash start_datanode.sh"
+echo "2. 启动 ZKFC: bash start_zkfc.sh"

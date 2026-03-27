@@ -1,0 +1,32 @@
+[Unit]
+Description=Hadoop YARN NodeManager
+Documentation=https://hadoop.apache.org/docs/r3.3.6/hadoop-yarn/hadoop-yarn-site/YARN.html
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+User={{.Global.user}}
+Group={{.Global.group}}
+Environment="JAVA_HOME={{.Global.java_home}}"
+Environment="HADOOP_HOME={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}"
+Environment="HADOOP_CONF_DIR={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/etc/hadoop"
+Environment="YARN_CONF_DIR={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/etc/hadoop"
+Environment="HADOOP_PID_DIR={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/pids"
+Environment="HDFS_NAMENODE_USER={{.Global.user}}"
+Environment="HDFS_DATANODE_USER={{.Global.user}}"
+Environment="HDFS_JOURNALNODE_USER={{.Global.user}}"
+Environment="HDFS_ZKFC_USER={{.Global.user}}"
+Environment="YARN_RESOURCEMANAGER_USER={{.Global.user}}"
+Environment="YARN_NODEMANAGER_USER={{.Global.user}}"
+ExecStart={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/bin/yarn --daemon start nodemanager
+ExecStop={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/bin/yarn --daemon stop nodemanager
+PIDFile={{.Global.install_base_dir}}/{{.Instance.Vars.install_subdir}}/pids/yarn-yarn-nodemanager.pid
+Restart=on-failure
+RestartSec=10
+TimeoutSec=300
+LimitNOFILE=65536
+LimitNPROC=65536
+
+[Install]
+WantedBy=multi-user.target

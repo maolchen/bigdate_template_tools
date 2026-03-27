@@ -1,0 +1,231 @@
+#!/bin/bash
+# Hadoop 3 ZKFC 启动脚本
+# 使用方法: bash start_zkfc.sh
+# 说明: 在所有 NameNode 节点执行，启动 ZKFC 服务
+# 注意: 必须确保 NameNode 已启动！
+
+set -e
+
+# ============================================================
+# 全局变量
+# ============================================================
+INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
+DATA_BASE_DIR="{{.Global.data_base_dir}}"
+RUN_USER="{{.Global.user}}"
+RUN_GROUP="{{.Global.group}}"
+JAVA_HOME="{{.Global.java_home}}"
+
+# ============================================================
+# 辅助函数
+# ============================================================
+run_as_root() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+log_info() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+}
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
+}
+
+log_warn() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1"
+}
+
+log_success() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] $1"
+}
+
+check_port() {
+    local host=$1
+    local port=$2
+    if timeout 5 bash -c "echo > /dev/tcp/${host}/${port}" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+# ============================================================
+# Hadoop 配置
+# ============================================================
+HADOOP_HOME="${INSTALL_BASE_DIR}/{{.Instance.Vars.install_subdir}}"
+HADOOP_CONF_DIR="${HADOOP_HOME}/etc/hadoop"
+NAMESERVICE="{{.Instance.Vars.nameservice}}"
+NN_RPC_PORT="{{.Instance.Vars.namenode_rpc_port}}"
+PID_FILE="${HADOOP_HOME}/pids/hadoop-hdfs-zkfc.pid"
+
+# ============================================================
+# 开始启动
+# ============================================================
+echo "============================================"
+echo "Hadoop 3 ZKFC 启动脚本"
+echo "============================================"
+echo "主机名: $(hostname)"
+echo "Nameservice: ${NAMESERVICE}"
+echo "============================================"
+
+# 设置环境变量
+export JAVA_HOME=${JAVA_HOME}
+export HADOOP_HOME=${HADOOP_HOME}
+export HADOOP_CONF_DIR=${HADOOP_CONF_DIR}
+export HDFS_NAMENODE_USER=${RUN_USER}
+export HDFS_DATANODE_USER=${RUN_USER}
+export HDFS_JOURNALNODE_USER=${RUN_USER}
+export HDFS_ZKFC_USER=${RUN_USER}
+export YARN_RESOURCEMANAGER_USER=${RUN_USER}
+export YARN_NODEMANAGER_USER=${RUN_USER}
+
+PATH=${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin:${PATH}
+
+# ============================================================
+# 步骤1: 检查前置条件
+# ============================================================
+log_info "步骤1: 检查前置条件..."
+
+# 检查Hadoop安装
+if [ ! -d "${HADOOP_HOME}" ]; then
+    log_error "Hadoop未安装，请先执行 install_binary.sh"
+    exit 1
+fi
+
+# 检查配置文件
+if [ ! -f "${HADOOP_CONF_DIR}/hdfs-site.xml" ]; then
+    log_error "配置文件不存在，请先执行 deploy_config.sh"
+    exit 1
+fi
+
+log_info "前置条件检查通过"
+
+# ============================================================
+# 步骤2: 检查 NameNode 状态
+# ============================================================
+log_info "步骤2: 检查 NameNode 状态..."
+log_warn "必须确保 NameNode 已启动！"
+
+NN_READY=false
+
+{{- range $i, $inst := (serviceNodes "hadoop3/namenode") }}
+log_info "检查 NameNode: {{$inst.Node.Hostname}} ({{$inst.Node.IP}})"
+if check_port "{{$inst.Node.IP}}" "${NN_RPC_PORT}"; then
+    log_success "NameNode {{$inst.Node.Hostname}} 可连接"
+    NN_READY=true
+fi
+{{- end }}
+
+if [ "$NN_READY" = "false" ]; then
+    log_error "无法连接到任何 NameNode，请先启动 NameNode"
+    exit 1
+fi
+
+# ============================================================
+# 步骤3: 检查 ZooKeeper 状态
+# ============================================================
+log_info "步骤3: 检查 ZooKeeper 状态..."
+
+ZK_READY=false
+
+{{- range $i, $inst := (serviceNodes "zookeeper") }}
+if check_port "{{$inst.Node.IP}}" "2181"; then
+    log_info "ZooKeeper {{$inst.Node.Hostname}} 可连接"
+    ZK_READY=true
+fi
+{{- end }}
+
+if [ "$ZK_READY" = "false" ]; then
+    log_error "无法连接到 ZooKeeper，请确保 ZooKeeper 已启动"
+    exit 1
+fi
+
+# ============================================================
+# 步骤4: 检查是否已运行
+# ============================================================
+log_info "步骤4: 检查 ZKFC 状态..."
+
+if [ -f "${PID_FILE}" ]; then
+    PID=$(cat "${PID_FILE}")
+    if ps -p ${PID} > /dev/null 2>&1; then
+        log_info "ZKFC 已在运行 (PID: ${PID})"
+        exit 0
+    else
+        log_info "清理残留 PID 文件"
+        rm -f "${PID_FILE}"
+    fi
+fi
+
+# ============================================================
+# 步骤5: 启动 ZKFC
+# ============================================================
+log_info "步骤5: 启动 ZKFC..."
+log_warn "ZKFC 会自动监控 NameNode 状态并实现故障转移"
+
+# 使用 hdfs --daemon start zkfc
+${HADOOP_HOME}/bin/hdfs --daemon start zkfc
+
+# 等待启动
+sleep 3
+
+# ============================================================
+# 步骤6: 验证启动
+# ============================================================
+log_info "步骤6: 验证启动..."
+
+# 检查进程
+if [ -f "${PID_FILE}" ]; then
+    PID=$(cat "${PID_FILE}")
+    if ps -p ${PID} > /dev/null 2>&1; then
+        log_success "ZKFC 启动成功 (PID: ${PID})"
+    else
+        log_error "ZKFC 启动失败"
+        exit 1
+    fi
+else
+    log_error "ZKFC PID 文件未创建"
+    exit 1
+fi
+
+# ============================================================
+# 步骤7: 验证 NameNode HA 状态
+# ============================================================
+log_info "步骤7: 验证 NameNode HA 状态..."
+
+sleep 5
+
+echo ""
+echo "NameNode HA 状态:"
+${HADOOP_HOME}/bin/hdfs haadmin -getAllServiceState 2>/dev/null || log_warn "无法获取 HA 状态"
+
+# ============================================================
+# 步骤8: 部署 systemd 服务文件（可选）
+# ============================================================
+log_info "步骤8: 部署 systemd 服务文件（可选）..."
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE_FILE="${SCRIPT_DIR}/systemd/hadoop-hdfs-zkfc.service"
+
+if [ -f "${SERVICE_FILE}" ]; then
+    run_as_root cp "${SERVICE_FILE}" /etc/systemd/system/
+    run_as_root chmod 644 /etc/systemd/system/hadoop-hdfs-zkfc.service
+    run_as_root systemctl daemon-reload
+    log_info "systemd 服务文件已部署"
+fi
+
+# ============================================================
+# 启动完成
+# ============================================================
+echo ""
+echo "============================================"
+echo "ZKFC 启动完成！"
+echo "============================================"
+echo ""
+echo "检查状态:"
+echo "  jps | grep DFSZKFailoverController"
+echo "  hdfs haadmin -getAllServiceState"
+echo ""
+echo "后续步骤:"
+echo "  启动 YARN: bash start_yarn.sh"

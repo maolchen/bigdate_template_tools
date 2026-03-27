@@ -11,67 +11,106 @@ Hadoop 3 的部署分为以下几个阶段：
    ↓
 3. 创建数据目录（所有节点）
    ↓
-4. 初始化并启动服务（按正确顺序）
+4. 按正确顺序启动服务
    ↓
-5. 配置开机启动（可选）
+5. 验证集群状态
+```
+
+## 正确的启动顺序
+
+**关键顺序（必须严格遵守）**：
+
+```
+1. 启动 JournalNode（所有 JournalNode 节点）
+   └─ 必须确保所有 JournalNode 都已启动
+   
+2. 格式化 NameNode（仅主节点）
+   └─ hdfs namenode -format
+   
+3. 初始化共享存储（仅主节点）
+   └─ hdfs namenode -initializeSharedEdits
+   └─ 在 JournalNode 中初始化共享编辑日志目录
+   
+4. 格式化 ZKFC（仅主节点）
+   └─ hdfs zkfc -formatZK
+   └─ 在 ZooKeeper 中创建 /hadoop-ha 路径
+   └─ 必须在启动 NameNode 进程之前完成！
+   
+5. 启动 NameNode（主）
+   └─ hdfs --daemon start namenode
+   
+6. 引导备 NameNode（仅备节点）
+   └─ hdfs namenode -bootstrapStandby
+   └─ 从主节点拉取元数据（fsimage）
+   
+7. 启动 NameNode（备）
+   └─ hdfs --daemon start namenode
+   
+8. 启动 DataNode（所有 DataNode 节点）
+   └─ hdfs --daemon start datanode
+   
+9. 启动 ZKFC（主备节点）
+   └─ hdfs --daemon start zkfc
+   └─ ZKFC 自动监控 NameNode 状态并实现故障转移
+   
+10. 启动 YARN（ResourceManager & NodeManager）
+    └─ yarn --daemon start resourcemanager
+    └─ yarn --daemon start nodemanager
 ```
 
 ## 脚本清单
 
-### 通用脚本（在NameNode节点生成）
-- `install_binary.sh` - 安装Hadoop二进制包（所有节点执行）
-- `deploy_config.sh` - 部署配置文件（所有节点执行）
-- `setup_dirs.sh` - 创建数据目录（所有节点执行）
-- `init_services.sh` - 初始化并启动HDFS服务（NameNode节点执行）
-- `check.sh` - 服务状态验证
-- `stop.sh` - 停止服务
+### 通用脚本（所有节点执行）
+| 脚本 | 用途 |
+|------|------|
+| `install_binary.sh` | 安装Hadoop二进制包 |
+| `deploy_config.sh` | 部署配置文件 |
+| `setup_dirs.sh` | 创建数据目录 |
 
-### JournalNode
-- `install.sh` - 准备JournalNode运行环境
-- `start.sh` - 启动JournalNode服务
-- `hadoop-hdfs-journalnode.service` - systemd服务文件
+### 服务启动脚本
+| 脚本 | 用途 | 执行节点 |
+|------|------|----------|
+| `start_journalnode.sh` | 启动JournalNode | JournalNode节点 |
+| `init_namenode_master.sh` | 初始化主NameNode | 第一个NameNode |
+| `init_namenode_standby.sh` | 初始化备NameNode | 第二个NameNode |
+| `start_datanode.sh` | 启动DataNode | DataNode节点 |
+| `start_zkfc.sh` | 启动ZKFC | NameNode节点 |
+| `start_yarn.sh` | 启动YARN | YARN节点 |
 
-### NameNode
-- `hadoop-hdfs-namenode.service` - systemd服务文件
+### 管理脚本
+| 脚本 | 用途 |
+|------|------|
+| `check.sh` | 验证服务状态 |
+| `stop.sh` | 停止服务 |
 
-### ZKFC
-- `install.sh` - 准备ZKFC运行环境
-- `hadoop-hdfs-zkfc.service` - systemd服务文件
-
-### DataNode
-- `install.sh` - 准备DataNode运行环境
-- `hadoop-hdfs-datanode.service` - systemd服务文件
-
-### ResourceManager
-- `install.sh` - 准备ResourceManager运行环境
-- `hadoop-yarn-resourcemanager.service` - systemd服务文件
-
-### NodeManager
-- `install.sh` - 准备NodeManager运行环境
-- `hadoop-yarn-nodemanager.service` - systemd服务文件
+### Systemd服务文件
+```
+systemd/
+├── hadoop-hdfs-journalnode.service
+├── hadoop-hdfs-namenode.service
+├── hadoop-hdfs-datanode.service
+├── hadoop-hdfs-zkfc.service
+├── hadoop-yarn-resourcemanager.service
+└── hadoop-yarn-nodemanager.service
+```
 
 ## 详细部署步骤
 
 ### 步骤1：安装二进制包（所有节点）
 
-**执行节点**：所有Hadoop节点（NameNode、JournalNode、DataNode、ResourceManager、NodeManager）
+**执行节点**：所有Hadoop节点
 
-**执行命令**：
 ```bash
 bash install_binary.sh
 ```
 
 **可选参数**：
-- `--force` - 强制重新安装，会备份已有目录
+- `--force` - 强制重新安装
 
 **作用**：
-- 解压Hadoop二进制包到安装目录
-- 配置环境变量（HADOOP_HOME等）
+- 解压Hadoop二进制包
+- 配置环境变量
 - 设置目录权限
-
-**注意**：
-- 非root用户执行时，所有需要root权限的操作会自动使用sudo提权
-- 安装后需要执行 `source /etc/profile` 或重新登录使环境变量生效
 
 ---
 
@@ -79,18 +118,13 @@ bash install_binary.sh
 
 **执行节点**：所有Hadoop节点
 
-**执行命令**：
 ```bash
 bash deploy_config.sh
 ```
 
 **作用**：
-- 部署 core-site.xml、hdfs-site.xml、yarn-site.xml 等配置文件
-- 配置 hadoop-env.sh 环境变量
-- 创建 workers 文件
-
-**前置条件**：
-- 步骤1已完成
+- 部署配置文件
+- 创建workers文件
 
 ---
 
@@ -98,49 +132,23 @@ bash deploy_config.sh
 
 **执行节点**：所有Hadoop节点
 
-**执行命令**：
 ```bash
 bash setup_dirs.sh
 ```
 
 **作用**：
-- 创建HDFS数据目录（/data/dfs/nn、/data/dfs/dn、/data/dfs/jn）
-- 创建Socket目录（用于短路读取）
+- 创建HDFS数据目录
 - 创建YARN目录
-- 创建日志和PID目录
-
-**前置条件**：
-- 步骤1已完成
+- 创建Socket目录
 
 ---
 
-### 步骤4：初始化并启动服务
-
-**正确的启动顺序**：
-```
-1. JournalNode（所有JournalNode节点）
-2. NameNode主（第一个NameNode）
-3. NameNode备（第二个NameNode）
-4. ZKFC（所有NameNode节点）
-5. DataNode（所有DataNode节点）
-6. ResourceManager（所有ResourceManager节点）
-7. NodeManager（所有NodeManager节点）
-```
-
-#### 4.1 启动JournalNode
+### 步骤4：启动JournalNode
 
 **执行节点**：所有JournalNode节点
 
-**执行命令**：
 ```bash
-# 准备环境
-bash install.sh
-
-# 启动服务
-systemctl start hadoop-hdfs-journalnode
-
-# 设置开机自启
-systemctl enable hadoop-hdfs-journalnode
+bash start_journalnode.sh
 ```
 
 **验证**：
@@ -149,180 +157,139 @@ jps | grep JournalNode
 netstat -tuln | grep 8485
 ```
 
-#### 4.2 初始化并启动NameNode
+---
+
+### 步骤5：初始化主NameNode
 
 **执行节点**：第一个NameNode节点（主节点）
 
-**执行命令**：
 ```bash
-# 初始化并启动
-bash init_services.sh --format
-
-# 设置开机自启
-systemctl enable hadoop-hdfs-namenode
+bash init_namenode_master.sh
 ```
 
-**执行节点**：第二个NameNode节点（备节点）
-
-**执行命令**：
-```bash
-# 初始化并启动
-bash init_services.sh
-
-# 设置开机自启
-systemctl enable hadoop-hdfs-namenode
-```
+**此脚本会自动执行**：
+1. 格式化NameNode
+2. 初始化共享存储（initializeSharedEdits）
+3. 格式化ZKFC
+4. 启动NameNode
 
 **验证**：
 ```bash
-# 检查NameNode状态
+jps | grep NameNode
 hdfs haadmin -getAllServiceState
-
-# 检查HDFS安全模式
-hdfs dfsadmin -safemode get
 ```
 
-#### 4.3 启动DataNode
+---
+
+### 步骤6：初始化备NameNode
+
+**执行节点**：第二个NameNode节点（备节点）
+
+```bash
+bash init_namenode_standby.sh
+```
+
+**此脚本会自动执行**：
+1. 引导备NameNode（bootstrapStandby）
+2. 启动NameNode
+
+**验证**：
+```bash
+jps | grep NameNode
+hdfs haadmin -getAllServiceState
+```
+
+---
+
+### 步骤7：启动DataNode
 
 **执行节点**：所有DataNode节点
 
-**执行命令**：
 ```bash
-# 准备环境
-bash install.sh
-
-# 启动服务
-systemctl start hadoop-hdfs-datanode
-
-# 设置开机自启
-systemctl enable hadoop-hdfs-datanode
+bash start_datanode.sh
 ```
 
 **验证**：
 ```bash
 jps | grep DataNode
-netstat -tuln | grep 9866
+hdfs dfsadmin -report
 ```
 
-#### 4.4 启动ResourceManager
+---
 
-**执行节点**：所有ResourceManager节点
+### 步骤8：启动ZKFC
 
-**执行命令**：
+**执行节点**：所有NameNode节点
+
 ```bash
-# 准备环境
-bash install.sh
-
-# 启动服务
-systemctl start hadoop-yarn-resourcemanager
-
-# 设置开机自启
-systemctl enable hadoop-yarn-resourcemanager
+bash start_zkfc.sh
 ```
 
 **验证**：
 ```bash
-jps | grep ResourceManager
-yarn rmadmin -getAllServiceState
+jps | grep DFSZKFailoverController
+hdfs haadmin -getAllServiceState
 ```
 
-#### 4.5 启动NodeManager
+---
 
-**执行节点**：所有NodeManager节点
+### 步骤9：启动YARN
 
-**执行命令**：
+**执行节点**：所有YARN节点
+
 ```bash
-# 准备环境
-bash install.sh
-
-# 启动服务
-systemctl start hadoop-yarn-nodemanager
-
-# 设置开机自启
-systemctl enable hadoop-yarn-nodemanager
+bash start_yarn.sh
 ```
 
 **验证**：
 ```bash
-jps | grep NodeManager
+jps | grep -E 'ResourceManager|NodeManager'
 yarn node -list
 ```
 
 ---
 
-### 步骤5：验证集群状态
+### 步骤10：验证集群状态
 
 **执行节点**：任意Hadoop节点
 
-**执行命令**：
 ```bash
 bash check.sh
 ```
-
-**输出内容**：
-- 各组件进程状态
-- 端口监听状态
-- HDFS HA状态
-- YARN节点状态
-- systemd服务状态
 
 ---
 
 ## 服务管理
 
-### 停止服务
+### 使用脚本停止
 
-**停止所有服务**：
 ```bash
+# 停止所有服务
 bash stop.sh --all
-```
 
-**停止单个组件**：
-```bash
+# 停止单个组件
 bash stop.sh --component namenode
-bash stop.sh --component datanode
-bash stop.sh --component journalnode
-bash stop.sh --component zkfc
-bash stop.sh --component resourcemanager
-bash stop.sh --component nodemanager
 ```
 
-**使用systemd停止**：
+### 使用systemd管理
+
 ```bash
+# 启动服务
+systemctl start hadoop-hdfs-journalnode
+systemctl start hadoop-hdfs-namenode
+systemctl start hadoop-hdfs-datanode
+systemctl start hadoop-hdfs-zkfc
+systemctl start hadoop-yarn-resourcemanager
+systemctl start hadoop-yarn-nodemanager
+
+# 停止服务
 systemctl stop hadoop-hdfs-namenode
-systemctl stop hadoop-hdfs-datanode
-systemctl stop hadoop-hdfs-journalnode
-systemctl stop hadoop-hdfs-zkfc
-systemctl stop hadoop-yarn-resourcemanager
-systemctl stop hadoop-yarn-nodemanager
-```
 
-### 重启服务
+# 设置开机自启
+systemctl enable hadoop-hdfs-namenode
 
-```bash
-systemctl restart hadoop-hdfs-namenode
-```
-
-### 查看服务状态
-
-```bash
+# 查看状态
 systemctl status hadoop-hdfs-namenode
-```
-
-### 查看日志
-
-```bash
-# NameNode日志
-tail -f /data/localization/hadoop/logs/hadoop-*-namenode-*.log
-
-# DataNode日志
-tail -f /data/localization/hadoop/logs/hadoop-*-datanode-*.log
-
-# ResourceManager日志
-tail -f /data/localization/hadoop/logs/yarn-*-resourcemanager-*.log
-
-# JournalNode日志
-tail -f /data/localization/hadoop/logs/hadoop-*-journalnode-*.log
 ```
 
 ---
@@ -344,13 +311,12 @@ tail -f /data/localization/hadoop/logs/hadoop-*-journalnode-*.log
 1. 数据目录是否存在：`ls -la /data/dfs/jn`
 2. 目录权限是否正确：`stat /data/dfs/jn`
 3. 端口是否被占用：`netstat -tuln | grep 8485`
-4. 查看日志：`tail -100 /data/localization/hadoop/logs/hadoop-*-journalnode-*.log`
 
 ### NameNode格式化失败
 
 **可能原因**：
-1. JournalNode未启动
-2. JournalNode数量不足（需要至少1个JournalNode可用）
+1. JournalNode未启动或数量不足
+2. JournalNode端口不可达
 
 **解决方案**：
 ```bash
@@ -372,42 +338,17 @@ done
 ```bash
 # 检查ZooKeeper状态
 echo stat | nc <zookeeper-host> 2181
-
-# 格式化ZKFC（仅执行一次）
-hdfs zkfc -formatZK
-```
-
-### HDFS处于安全模式
-
-**检查**：
-```bash
-hdfs dfsadmin -safemode get
-```
-
-**手动退出安全模式**：
-```bash
-hdfs dfsadmin -safemode leave
 ```
 
 ---
 
 ## 注意事项
 
-1. **启动顺序至关重要**：必须先启动JournalNode，才能格式化和启动NameNode
-
-2. **格式化仅执行一次**：NameNode格式化和ZKFC格式化仅能在首次部署时执行
-
-3. **避免脚本启动与systemd冲突**：
-   - 推荐统一使用systemd管理服务
-   - 如果使用脚本启动，不要再使用systemd启动同一服务
-
-4. **非root用户执行**：
-   - 所有脚本支持非root用户执行
-   - 需要root权限的操作会自动使用sudo提权
-
-5. **环境变量生效**：
-   - 安装后需要执行 `source /etc/profile` 或重新登录
-   - systemd服务会自动设置环境变量
+1. **启动顺序至关重要**：必须严格按照上述顺序启动
+2. **格式化仅执行一次**：首次部署时执行，不要重复执行
+3. **initializeSharedEdits的重要性**：在JournalNode中初始化共享编辑日志
+4. **ZKFC格式化时机**：必须在启动NameNode进程之前
+5. **统一使用systemd**：避免脚本启动与systemd冲突
 
 ---
 

@@ -1,0 +1,316 @@
+#!/bin/bash
+# Hadoop 3 YARN 启动脚本
+# 使用方法: bash start_yarn.sh
+# 说明: 启动 YARN 组件 (ResourceManager 和 NodeManager)
+# 注意: 必须确保 HDFS 已启动
+
+set -e
+
+# ============================================================
+# 全局变量
+# ============================================================
+INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
+DATA_BASE_DIR="{{.Global.data_base_dir}}"
+RUN_USER="{{.Global.user}}"
+RUN_GROUP="{{.Global.group}}"
+JAVA_HOME="{{.Global.java_home}}"
+
+# ============================================================
+# 辅助函数
+# ============================================================
+run_as_root() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+log_info() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+}
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
+}
+
+log_warn() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1"
+}
+
+log_success() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] $1"
+}
+
+check_port() {
+    local host=$1
+    local port=$2
+    if timeout 5 bash -c "echo > /dev/tcp/${host}/${port}" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+# ============================================================
+# Hadoop 配置
+# ============================================================
+HADOOP_HOME="${INSTALL_BASE_DIR}/{{.Instance.Vars.install_subdir}}"
+HADOOP_CONF_DIR="${HADOOP_HOME}/etc/hadoop"
+YARN_DIR="${DATA_BASE_DIR}/{{.Instance.Vars.install_subdir}}/hadoop-yarn"
+NAMESERVICE="{{.Instance.Vars.nameservice}}"
+NN_RPC_PORT="{{.Instance.Vars.namenode_rpc_port}}"
+RM_PORT="{{.Instance.Vars.resourcemanager_port}}"
+RM_WEB_PORT="{{.Instance.Vars.resourcemanager_web_port}}"
+
+# ============================================================
+# 开始启动
+# ============================================================
+echo "============================================"
+echo "Hadoop 3 YARN 启动脚本"
+echo "============================================"
+echo "主机名: $(hostname)"
+echo "============================================"
+
+# 设置环境变量
+export JAVA_HOME=${JAVA_HOME}
+export HADOOP_HOME=${HADOOP_HOME}
+export HADOOP_CONF_DIR=${HADOOP_CONF_DIR}
+export YARN_CONF_DIR=${HADOOP_CONF_DIR}
+export HDFS_NAMENODE_USER=${RUN_USER}
+export HDFS_DATANODE_USER=${RUN_USER}
+export HDFS_JOURNALNODE_USER=${RUN_USER}
+export HDFS_ZKFC_USER=${RUN_USER}
+export YARN_RESOURCEMANAGER_USER=${RUN_USER}
+export YARN_NODEMANAGER_USER=${RUN_USER}
+
+PATH=${HADOOP_HOME}/bin:${HADOOP_HOME}/sbin:${PATH}
+
+# ============================================================
+# 步骤1: 检查前置条件
+# ============================================================
+log_info "步骤1: 检查前置条件..."
+
+# 检查Hadoop安装
+if [ ! -d "${HADOOP_HOME}" ]; then
+    log_error "Hadoop未安装，请先执行 install_binary.sh"
+    exit 1
+fi
+
+# 检查配置文件
+if [ ! -f "${HADOOP_CONF_DIR}/yarn-site.xml" ]; then
+    log_error "配置文件不存在，请先执行 deploy_config.sh"
+    exit 1
+fi
+
+log_info "前置条件检查通过"
+
+# ============================================================
+# 步骤2: 检查 HDFS 状态
+# ============================================================
+log_info "步骤2: 检查 HDFS 状态..."
+log_warn "必须确保 HDFS 已启动！"
+
+HDFS_READY=false
+
+{{- range $i, $inst := (serviceNodes "hadoop3/namenode") }}
+log_info "检查 NameNode: {{$inst.Node.Hostname}} ({{$inst.Node.IP}})"
+if check_port "{{$inst.Node.IP}}" "${NN_RPC_PORT}"; then
+    log_success "NameNode {{$inst.Node.Hostname}} 可连接"
+    HDFS_READY=true
+fi
+{{- end }}
+
+if [ "$HDFS_READY" = "false" ]; then
+    log_error "无法连接到任何 NameNode，请先启动 HDFS"
+    exit 1
+fi
+
+# ============================================================
+# 步骤3: 检查 ZooKeeper 状态
+# ============================================================
+log_info "步骤3: 检查 ZooKeeper 状态..."
+
+ZK_READY=false
+
+{{- range $i, $inst := (serviceNodes "zookeeper") }}
+if check_port "{{$inst.Node.IP}}" "2181"; then
+    log_info "ZooKeeper {{$inst.Node.Hostname}} 可连接"
+    ZK_READY=true
+fi
+{{- end }}
+
+if [ "$ZK_READY" = "false" ]; then
+    log_warn "无法连接到 ZooKeeper，ResourceManager HA 可能无法正常工作"
+fi
+
+# ============================================================
+# 步骤4: 准备 YARN 目录
+# ============================================================
+log_info "步骤4: 准备 YARN 目录..."
+
+YARN_DIRS=(
+    "${YARN_DIR}/cache"
+    "${YARN_DIR}/containers"
+)
+
+for dir_path in "${YARN_DIRS[@]}"; do
+    if [ ! -d "${dir_path}" ]; then
+        run_as_root mkdir -p "${dir_path}"
+        run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${dir_path}"
+        log_info "创建目录: ${dir_path}"
+    else
+        run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "${dir_path}"
+        log_info "目录已存在: ${dir_path}"
+    fi
+done
+
+# ============================================================
+# 步骤5: 启动 ResourceManager（仅在 ResourceManager 节点）
+# ============================================================
+log_info "步骤5: 启动 ResourceManager..."
+
+# 检查当前节点是否为 ResourceManager 节点
+IS_RM_NODE=false
+
+{{- range $i, $inst := (serviceNodes "hadoop3/resourcemanager") }}
+if [ "$(hostname)" = "{{$inst.Node.Hostname}" ] || [ "$(hostname -f)" = "{{$inst.Node.Hostname}}" ]; then
+    IS_RM_NODE=true
+    log_info "当前节点是 ResourceManager 节点"
+fi
+{{- end }}
+
+if [ "$IS_RM_NODE" = "true" ]; then
+    RM_PID_FILE="${HADOOP_HOME}/pids/yarn-yarn-resourcemanager.pid"
+    
+    if [ -f "${RM_PID_FILE}" ]; then
+        PID=$(cat "${RM_PID_FILE}")
+        if ps -p ${PID} > /dev/null 2>&1; then
+            log_info "ResourceManager 已在运行 (PID: ${PID})"
+        else
+            rm -f "${RM_PID_FILE}"
+            ${HADOOP_HOME}/bin/yarn --daemon start resourcemanager
+            sleep 3
+        fi
+    else
+        ${HADOOP_HOME}/bin/yarn --daemon start resourcemanager
+        sleep 3
+    fi
+    
+    # 验证启动
+    if [ -f "${RM_PID_FILE}" ]; then
+        PID=$(cat "${RM_PID_FILE}")
+        if ps -p ${PID} > /dev/null 2>&1; then
+            log_success "ResourceManager 启动成功 (PID: ${PID})"
+        else
+            log_error "ResourceManager 启动失败"
+        fi
+    fi
+else
+    log_info "当前节点不是 ResourceManager 节点，跳过"
+fi
+
+# ============================================================
+# 步骤6: 启动 NodeManager（仅在 NodeManager 节点）
+# ============================================================
+log_info "步骤6: 启动 NodeManager..."
+
+# 检查当前节点是否为 NodeManager 节点
+IS_NM_NODE=false
+
+{{- range $i, $inst := (serviceNodes "hadoop3/nodemanager") }}
+if [ "$(hostname)" = "{{$inst.Node.Hostname}}" ] || [ "$(hostname -f)" = "{{$inst.Node.Hostname}}" ]; then
+    IS_NM_NODE=true
+    log_info "当前节点是 NodeManager 节点"
+fi
+{{- end }}
+
+if [ "$IS_NM_NODE" = "true" ]; then
+    NM_PID_FILE="${HADOOP_HOME}/pids/yarn-yarn-nodemanager.pid"
+    
+    if [ -f "${NM_PID_FILE}" ]; then
+        PID=$(cat "${NM_PID_FILE}")
+        if ps -p ${PID} > /dev/null 2>&1; then
+            log_info "NodeManager 已在运行 (PID: ${PID})"
+        else
+            rm -f "${NM_PID_FILE}"
+            ${HADOOP_HOME}/bin/yarn --daemon start nodemanager
+            sleep 3
+        fi
+    else
+        ${HADOOP_HOME}/bin/yarn --daemon start nodemanager
+        sleep 3
+    fi
+    
+    # 验证启动
+    if [ -f "${NM_PID_FILE}" ]; then
+        PID=$(cat "${NM_PID_FILE}")
+        if ps -p ${PID} > /dev/null 2>&1; then
+            log_success "NodeManager 启动成功 (PID: ${PID})"
+        else
+            log_error "NodeManager 启动失败"
+        fi
+    fi
+else
+    log_info "当前节点不是 NodeManager 节点，跳过"
+fi
+
+# ============================================================
+# 步骤7: 验证 YARN 状态
+# ============================================================
+log_info "步骤7: 验证 YARN 状态..."
+
+sleep 5
+
+if [ "$IS_RM_NODE" = "true" ]; then
+    echo ""
+    echo "ResourceManager HA 状态:"
+    ${HADOOP_HOME}/bin/yarn rmadmin -getAllServiceState 2>/dev/null || log_warn "无法获取 HA 状态"
+    
+    echo ""
+    echo "NodeManager 列表:"
+    ${HADOOP_HOME}/bin/yarn node -list 2>/dev/null || log_warn "无法获取节点列表"
+fi
+
+# ============================================================
+# 步骤8: 部署 systemd 服务文件（可选）
+# ============================================================
+log_info "步骤8: 部署 systemd 服务文件（可选）..."
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ "$IS_RM_NODE" = "true" ]; then
+    SERVICE_FILE="${SCRIPT_DIR}/systemd/hadoop-yarn-resourcemanager.service"
+    if [ -f "${SERVICE_FILE}" ]; then
+        run_as_root cp "${SERVICE_FILE}" /etc/systemd/system/
+        run_as_root chmod 644 /etc/systemd/system/hadoop-yarn-resourcemanager.service
+        run_as_root systemctl daemon-reload
+        log_info "ResourceManager systemd 服务文件已部署"
+    fi
+fi
+
+if [ "$IS_NM_NODE" = "true" ]; then
+    SERVICE_FILE="${SCRIPT_DIR}/systemd/hadoop-yarn-nodemanager.service"
+    if [ -f "${SERVICE_FILE}" ]; then
+        run_as_root cp "${SERVICE_FILE}" /etc/systemd/system/
+        run_as_root chmod 644 /etc/systemd/system/hadoop-yarn-nodemanager.service
+        run_as_root systemctl daemon-reload
+        log_info "NodeManager systemd 服务文件已部署"
+    fi
+fi
+
+# ============================================================
+# 启动完成
+# ============================================================
+echo ""
+echo "============================================"
+echo "YARN 启动完成！"
+echo "============================================"
+echo ""
+echo "检查状态:"
+echo "  jps | grep -E 'ResourceManager|NodeManager'"
+echo "  yarn node -list"
+echo ""
+echo "Web UI:"
+if [ "$IS_RM_NODE" = "true" ]; then
+    echo "  ResourceManager: http://$(hostname):${RM_WEB_PORT}"
+fi
