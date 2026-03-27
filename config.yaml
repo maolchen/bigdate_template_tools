@@ -161,6 +161,13 @@ serviceTop:
   flink_taskmanager:
     nodes: [dw-worker1, dw-worker2, dw-worker3]
   
+  # ==================== Doris 数仓 ====================
+  doris/fe:
+    nodes: [dw-master1]
+  
+  doris/be:
+    nodes: [dw-master1, dw-worker1, dw-worker2, dw-worker3]
+  
   # ==================== 第五步：数据存储 ====================
   elasticsearch:
     nodes: [realtime-es1, realtime-es2, realtime-es3]
@@ -535,6 +542,28 @@ serverConfig:
       version: "1.18.0"
       task_slots: 4
       memory: "2g"
+  
+  # ==================== Doris 数仓 ====================
+  doris/fe:
+    vars:
+      version: "2.0.3"
+      http_port: 8030
+      rpc_port: 9020
+      query_port: 9030
+      edit_log_port: 9010
+      install_subdir: "apache-doris/fe"
+      data_subdir: "apache-doris/fe/doris-meta"
+      priority_networks: "192.168.10.0/24"
+  
+  doris/be:
+    vars:
+      version: "2.0.3"
+      be_port: 9060
+      webserver_port: 8040
+      heartbeat_service_port: 9050
+      brpc_port: 8060
+      install_subdir: "apache-doris/be"
+      data_subdir: "apache-doris/be/storage"
   
   # ==================== 数据存储 ====================
   elasticsearch:

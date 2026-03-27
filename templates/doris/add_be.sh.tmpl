@@ -1,0 +1,165 @@
+#!/bin/bash
+# Doris 添加 BE 到集群脚本
+# 执行节点: FE 节点（第一个 FE）
+# 用途: 将所有 BE 节点添加到 Doris 集群
+
+set -e
+
+# ============================================================
+# 全局变量
+# ============================================================
+INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
+RUN_USER="{{.Global.user}}"
+INSTALL_SUBDIR="{{.Instance.Vars.install_subdir}}"
+FE_QUERY_PORT="{{.Instance.Vars.fe_query_port}}"
+BE_HEARTBEAT_PORT="{{.Instance.Vars.be_heartbeat_port}}"
+
+# Doris 连接配置
+FE_ROOT_PASSWORD="{{.Instance.Vars.fe_root_password}}"
+
+# ============================================================
+# 辅助函数
+# ============================================================
+log_info() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+}
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
+}
+
+log_warn() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1"
+}
+
+log_success() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] $1"
+}
+
+# MySQL 连接函数
+mysql_exec() {
+    local sql="$1"
+    mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "$sql" 2>/dev/null
+}
+
+# ============================================================
+# 开始添加 BE
+# ============================================================
+echo "============================================"
+echo "Doris 添加 BE 节点脚本"
+echo "============================================"
+echo "主机名: $(hostname)"
+echo "FE Query 端口: ${FE_QUERY_PORT}"
+echo "============================================"
+
+# ============================================================
+# 步骤1: 检查前置条件
+# ============================================================
+log_info "步骤1: 检查前置条件..."
+
+# 检查 mysql 客户端
+if ! command -v mysql &>/dev/null; then
+    log_error "未找到 mysql 客户端，请先安装"
+    exit 1
+fi
+
+# 检查 FE 是否已启动
+log_info "检查 FE 是否已启动..."
+if ! mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -e "SELECT 1" 2>/dev/null; then
+    log_error "无法连接到 FE，请确保 FE 已启动"
+    log_error "如果首次连接，可能需要使用空密码"
+    exit 1
+fi
+
+log_info "FE 连接正常"
+
+# ============================================================
+# 步骤2: 获取 BE 节点列表
+# ============================================================
+log_info "步骤2: 获取 BE 节点列表..."
+
+declare -a BE_NODES=(
+{{- range $i, $inst := (serviceNodes "doris/be") }}
+    "{{$inst.Node.Hostname}}"
+{{- end }}
+)
+
+log_info "发现 ${#BE_NODES[@]} 个 BE 节点"
+for node in "${BE_NODES[@]}"; do
+    log_info "  - $node"
+done
+
+# ============================================================
+# 步骤3: 设置 root 密码
+# ============================================================
+log_info "步骤3: 设置 root 密码..."
+
+# 先尝试空密码
+if mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -e "SELECT 1" 2>/dev/null; then
+    log_info "使用空密码连接成功，设置 root 密码..."
+    mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -e "SET PASSWORD FOR 'root' = PASSWORD('${FE_ROOT_PASSWORD}');" 2>/dev/null
+    log_success "root 密码已设置"
+# 再尝试已设置的密码
+elif mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "SELECT 1" 2>/dev/null; then
+    log_info "root 密码已设置，验证通过"
+else
+    log_warn "无法连接到 FE，请检查密码"
+fi
+
+# 设置最大连接数
+mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "SET PROPERTY FOR 'root' 'max_user_connections' = '1000';" 2>/dev/null || true
+
+# ============================================================
+# 步骤4: 添加 BE 节点
+# ============================================================
+log_info "步骤4: 添加 BE 节点到集群..."
+
+for node in "${BE_NODES[@]}"; do
+    log_info "检查 BE 节点: $node"
+    
+    # 检查是否已存在
+    EXISTING=$(mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "SHOW PROC '/backends';" 2>/dev/null | grep "$node" || true)
+    
+    if [ -n "$EXISTING" ]; then
+        log_warn "BE 节点 $node 已存在，跳过"
+        continue
+    fi
+    
+    # 添加 BE
+    log_info "添加 BE 节点: $node:${BE_HEARTBEAT_PORT}"
+    mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "ALTER SYSTEM ADD BACKEND \"$node:${BE_HEARTBEAT_PORT}\";" 2>/dev/null
+    
+    if [ $? -eq 0 ]; then
+        log_success "BE 节点 $node 添加成功"
+    else
+        log_error "BE 节点 $node 添加失败"
+    fi
+done
+
+# ============================================================
+# 步骤5: 验证 BE 状态
+# ============================================================
+log_info "步骤5: 验证 BE 节点状态..."
+
+sleep 3
+
+echo ""
+echo "BE 节点状态:"
+mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "SHOW PROC '/backends';" 2>/dev/null | head -20
+
+echo ""
+log_info "说明: Alive 为 true 表示节点存活"
+
+# ============================================================
+# 添加完成
+# ============================================================
+echo ""
+echo "============================================"
+echo "Doris BE 节点添加完成！"
+echo "============================================"
+echo ""
+echo "查看 BE 状态:"
+echo "  mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e \"SHOW PROC '/backends';\""
+echo ""
+echo "查看集群概览:"
+echo "  mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e \"SHOW PROC '/frontends';\""

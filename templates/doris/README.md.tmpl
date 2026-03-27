@@ -1,0 +1,254 @@
+# Doris 数仓集群部署说明
+
+## 部署架构
+
+Doris 采用 **FE (Frontend) + BE (Backend)** 架构：
+- **FE**: 管理节点，负责元数据管理、查询规划、集群调度
+- **BE**: 数据节点，负责数据存储和查询执行
+
+## 服务分布拓扑示例（1FE + 3BE）
+
+| 节点 | 角色 | FE | BE |
+|------|------|:--:|:--:|
+| **dw-master1** | FE + BE | ✅ Master | ✅ |
+| **dw-worker1** | BE | ❌ | ✅ |
+| **dw-worker2** | BE | ❌ | ✅ |
+| **dw-worker3** | BE | ❌ | ✅ |
+
+### 端口说明
+
+| 组件 | 端口名称 | 默认端口 | 说明 |
+|------|----------|----------|------|
+| FE | http_port | 8030 | Web UI 端口 |
+| FE | rpc_port | 9020 | FE 间通信端口 |
+| FE | query_port | 9030 | MySQL 协议查询端口 |
+| FE | edit_log_port | 9010 | 元数据日志端口 |
+| BE | be_port | 9060 | BE 服务端口 |
+| BE | webserver_port | 8040 | BE Web UI 端口 |
+| BE | heartbeat_service_port | 9050 | 心跳服务端口 |
+| BE | brpc_port | 8060 | BRPC 通信端口 |
+
+## 部署流程
+
+```
+阶段1: 系统初始化（所有节点）
+   └─ system_init.sh
+
+阶段2: FE 安装配置（FE 节点）
+   └─ install_fe.sh
+
+阶段3: FE 启动（FE 节点）
+   └─ start_fe.sh
+
+阶段4: BE 安装配置（BE 节点）
+   └─ install_be.sh
+
+阶段5: BE 启动（BE 节点）
+   └─ start_be.sh
+
+阶段6: 添加 BE 到集群（第一个 FE 节点）
+   └─ add_be.sh
+
+阶段7: 数据库初始化（第一个 FE 节点）
+   └─ init_db.sh
+```
+
+## 详细部署步骤
+
+### 步骤1: 系统初始化（所有节点）
+
+**执行节点**: 所有 Doris 节点（FE + BE）
+
+```bash
+bash system_init.sh
+```
+
+**主要操作**:
+- 关闭透明大页
+- 设置文件句柄限制 (65536)
+- 调整内核参数 (fs.file-max, vm.max_map_count)
+- 关闭交换分区
+- 安装依赖包 (gcc, mysql-client)
+- 检查 AVX2 指令集支持
+
+### 步骤2: FE 安装配置（FE 节点）
+
+**执行节点**: FE 节点
+
+```bash
+bash install_fe.sh
+```
+
+**主要操作**:
+- 解压 Doris 安装包
+- 创建元数据目录
+- 修改 FE 配置文件（端口、priority_networks、meta_dir）
+- 配置优化参数
+- 创建 UDF 目录
+- 复制 JDBC 驱动
+
+### 步骤3: 启动 FE（FE 节点）
+
+**执行节点**: FE 节点
+
+```bash
+bash start_fe.sh
+```
+
+**说明**:
+- 第一个 FE 节点以独立模式启动（自动成为 Master）
+- 其他 FE 节点（如果有）使用 `--helper` 参数加入集群
+
+**验证**:
+```bash
+jps | grep DorisFE
+netstat -tuln | grep 19010  # edit_log_port
+tail -f /data/doris/fe/log/fe.log
+```
+
+**Web UI**: http://<fe_ip>:8030
+
+### 步骤4: BE 安装配置（BE 节点）
+
+**执行节点**: BE 节点
+
+```bash
+bash install_be.sh
+```
+
+**前置条件**: 需要先将 FE 节点的 Doris 安装目录分发到 BE 节点
+
+```bash
+# 在 FE 节点执行，分发到所有 BE 节点
+scp -r /data/doris/ be-node1:/data/
+scp -r /data/doris/ be-node2:/data/
+```
+
+**主要操作**:
+- 创建 BE 数据目录
+- 修改 BE 配置文件（端口、priority_networks、JAVA_HOME）
+- 复制 JDBC 驱动
+
+### 步骤5: 启动 BE（BE 节点）
+
+**执行节点**: BE 节点
+
+```bash
+bash start_be.sh
+```
+
+**验证**:
+```bash
+ps -ef | grep doris_be
+netstat -tuln | grep 9050  # heartbeat_port
+tail -f /data/doris/be/log/be.log
+```
+
+### 步骤6: 添加 BE 到集群（第一个 FE 节点）
+
+**执行节点**: 第一个 FE 节点
+
+```bash
+bash add_be.sh
+```
+
+**说明**:
+- 设置 root 密码
+- 添加所有 BE 节点到集群
+- 验证 BE 节点状态
+
+**验证**:
+```bash
+mysql -h127.0.0.1 -P9030 -uroot -p'zanalytics' -e "SHOW PROC '/backends';"
+```
+
+### 步骤7: 数据库初始化（第一个 FE 节点）
+
+**执行节点**: 第一个 FE 节点
+
+```bash
+bash init_db.sh
+```
+
+**主要操作**:
+- 创建 zanalytics 和 ods 数据库
+- 执行初始化 SQL 文件（如果提供）
+- 创建 UDF 函数
+- 创建聚合函数
+
+**验证**:
+```bash
+mysql -h127.0.0.1 -P9030 -uroot -p'zanalytics' -e "SHOW GLOBAL FUNCTIONS;"
+```
+
+## 脚本清单
+
+| 脚本 | 用途 | 执行节点 |
+|------|------|----------|
+| `system_init.sh` | 系统环境初始化 | 所有节点 |
+| `install_fe.sh` | FE 安装配置 | FE 节点 |
+| `install_be.sh` | BE 安装配置 | BE 节点 |
+| `start_fe.sh` | 启动 FE 服务 | FE 节点 |
+| `start_be.sh` | 启动 BE 服务 | BE 节点 |
+| `add_be.sh` | 添加 BE 到集群 | 第一个 FE 节点 |
+| `init_db.sh` | 数据库初始化 | 第一个 FE 节点 |
+
+## FE 高可用部署（可选）
+
+如需部署多个 FE 节点实现高可用：
+
+```bash
+# 第1个 FE 节点（Master）
+start_fe.sh  # 独立启动
+
+# 第2、3个 FE 节点（Follower）
+start_fe.sh  # 脚本会自动使用 --helper 参数加入集群
+
+# 登录 Doris 注册 FE
+mysql -h<fe_ip> -P9030 -uroot -p'zanalytics'
+ALTER SYSTEM ADD FOLLOWER "<new_fe_ip>:9010";
+```
+
+## 常用命令
+
+### 查看集群状态
+
+```bash
+# 查看 FE 状态
+mysql -h<fe_ip> -P9030 -uroot -p'zanalytics' -e "SHOW PROC '/frontends';"
+
+# 查看 BE 状态
+mysql -h<fe_ip> -P9030 -uroot -p'zanalytics' -e "SHOW PROC '/backends';"
+
+# 查看数据库
+mysql -h<fe_ip> -P9030 -uroot -p'zanalytics' -e "SHOW DATABASES;"
+```
+
+### 启停服务
+
+```bash
+# 停止 FE
+/data/doris/fe/bin/stop_fe.sh
+
+# 停止 BE
+/data/doris/be/bin/stop_be.sh
+
+# 启动 FE
+/data/doris/fe/bin/start_fe.sh --daemon
+
+# 启动 BE
+/data/doris/be/bin/start_be.sh --daemon
+```
+
+### Web 访问
+
+- **FE Web UI**: http://<fe_ip>:8030  (账号: root / zanalytics)
+- **BE Web UI**: http://<be_ip>:8040
+
+## 注意事项
+
+1. **AVX2 指令集**: 部署前检查 CPU 是否支持 AVX2，如不支持请使用 no-avx2 版本安装包
+2. **时钟同步**: 确保所有节点时钟同步，建议使用 NTP
+3. **防火墙**: 确保所有节点间相关端口互通
+4. **数据目录**: 生产环境建议 FE 元数据和 BE 数据使用不同磁盘
+5. **内存要求**: FE 建议至少 8GB 内存，BE 建议至少 16GB 内存

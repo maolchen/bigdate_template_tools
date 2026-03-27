@@ -1,0 +1,212 @@
+#!/bin/bash
+# Doris 数据库初始化脚本
+# 执行节点: FE 节点（第一个 FE）
+# 用途: 初始化 Doris 库表、创建 UDF 函数
+
+set -e
+
+# ============================================================
+# 全局变量
+# ============================================================
+INSTALL_BASE_DIR="{{.Global.install_base_dir}}"
+RUN_USER="{{.Global.user}}"
+INSTALL_SUBDIR="{{.Instance.Vars.install_subdir}}"
+FE_QUERY_PORT="{{.Instance.Vars.fe_query_port}}"
+
+# Doris 连接配置
+FE_ROOT_PASSWORD="{{.Instance.Vars.fe_root_password}}"
+
+# 初始化 SQL 文件路径
+INIT_SQL_FILE="{{.Instance.Vars.init_sql_file}}"
+UDF_JAR_PATH="{{.Instance.Vars.udf_jar_path}}"
+
+# ============================================================
+# 辅助函数
+# ============================================================
+log_info() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+}
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
+}
+
+log_warn() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1"
+}
+
+log_success() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] $1"
+}
+
+# ============================================================
+# 开始初始化
+# ============================================================
+echo "============================================"
+echo "Doris 数据库初始化脚本"
+echo "============================================"
+echo "主机名: $(hostname)"
+echo "============================================"
+
+DORIS_HOME="${INSTALL_BASE_DIR}/${INSTALL_SUBDIR}"
+
+# ============================================================
+# 步骤1: 检查前置条件
+# ============================================================
+log_info "步骤1: 检查前置条件..."
+
+# 检查 mysql 客户端
+if ! command -v mysql &>/dev/null; then
+    log_error "未找到 mysql 客户端，请先安装"
+    exit 1
+fi
+
+# 检查 FE 是否已启动
+if ! mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "SELECT 1" 2>/dev/null; then
+    log_error "无法连接到 FE，请确保 FE 已启动"
+    exit 1
+fi
+
+log_info "FE 连接正常"
+
+# ============================================================
+# 步骤2: 创建数据库
+# ============================================================
+log_info "步骤2: 创建数据库..."
+
+# 创建 zanalytics 库
+mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "CREATE DATABASE IF NOT EXISTS zanalytics;" 2>/dev/null
+log_success "zanalytics 数据库创建完成"
+
+# 创建 ods 库
+mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "CREATE DATABASE IF NOT EXISTS ods;" 2>/dev/null
+log_success "ods 数据库创建完成"
+
+# ============================================================
+# 步骤3: 执行初始化 SQL
+# ============================================================
+if [ -n "$INIT_SQL_FILE" ] && [ -f "$INIT_SQL_FILE" ]; then
+    log_info "步骤3: 执行初始化 SQL 文件..."
+    log_info "SQL 文件: $INIT_SQL_FILE"
+    
+    mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' zanalytics < "$INIT_SQL_FILE" 2>/dev/null
+    log_success "初始化 SQL 执行完成"
+else
+    log_warn "未找到初始化 SQL 文件，跳过"
+fi
+
+# ============================================================
+# 步骤4: 创建 UDF 函数
+# ============================================================
+log_info "步骤4: 创建 UDF 函数..."
+
+# 检查 UDF JAR 包
+if [ -n "$UDF_JAR_PATH" ] && [ -f "$UDF_JAR_PATH" ]; then
+    log_info "UDF JAR 包: $UDF_JAR_PATH"
+    
+    # 创建 instr 函数
+    log_info "创建 instr 函数..."
+    mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "
+CREATE GLOBAL FUNCTION IF NOT EXISTS instr(String,String,int,int) RETURNS int PROPERTIES (
+    \"file\"=\"file://${UDF_JAR_PATH}\",
+    \"symbol\"=\"io.zhuge.etl.impalaUDF.InstrUDF\",
+    \"always_nullable\"=\"false\",
+    \"type\"=\"JAVA_UDF\"
+);" 2>/dev/null || log_warn "instr 函数可能已存在"
+    
+    # 创建 pagePathMatch 函数
+    log_info "创建 pagePathMatch 函数..."
+    mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "
+CREATE GLOBAL FUNCTION IF NOT EXISTS pagePathMatch(String,String) RETURNS String PROPERTIES (
+    \"file\"=\"file://${UDF_JAR_PATH}\",
+    \"symbol\"=\"io.zhuge.etl.impalaUDF.PathMatchUDF\",
+    \"always_nullable\"=\"true\",
+    \"type\"=\"JAVA_UDF\"
+);" 2>/dev/null || log_warn "pagePathMatch 函数可能已存在"
+    
+    # 创建 splitPartIndex 函数
+    log_info "创建 splitPartIndex 函数..."
+    mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "
+CREATE GLOBAL FUNCTION IF NOT EXISTS splitPartIndex(String,String,int,int) RETURNS String PROPERTIES (
+    \"file\"=\"file://${UDF_JAR_PATH}\",
+    \"symbol\"=\"io.zhuge.etl.impalaUDF.splitPartIndexUDF\",
+    \"always_nullable\"=\"true\",
+    \"type\"=\"JAVA_UDF\"
+);" 2>/dev/null || log_warn "splitPartIndex 函数可能已存在"
+    
+    # 创建 idCardParse 函数
+    log_info "创建 idCardParse 函数..."
+    mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "
+CREATE GLOBAL FUNCTION IF NOT EXISTS idCardParse(String,Integer,String) RETURNS String PROPERTIES (
+    \"file\"=\"file://${UDF_JAR_PATH}\",
+    \"symbol\"=\"io.zhuge.etl.impalaUDF.IDCardParserUDF\",
+    \"always_nullable\"=\"true\",
+    \"type\"=\"JAVA_UDF\"
+);" 2>/dev/null || log_warn "idCardParse 函数可能已存在"
+    
+    # 创建 zg_yearweek 函数
+    log_info "创建 zg_yearweek 函数..."
+    mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "
+CREATE GLOBAL FUNCTION IF NOT EXISTS zg_yearweek(String) RETURNS int PROPERTIES (
+    \"file\"=\"file://${UDF_JAR_PATH}\",
+    \"symbol\"=\"io.zhuge.etl.impalaUDF.WeekYearUDF\",
+    \"always_nullable\"=\"true\",
+    \"type\"=\"JAVA_UDF\"
+);" 2>/dev/null || log_warn "zg_yearweek 函数可能已存在"
+    
+    mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "
+CREATE GLOBAL FUNCTION IF NOT EXISTS zg_yearweek(String,int) RETURNS int PROPERTIES (
+    \"file\"=\"file://${UDF_JAR_PATH}\",
+    \"symbol\"=\"io.zhuge.etl.impalaUDF.WeekYearUDF\",
+    \"always_nullable\"=\"true\",
+    \"type\"=\"JAVA_UDF\"
+);" 2>/dev/null || log_warn "zg_yearweek(String,int) 函数可能已存在"
+    
+    log_success "UDF 函数创建完成"
+else
+    log_warn "未找到 UDF JAR 包，跳过 UDF 创建"
+fi
+
+# ============================================================
+# 步骤5: 创建 appx_median 聚合函数
+# ============================================================
+log_info "步骤5: 创建聚合函数 appx_median..."
+
+if [ -n "$UDF_JAR_PATH" ] && [ -f "$UDF_JAR_PATH" ]; then
+    mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "
+CREATE AGGREGATE FUNCTION IF NOT EXISTS appx_median(DOUBLE) RETURNS DOUBLE PROPERTIES (
+    \"SYMBOL\"=\"io.zhuge.etl.impalaUDF.MedianUDAF\",
+    \"FILE\"=\"file://${UDF_JAR_PATH}\",
+    \"ALWAYS_NULLABLE\"=\"true\",
+    \"TYPE\"=\"JAVA_UDF\"
+);" 2>/dev/null || log_warn "appx_median 函数可能已存在"
+    
+    log_success "聚合函数创建完成"
+fi
+
+# ============================================================
+# 步骤6: 验证 UDF 函数
+# ============================================================
+log_info "步骤6: 验证 UDF 函数..."
+
+echo ""
+echo "已创建的 UDF 函数:"
+mysql -h127.0.0.1 -P${FE_QUERY_PORT} -uroot -p'${FE_ROOT_PASSWORD}' -e "SHOW GLOBAL FUNCTIONS;" 2>/dev/null
+
+# ============================================================
+# 初始化完成
+# ============================================================
+echo ""
+echo "============================================"
+echo "Doris 数据库初始化完成！"
+echo "============================================"
+echo ""
+echo "验证 UDF 函数:"
+echo "  SELECT instr('a1|,|a2|,|a3', '|,|', 1, 2);"
+echo ""
+echo "查看所有 UDF:"
+echo "  SHOW GLOBAL FUNCTIONS;"
+echo ""
+echo "查看聚合函数:"
+echo "  USE zanalytics;"
+echo "  SHOW FULL FUNCTIONS;"
