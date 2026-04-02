@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Edit2, Trash2, Layers, Server, Settings, Check, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Layers, Settings, Check, X } from 'lucide-react';
 import type { AppConfig, ServiceTopoItem, ServiceConfigItem } from '../types/config';
 
 type ServiceTab = 'topo' | 'config';
