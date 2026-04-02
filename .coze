@@ -6,5 +6,5 @@ build = ["pnpm", "install"]
 run = ["pnpm", "run", "dev"]
 
 [deploy]
-build = ["bash", "-c", "pnpm install && pnpm run build && mkdir -p server/web/dist && cp -r web/dist/* server/web/dist/"]
-run = ["bash", "-c", "export PATH=$PATH:/usr/local/go/bin && cd server && go run main.go"]
+build = ["bash", "build.sh"]
+run = ["bash", "run.sh"]
