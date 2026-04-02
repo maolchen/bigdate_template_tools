@@ -4,15 +4,18 @@ import {
   Layers, 
   Settings,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Play,
+  RefreshCw
 } from 'lucide-react';
-import type { AppConfig } from '../types/config';
+import type { AppConfig } from '../api/config';
 
 interface OverviewPageProps {
   config: AppConfig;
+  onReload?: () => void;
 }
 
-export function OverviewPage({ config }: OverviewPageProps) {
+export function OverviewPage({ config, onReload }: OverviewPageProps) {
   const nodeCount = Object.keys(config.nodes).length;
   const serviceCount = Object.keys(config.serviceTop).length;
   const configCount = Object.keys(config.serverConfig).length;
@@ -70,6 +73,38 @@ export function OverviewPage({ config }: OverviewPageProps) {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-800">配置概览</h2>
         <p className="text-gray-500 mt-1">查看当前配置的整体状态和统计信息</p>
+      </div>
+      
+      {/* 快速操作 */}
+      <div className="card mb-6" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+        <div className="card-body text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">准备生成配置？</h3>
+              <p className="text-sm opacity-90 mt-1">点击「生成配置」按钮，根据当前配置生成部署脚本</p>
+            </div>
+            <div className="flex gap-2">
+              {onReload && (
+                <button 
+                  className="btn btn-secondary"
+                  onClick={onReload}
+                  style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white' }}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  重新加载
+                </button>
+              )}
+              <button 
+                className="btn"
+                onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'generate' }))}
+                style={{ background: 'white', color: '#667eea' }}
+              >
+                <Play className="w-4 h-4" />
+                生成配置
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
       
       {/* 统计卡片 */}

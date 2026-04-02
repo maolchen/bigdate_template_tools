@@ -1,11 +1,92 @@
 import { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { FileCode, Copy, Check, AlertCircle, AlertTriangle } from 'lucide-react';
-import type { AppConfig } from '../types/config';
-import { exportToYaml } from '../data/defaultConfig';
+import type { AppConfig } from '../api/config';
 
 interface PreviewPageProps {
   config: AppConfig;
+}
+
+// 简单的 YAML 导出函数
+function configToYaml(config: AppConfig): string {
+  const lines: string[] = [];
+  
+  // global
+  lines.push('# ============================================================');
+  lines.push('# 全局配置');
+  lines.push('# ============================================================');
+  lines.push('global:');
+  Object.entries(config.global).forEach(([key, value]) => {
+    lines.push(`  ${key}: ${typeof value === 'string' ? `"${value}"` : value}`);
+  });
+  
+  // nodes
+  lines.push('');
+  lines.push('# ============================================================');
+  lines.push('# 节点配置');
+  lines.push('# ============================================================');
+  lines.push('nodes:');
+  Object.entries(config.nodes).forEach(([name, node]) => {
+    lines.push(`  ${name}:`);
+    lines.push(`    ip: "${node.ip}"`);
+    lines.push(`    hostname: "${node.hostname}"`);
+  });
+  
+  // serviceTop
+  lines.push('');
+  lines.push('# ============================================================');
+  lines.push('# 服务拓扑（部署位置）');
+  lines.push('# ============================================================');
+  lines.push('serviceTop:');
+  Object.entries(config.serviceTop).forEach(([name, service]) => {
+    lines.push(`  ${name}:`);
+    lines.push(`    nodes: [${service.nodes.join(', ')}]`);
+    if (service.description) {
+      lines.push(`    description: "${service.description}"`);
+    }
+    if (service.vars && Object.keys(service.vars).length > 0) {
+      lines.push('    vars:');
+      Object.entries(service.vars).forEach(([k, v]) => {
+        if (typeof v === 'string') {
+          lines.push(`      ${k}: "${v}"`);
+        } else if (Array.isArray(v)) {
+          lines.push(`      ${k}: [${v.join(', ')}]`);
+        } else {
+          lines.push(`      ${k}: ${v}`);
+        }
+      });
+    }
+  });
+  
+  // serverConfig
+  lines.push('');
+  lines.push('# ============================================================');
+  lines.push('# 服务配置');
+  lines.push('# ============================================================');
+  lines.push('serverConfig:');
+  Object.entries(config.serverConfig).forEach(([name, cfg]) => {
+    lines.push(`  ${name}:`);
+    if (cfg.type) {
+      lines.push(`    type: "${cfg.type}"`);
+    }
+    if (cfg.description) {
+      lines.push(`    description: "${cfg.description}"`);
+    }
+    if (cfg.vars && Object.keys(cfg.vars).length > 0) {
+      lines.push('    vars:');
+      Object.entries(cfg.vars).forEach(([k, v]) => {
+        if (typeof v === 'string') {
+          lines.push(`      ${k}: "${v}"`);
+        } else if (Array.isArray(v)) {
+          lines.push(`      ${k}: [${v.map((i: any) => typeof i === 'string' ? `"${i}"` : i).join(', ')}]`);
+        } else {
+          lines.push(`      ${k}: ${v}`);
+        }
+      });
+    }
+  });
+  
+  return lines.join('\n');
 }
 
 export function PreviewPage({ config }: PreviewPageProps) {
@@ -15,7 +96,7 @@ export function PreviewPage({ config }: PreviewPageProps) {
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
   
   useEffect(() => {
-    const yaml = exportToYaml(config);
+    const yaml = configToYaml(config);
     setYamlContent(yaml);
     
     // 验证配置
@@ -55,13 +136,6 @@ export function PreviewPage({ config }: PreviewPageProps) {
     if (Object.keys(config.serverConfig).length === 0) {
       warnings.push('服务配置：没有配置任何服务参数');
     }
-    
-    // 检查是否有服务拓扑但没有对应的服务配置
-    Object.keys(config.serviceTop).forEach(serviceName => {
-      if (!config.serverConfig[serviceName]) {
-        warnings.push(`服务 ${serviceName}：有拓扑配置但没有对应的服务配置`);
-      }
-    });
     
     setValidationErrors(errors);
     setValidationWarnings(warnings);

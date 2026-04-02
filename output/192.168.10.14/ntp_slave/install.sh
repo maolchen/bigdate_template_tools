@@ -2,7 +2,7 @@
 # ============================================================
 # NTP Slave 安装脚本
 # 服务: ntp_slave
-# 节点: realtime-kafka2 (192.168.10.14)
+# 节点: <no value> (<no value>)
 # ============================================================
 
 set -e
@@ -16,7 +16,6 @@ NC='\033[0m' # No Color
 # ==================== 变量定义 ====================
 NTP_CONF_FILE="/etc/ntp.conf"
 NTP_SERVICE="ntpd"
-NTP_MASTER_IP="192.168.10.10"
 
 # ==================== 权限辅助函数 ====================
 run_as_root() {
@@ -222,7 +221,7 @@ main() {
     echo ""
     echo "========================================"
     echo "  NTP Slave 安装脚本"
-    echo "  节点: realtime-kafka2 (192.168.10.14)"
+    echo "  节点: <no value> (<no value>)"
     if [ -n "$NTP_MASTER_IP" ]; then
         echo "  NTP Master: $NTP_MASTER_IP"
     fi

@@ -1,5 +1,5 @@
 import { RotateCcw } from 'lucide-react';
-import type { AppConfig, GlobalConfig } from '../types/config';
+import type { AppConfig, GlobalConfig } from '../api/config';
 
 interface GlobalConfigPageProps {
   config: AppConfig;
@@ -22,27 +22,27 @@ export function GlobalConfigPage({ config, onChange }: GlobalConfigPageProps) {
       onChange({
         ...config,
         global: {
-          user: 'hadoop',
-          group: 'hadoop',
+          user: 'bigdata',
+          group: 'bigdata',
           version: '1.0.0',
           pkg_base_dir: '/data/packages',
-          install_base_dir: '/data',
+          install_base_dir: '/data/localization',
           data_base_dir: '/data',
           software_dir: '/data/software',
           log_base_dir: '/data/logs',
-          java_home: '/usr/local/jdk'
+          java_home: '/data/jdk'
         }
       });
     }
   };
   
   const fields: { key: keyof GlobalConfig; label: string; placeholder: string; required?: boolean }[] = [
-    { key: 'user', label: '运行用户', placeholder: '例如: hadoop', required: true },
-    { key: 'group', label: '运行用户组', placeholder: '例如: hadoop', required: true },
+    { key: 'user', label: '运行用户', placeholder: '例如: bigdata', required: true },
+    { key: 'group', label: '运行用户组', placeholder: '例如: bigdata', required: true },
     { key: 'version', label: '配置版本', placeholder: '例如: 1.0.0', required: true },
-    { key: 'java_home', label: 'Java Home 路径', placeholder: '例如: /usr/local/jdk', required: true },
+    { key: 'java_home', label: 'Java Home 路径', placeholder: '例如: /data/jdk', required: true },
     { key: 'pkg_base_dir', label: '软件包基础目录', placeholder: '例如: /data/packages', required: true },
-    { key: 'install_base_dir', label: '安装基础目录', placeholder: '例如: /data', required: true },
+    { key: 'install_base_dir', label: '安装基础目录', placeholder: '例如: /data/localization', required: true },
     { key: 'data_base_dir', label: '数据基础目录', placeholder: '例如: /data', required: true },
     { key: 'software_dir', label: '软件目录', placeholder: '例如: /data/software', required: true },
     { key: 'log_base_dir', label: '日志基础目录', placeholder: '例如: /data/logs', required: true },

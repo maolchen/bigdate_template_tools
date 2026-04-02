@@ -6,37 +6,74 @@ import { NodesPage } from './components/NodesPage';
 import { ServicesPage } from './components/ServicesPage';
 import { PreviewPage } from './components/PreviewPage';
 import { ExportPage } from './components/ExportPage';
-import { Save } from 'lucide-react';
-import type { AppConfig, EditorTab } from './types/config';
-import { loadConfig, saveConfig } from './data/defaultConfig';
+import { GeneratePage } from './components/GeneratePage';
+import { Save, RefreshCw, AlertCircle, Check } from 'lucide-react';
+import type { EditorTab } from './types/config';
+import type { AppConfig } from './api/config';
+import { fetchConfig, saveConfig, reloadConfig } from './api/config';
 
 function App() {
-  const [config, setConfig] = useState<AppConfig>(loadConfig());
+  const [config, setConfig] = useState<AppConfig | null>(null);
   const [activeTab, setActiveTab] = useState<EditorTab>('overview');
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error' | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
-  // 自动保存
+  // 加载配置
   useEffect(() => {
-    setSaveStatus('saving');
-    const timer = setTimeout(() => {
-      saveConfig(config);
-      setSaveStatus('saved');
-      
-      // 2秒后清除状态
-      setTimeout(() => setSaveStatus(null), 2000);
-    }, 500);
-    
-    return () => clearTimeout(timer);
-  }, [config]);
-  
-  const handleConfigChange = useCallback((newConfig: AppConfig) => {
-    setConfig(newConfig);
+    loadConfig();
   }, []);
   
+  const loadConfig = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await fetchConfig();
+      setConfig(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载配置失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleConfigChange = useCallback(async (newConfig: AppConfig) => {
+    setConfig(newConfig);
+    setSaveStatus('saving');
+    
+    try {
+      await saveConfig(newConfig);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus(null), 2000);
+    } catch (err) {
+      setSaveStatus('error');
+      console.error('保存配置失败:', err);
+    }
+  }, []);
+  
+  const handleReload = async () => {
+    try {
+      const result = await reloadConfig();
+      setConfig(result.config);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus(null), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '重新加载配置失败');
+    }
+  };
+  
   const renderContent = () => {
+    if (!config) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <p className="text-gray-500">加载配置中...</p>
+        </div>
+      );
+    }
+    
     switch (activeTab) {
       case 'overview':
-        return <OverviewPage config={config} />;
+        return <OverviewPage config={config} onReload={handleReload} />;
       case 'global':
         return <GlobalConfigPage config={config} onChange={handleConfigChange} />;
       case 'nodes':
@@ -45,12 +82,43 @@ function App() {
         return <ServicesPage config={config} onChange={handleConfigChange} />;
       case 'preview':
         return <PreviewPage config={config} />;
+      case 'generate':
+        return <GeneratePage />;
       case 'export':
         return <ExportPage config={config} />;
       default:
-        return <OverviewPage config={config} />;
+        return <OverviewPage config={config} onReload={handleReload} />;
     }
   };
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
+          <p className="text-gray-500">加载配置中...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="card max-w-md">
+          <div className="card-body text-center">
+            <AlertCircle className="w-12 h-12 text-danger mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-gray-800 mb-2">加载失败</h2>
+            <p className="text-gray-500 mb-4">{error}</p>
+            <button className="btn btn-primary" onClick={loadConfig}>
+              <RefreshCw className="w-4 h-4" />
+              重新加载
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   
   return (
     <div className="min-h-screen bg-gray-50">
@@ -66,6 +134,7 @@ function App() {
               {activeTab === 'nodes' && '节点管理'}
               {activeTab === 'services' && '服务配置'}
               {activeTab === 'preview' && 'YAML 预览'}
+              {activeTab === 'generate' && '生成配置'}
               {activeTab === 'export' && '导出配置'}
             </h1>
           </div>
@@ -73,12 +142,31 @@ function App() {
           <div className="flex items-center gap-4">
             {saveStatus && (
               <div className={`flex items-center gap-1 text-sm ${
-                saveStatus === 'saved' ? 'text-success' : 'text-gray-400'
+                saveStatus === 'saved' ? 'text-success' : 
+                saveStatus === 'error' ? 'text-danger' : 'text-gray-400'
               }`}>
-                <Save className="w-4 h-4" />
-                <span>{saveStatus === 'saved' ? '已保存' : '保存中...'}</span>
+                {saveStatus === 'saved' ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>已保存</span>
+                  </>
+                ) : saveStatus === 'error' ? (
+                  <>
+                    <AlertCircle className="w-4 h-4" />
+                    <span>保存失败</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>保存中...</span>
+                  </>
+                )}
               </div>
             )}
+            
+            <button className="btn btn-sm btn-secondary" onClick={handleReload} title="从配置文件重新加载">
+              <RefreshCw className="w-4 h-4" />
+            </button>
           </div>
         </header>
         

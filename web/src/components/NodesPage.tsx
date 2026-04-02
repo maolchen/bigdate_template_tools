@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Plus, Edit2, Trash2, Server, AlertCircle } from 'lucide-react';
-import type { AppConfig, NodeInfo } from '../types/config';
+import type { AppConfig, NodeInfo } from '../api/config';
 
 interface NodesPageProps {
   config: AppConfig;

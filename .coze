@@ -1,11 +1,10 @@
 [project]
-entrypoint = "web/index.html"
 requires = ["nodejs-24"]
 
 [dev]
-build = ["pnpm", "install"]
-run = ["pnpm", "dev"]
+build = ["bash", "-c", "cd web && pnpm install && pnpm run build"]
+run = ["bash", "-c", "export PATH=$PATH:/usr/local/go/bin && export GOPROXY=https://goproxy.cn,direct && cd server && go run main.go"]
 
 [deploy]
-build = ["pnpm", "run", "build"]
-run = ["npx", "serve", "-s", "web/dist", "-l", "5000"]
+build = ["bash", "-c", "cd web && pnpm install && pnpm run build && mkdir -p ../server/web/dist && cp -r dist/* ../server/web/dist/"]
+run = ["bash", "-c", "export PATH=$PATH:/usr/local/go/bin && cd server && go run main.go"]
