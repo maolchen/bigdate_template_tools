@@ -25,6 +25,15 @@ pnpm dev
 | **导出配置** | 导出 YAML、JSON、环境变量脚本、hosts 文件 |
 | **自动保存** | 配置自动保存到浏览器 localStorage |
 
+### 前后端联动流程
+
+```
+Web 配置编辑器 → 导出 config.yaml → Go 配置生成器 → 生成部署脚本
+     (前端)              (中间文件)           (后端)            (output/)
+```
+
+详细使用说明请参考 [USAGE_GUIDE.md](./USAGE_GUIDE.md)
+
 ---
 
 ## 一、核心特性

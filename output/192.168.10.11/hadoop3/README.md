@@ -98,15 +98,7 @@ serviceTop:
   hadoop3:
     nodes: [dw-master1, dw-master2, dw-master3]
 
-serverConfig:
-  hadoop3:
-    vars:
-      namenode_nodes: [dw-master1, dw-master2]          # NameNode 只在前 2 节点
-      journalnode_nodes: [dw-master1, dw-master2, dw-master3]  # JournalNode 在全部 3 节点
-      datanode_nodes: [dw-master1, dw-master2, dw-master3]     # DataNode 在全部 3 节点
-      resourcemanager_nodes: [dw-master1, dw-master2]   # RM 只在前 2 节点
-      nodemanager_nodes: [dw-master1, dw-master2, dw-master3]  # NM 在全部 3 节点
-      zkfc_nodes: [dw-master1, dw-master2]              # ZKFC 只在 NameNode 节点
+
 ```
 
 ---

@@ -1,0 +1,262 @@
+#!/bin/bash
+# Doris FE 安装配置脚本
+# 执行节点: FE 节点（第一个 FE 为主节点）
+# 用途: 安装 Doris FE 并配置
+
+set -e
+
+# ============================================================
+# 全局变量
+# ============================================================
+INSTALL_BASE_DIR="/data/localization"
+DATA_BASE_DIR="/data"
+RUN_USER="bigdata"
+RUN_GROUP="bigdata"
+JAVA_HOME="/data/jdk/"
+SOFTWARE_DIR="/data/softwares"
+
+# Doris 配置
+DORIS_VERSION="<no value>"
+INSTALL_SUBDIR="apache-doris/fe"
+META_SUBDIR="<no value>"
+PRIORITY_NETWORKS="192.168.10.0/24"
+
+# 端口配置
+FE_HTTP_PORT="<no value>"
+FE_RPC_PORT="<no value>"
+FE_QUERY_PORT="<no value>"
+FE_EDIT_LOG_PORT="<no value>"
+
+# 安装包名称（根据是否支持 AVX2 选择）
+USE_AVX2="<no value>"
+if [ "$USE_AVX2" = "false" ]; then
+    PACKAGE_NAME="apache-doris-${DORIS_VERSION}-bin-x64-noavx2.tar.gz"
+else
+    PACKAGE_NAME="apache-doris-${DORIS_VERSION}-bin-x64.tar.gz"
+fi
+
+# ============================================================
+# 辅助函数
+# ============================================================
+run_as_root() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+run_as_user() {
+    if [ "$RUN_USER" = "root" ]; then
+        "$@"
+    else
+        sudo -u ${RUN_USER} "$@"
+    fi
+}
+
+log_info() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+}
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
+}
+
+log_warn() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1"
+}
+
+log_success() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] $1"
+}
+
+# ============================================================
+# 开始安装
+# ============================================================
+echo "============================================"
+echo "Doris FE 安装配置脚本"
+echo "============================================"
+echo "主机名: $(hostname)"
+echo "Doris 版本: ${DORIS_VERSION}"
+echo "============================================"
+
+DORIS_HOME="${INSTALL_BASE_DIR}/${INSTALL_SUBDIR}"
+FE_HOME="${DORIS_HOME}/fe"
+FE_CONF="${FE_HOME}/conf/fe.conf"
+META_DIR="${DATA_BASE_DIR}/${META_SUBDIR}"
+
+# ============================================================
+# 步骤1: 检查前置条件
+# ============================================================
+log_info "步骤1: 检查前置条件..."
+
+# 检查 JAVA_HOME
+if [ ! -d "$JAVA_HOME" ]; then
+    log_error "JAVA_HOME 不存在: $JAVA_HOME"
+    exit 1
+fi
+log_info "JAVA_HOME: $JAVA_HOME"
+
+# 检查安装包
+PACKAGE_PATH="${SOFTWARE_DIR}/${PACKAGE_NAME}"
+if [ ! -f "$PACKAGE_PATH" ]; then
+    log_error "未找到 Doris 安装包: $PACKAGE_PATH"
+    exit 1
+fi
+log_info "安装包: $PACKAGE_PATH"
+
+log_info "前置条件检查通过"
+
+# ============================================================
+# 步骤2: 解压安装包
+# ============================================================
+log_info "步骤2: 解压安装包..."
+
+if [ -d "$DORIS_HOME" ]; then
+    log_warn "Doris 目录已存在: $DORIS_HOME"
+    read -p "是否重新安装? (y/n): " REINSTALL
+    if [ "$REINSTALL" = "y" ]; then
+        run_as_root rm -rf "$DORIS_HOME"
+        log_info "已删除旧目录"
+    else
+        log_info "跳过安装"
+        exit 0
+    fi
+fi
+
+# 创建安装目录
+run_as_root mkdir -p "$INSTALL_BASE_DIR"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$INSTALL_BASE_DIR"
+
+# 解压
+log_info "正在解压安装包..."
+cd "$INSTALL_BASE_DIR"
+run_as_user tar -xzf "$PACKAGE_PATH"
+
+# 查找解压后的目录
+EXTRACTED_DIR=$(find "$INSTALL_BASE_DIR" -maxdepth 1 -type d -name "apache-doris-*" | head -n1)
+if [ -z "$EXTRACTED_DIR" ]; then
+    log_error "解压后未找到 Doris 目录"
+    exit 1
+fi
+
+# 重命名
+run_as_user mv "$EXTRACTED_DIR" "$DORIS_HOME"
+log_success "Doris 安装完成: $DORIS_HOME"
+
+# ============================================================
+# 步骤3: 创建元数据目录
+# ============================================================
+log_info "步骤3: 创建元数据目录..."
+
+run_as_root mkdir -p "$META_DIR"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$META_DIR"
+log_success "元数据目录: $META_DIR"
+
+# ============================================================
+# 步骤4: 修改 FE 配置文件
+# ============================================================
+log_info "步骤4: 修改 FE 配置文件..."
+
+# 修改端口
+log_info "修改 FE 端口..."
+run_as_user sed -i "s#^http_port = .*#http_port = ${FE_HTTP_PORT}#" "$FE_CONF"
+run_as_user sed -i "s#^rpc_port = .*#rpc_port = ${FE_RPC_PORT}#" "$FE_CONF"
+run_as_user sed -i "s#^query_port = .*#query_port = ${FE_QUERY_PORT}#" "$FE_CONF"
+run_as_user sed -i "s#^edit_log_port = .*#edit_log_port = ${FE_EDIT_LOG_PORT}#" "$FE_CONF"
+
+# 添加额外配置
+log_info "添加 FE 参数配置..."
+
+# priority_networks
+if ! grep -q "priority_networks" "$FE_CONF"; then
+    echo "priority_networks = ${PRIORITY_NETWORKS}" >> "$FE_CONF"
+    log_info "已添加 priority_networks"
+fi
+
+# meta_dir
+if ! grep -q "^meta_dir" "$FE_CONF"; then
+    echo "meta_dir = ${META_DIR}" >> "$FE_CONF"
+    log_info "已添加 meta_dir"
+fi
+
+# 其他优化参数
+if ! grep -q "max_dynamic_partition_num" "$FE_CONF"; then
+    echo "max_dynamic_partition_num = 10000" >> "$FE_CONF"
+fi
+
+if ! grep -q "max_allowed_packet" "$FE_CONF"; then
+    echo "max_allowed_packet = 33554432" >> "$FE_CONF"
+fi
+
+if ! grep -q "qe_max_connection" "$FE_CONF"; then
+    echo "qe_max_connection = 102400" >> "$FE_CONF"
+fi
+
+if ! grep -q "max_connection_scheduler_threads_num" "$FE_CONF"; then
+    echo "max_connection_scheduler_threads_num = 409600" >> "$FE_CONF"
+fi
+
+if ! grep -q "enable_outfile_to_local" "$FE_CONF"; then
+    echo "enable_outfile_to_local = true" >> "$FE_CONF"
+fi
+
+if ! grep -q "table_name_length_limit" "$FE_CONF"; then
+    echo "table_name_length_limit = 256" >> "$FE_CONF"
+fi
+
+log_success "FE 配置完成"
+
+# ============================================================
+# 步骤5: 创建 UDF 目录
+# ============================================================
+log_info "步骤5: 创建 UDF 目录..."
+
+UDF_DIR="${DORIS_HOME}/udf"
+run_as_user mkdir -p "$UDF_DIR"
+log_success "UDF 目录: $UDF_DIR"
+
+# ============================================================
+# 步骤6: 复制 JDBC 驱动（如果存在）
+# ============================================================
+log_info "步骤6: 检查 JDBC 驱动..."
+
+JDBC_DRIVERS_DIR="${SOFTWARE_DIR}/jdbc_drivers"
+if [ -d "$JDBC_DRIVERS_DIR" ]; then
+    run_as_user cp -r "$JDBC_DRIVERS_DIR" "${FE_HOME}/"
+    log_success "已复制 JDBC 驱动到 FE"
+else
+    log_warn "未找到 JDBC 驱动目录: $JDBC_DRIVERS_DIR"
+fi
+
+# ============================================================
+# 步骤7: 设置目录权限
+# ============================================================
+log_info "步骤7: 设置目录权限..."
+
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$DORIS_HOME"
+run_as_root chown -R ${RUN_USER}:${RUN_GROUP} "$META_DIR"
+log_success "权限设置完成"
+
+# ============================================================
+# 安装完成
+# ============================================================
+echo ""
+echo "============================================"
+echo "Doris FE 安装配置完成！"
+echo "============================================"
+echo ""
+echo "安装路径: ${DORIS_HOME}"
+echo "元数据路径: ${META_DIR}"
+echo "FE 配置: ${FE_CONF}"
+echo ""
+echo "端口配置:"
+echo "  HTTP 端口: ${FE_HTTP_PORT}"
+echo "  RPC 端口: ${FE_RPC_PORT}"
+echo "  Query 端口: ${FE_QUERY_PORT}"
+echo "  Edit Log 端口: ${FE_EDIT_LOG_PORT}"
+echo ""
+echo "后续步骤:"
+echo "  1. 启动 FE: bash start_fe.sh"
+echo "  2. 如果是集群第一个 FE，会自动成为 Master"
+echo "  3. 其他 FE 节点使用 --helper 参数加入集群"
