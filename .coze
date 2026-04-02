@@ -1,0 +1,11 @@
+[project]
+entrypoint = "index.html"
+requires = ["nodejs-24"]
+
+[dev]
+build = ["bash", "-c", "cd web && pnpm install"]
+run = ["bash", "-c", "cd web && pnpm dev --port 5000 --host &\nnpx serve -l 5001 &\necho 'Services started. Main: http://localhost:5001, Web Editor: http://localhost:5000'\nwait"]
+
+[deploy]
+build = ["bash", "-c", "cd web && pnpm install && pnpm run build"]
+run = ["npx", "serve", "-s", "web/dist", "-l", "5000"]
