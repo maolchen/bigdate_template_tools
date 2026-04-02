@@ -2,9 +2,9 @@
 requires = ["nodejs-24"]
 
 [dev]
-build = ["bash", "-c", "cd web && pnpm install && pnpm run build"]
-run = ["bash", "-c", "export PATH=$PATH:/usr/local/go/bin && export GOPROXY=https://goproxy.cn,direct && cd server && go run main.go"]
+build = ["pnpm", "install"]
+run = ["pnpm", "run", "dev"]
 
 [deploy]
-build = ["bash", "-c", "cd web && pnpm install && pnpm run build && mkdir -p ../server/web/dist && cp -r dist/* ../server/web/dist/"]
+build = ["bash", "-c", "pnpm install && pnpm run build && mkdir -p server/web/dist && cp -r web/dist/* server/web/dist/"]
 run = ["bash", "-c", "export PATH=$PATH:/usr/local/go/bin && cd server && go run main.go"]

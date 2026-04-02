@@ -4,10 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "cd web && vite --port 5000 --host",
-    "build": "cd web && tsc -b && vite build",
-    "lint": "cd web && eslint .",
-    "preview": "cd web && vite preview"
+    "dev": "vite --port 5000 --host",
+    "build": "tsc -b && vite build",
+    "lint": "eslint web/",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
