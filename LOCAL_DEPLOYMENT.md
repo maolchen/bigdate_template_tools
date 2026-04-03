@@ -1,178 +1,166 @@
 # 本地部署指南
 
-## 项目结构说明
-
-### 两个 main.go 的区别
-
-1. **根目录 `/main.go`** - 命令行工具
-   - 用途：直接运行生成配置，不启动 Web 服务
-   - 运行方式：`go run main.go` 或编译后直接执行
-   - 输出：生成 `output/` 目录
-
-2. **`server/main.go`** - Web API 服务
-   - 用途：提供 REST API 和 Web 界面
-   - 运行方式：`cd server && go run main.go`
-   - 提供：前端界面 + API 接口
-
-### 目录结构
+## 项目结构
 
 ```
 project/
-├── server/
-│   ├── main.go          # Web 服务的 Go 代码
-│   ├── web/
-│   │   └── dist/        # 前端构建产物（必须）
-│   ├── config/          # 配置文件（可选，默认使用根目录的 config.yaml）
-│   └── templates/       # 模板文件（可选，默认使用根目录的 templates/）
-├── web/                 # 前端源码
-├── templates/           # 模板文件
+├── main.go              # 源代码（统一入口）
+├── server-bin           # Linux/Mac 可执行文件
+├── server.exe           # Windows 可执行文件
 ├── config.yaml          # 配置文件
-└── server-bin           # 预编译的二进制文件（Linux）
-```
-
----
-
-## Windows 本地部署步骤
-
-### 方式一：使用预编译二进制文件
-
-#### 1. 准备文件
-
-从项目下载以下文件和目录：
-
-**必需文件：**
-- `server-bin` (Linux 二进制，不适用于 Windows)
-- 或者在 Windows 上编译：
-
-#### 2. 在 Windows 上编译
-
-需要先安装 Go 环境：
-1. 下载 Go: https://golang.org/dl/
-2. 安装后验证：`go version`
-
-编译：
-```powershell
-# 进入 server 目录
-cd server
-
-# 编译为 Windows 二进制
-go build -o server.exe main.go
-```
-
-#### 3. 准备必要目录
-
-确保以下目录存在（相对于 `server.exe`）：
-
-**方案 A：将文件放在 server.exe 同级目录**
-```
-项目根目录/
-├── server.exe          # 可执行文件
-├── config.yaml         # 配置文件
-├── templates/          # 模板目录
+├── templates/           # 模板文件目录
 └── web/
-    └── dist/           # 前端构建产物
+    └── dist/           # 前端构建产物（必需）
         ├── index.html
         └── assets/
 ```
 
-**方案 B：将文件放在 server.exe 的父目录**
-```
-项目根目录/
-├── server/
-│   └── server.exe      # 可执行文件
-├── config.yaml         # 配置文件
-├── templates/          # 模板目录
+## 快速开始
+
+### 方式一：使用预编译二进制文件
+
+**Linux/Mac:**
+
+```bash
+# 1. 下载文件
+wget https://example.com/server-bin
+chmod +x server-bin
+
+# 2. 确保目录结构
+project/
+├── server-bin
+├── config.yaml
+├── templates/
 └── web/
-    └── dist/           # 前端构建产物
+    └── dist/
+
+# 3. 运行
+./server-bin --web
+
+# 访问 http://localhost:5000/
 ```
 
-#### 4. 运行服务
+**Windows:**
 
 ```powershell
-# Windows CMD
-server.exe
+# 1. 下载文件
+# 保存为 server.exe
 
-# 或 PowerShell
-.\server.exe
+# 2. 确保目录结构
+project\
+├── server.exe
+├── config.yaml
+├── templates\
+└── web\
+    └── dist\
+
+# 3. 运行
+.\server.exe --web
+
+# 访问 http://localhost:5000/
 ```
 
-服务启动后会输出：
-```
-============================================
-大数据平台配置生成器 API 服务
-============================================
-工作目录: [工作目录路径]
-配置文件: [配置文件路径]
-模板目录: [模板目录路径]
-输出目录: [输出目录路径]
-端口: 5000
-API: http://localhost:5000/api/config
-Web: http://localhost:5000/
-============================================
+### 方式二：从源码编译
+
+#### 1. 安装 Go
+
+访问 [https://golang.org/dl/](https://golang.org/dl/) 下载并安装 Go 1.21+
+
+验证安装：
+```bash
+go version
 ```
 
-#### 5. 访问服务
+#### 2. 编译
 
+**Linux/Mac:**
+```bash
+go build -o server-bin main.go
+```
+
+**Windows:**
+```powershell
+go build -o server.exe main.go
+```
+
+#### 3. 构建前端（可选）
+
+如果需要自己构建前端：
+
+```bash
+# 安装依赖
+pnpm install
+
+# 构建
+pnpm run build
+```
+
+## 运行模式
+
+### 命令行模式
+
+直接生成配置文件，不启动 Web 服务：
+
+```bash
+./server-bin
+```
+
+输出：
+- 配置文件生成到 `output/` 目录
+- 按节点 IP 组织输出结构
+
+### Web 模式
+
+启动 Web 服务，提供可视化配置界面：
+
+```bash
+# 默认端口 5000
+./server-bin --web
+
+# 指定端口
+./server-bin --web --port=8080
+```
+
+访问：
 - Web 界面：http://localhost:5000/
 - API 文档：http://localhost:5000/api/config
-- 模板列表：http://localhost:5000/api/templates
 
----
+## 目录说明
 
-## 常见问题排查
+| 目录/文件 | 说明 | 是否必需 |
+|-----------|------|----------|
+| `main.go` | Go 源代码 | 开发环境 |
+| `server-bin` / `server.exe` | 编译后的可执行文件 | ✅ 必需 |
+| `config.yaml` | 配置文件 | ✅ 必需 |
+| `templates/` | 模板文件目录 | ✅ 必需 |
+| `web/dist/` | 前端构建产物 | Web 模式必需 |
+| `output/` | 输出目录 | 自动创建 |
 
-### 问题 1：访问 http://localhost:5000/ 显示 404
+## 常见问题
 
-**原因：**
-- 前端目录路径不正确
-- `web/dist` 目录不存在或缺少文件
+### 1. 访问 http://localhost:5000/ 显示 404
 
-**排查步骤：**
-
-1. 查看启动日志中的"前端静态文件目录"输出：
-   ```
-   检查前端目录: [路径]
-   ✓ 前端静态文件目录: [路径]
-     文件数: X
-   ```
-
-2. 如果看到 `✗ 前端静态文件目录不存在`，说明路径配置错误
-
-3. 确保 `web/dist` 目录包含 `index.html` 文件：
-   ```powershell
-   dir web\dist\index.html
-   ```
-
-4. 如果缺少 `index.html`，需要从项目复制前端构建产物
+**原因：** 前端文件缺失或路径错误
 
 **解决方案：**
 
-将 `server/web/dist/` 目录复制到项目根目录下的 `web/dist/`：
-```powershell
-# 创建目录
-mkdir web
-mkdir web\dist
+1. 检查启动日志中的前端目录路径
+2. 确保 `web/dist/index.html` 存在
+3. 确保 `server-bin` 和 `web/` 在同一目录
 
-# 复制文件（假设你从项目下载了 server/web/dist）
-xcopy /E /I server\web\dist web\dist
+```bash
+# 检查文件
+ls -la web/dist/
 ```
 
----
+### 2. 前端目录路径问题
 
-### 问题 2：Windows 路径问题
-
-**现象：**
-- 启动日志中路径显示为 `C:\path\to\project\server\web\dist`
-- 但实际文件在 `C:\path\to\project\web\dist`
-
-**解决方案：**
-
-修改工作目录结构，确保符合以下之一：
+程序支持两种目录结构：
 
 **结构 1（推荐）：**
 ```
-项目根目录/
-├── server.exe
+project/
+├── server-bin
 ├── config.yaml
 ├── templates/
 └── web/
@@ -181,87 +169,137 @@ xcopy /E /I server\web\dist web\dist
 
 **结构 2：**
 ```
-项目根目录/
+project/
+├── server/
+│   └── server-bin
 ├── config.yaml
 ├── templates/
-├── web/
-│   └── dist/
-└── server/
-    └── server.exe
+└── web/
+    └── dist/
 ```
 
-程序会自动检测这两种结构。
+程序会自动检测并使用正确的路径。
 
----
-
-### 问题 3：API 正常但前端 404
+### 3. API 正常但前端 404
 
 **现象：**
 - `http://localhost:5000/api/config` 正常返回 JSON
 - `http://localhost:5000/` 返回 404
 
-**原因：**
-静态文件服务路由配置问题。
+**原因：** 静态文件服务路由配置问题
 
 **解决方案：**
 
 1. 确认 `web/dist/index.html` 存在
-2. 检查文件权限（Windows 上应该没有这个问题）
-3. 使用绝对路径启动服务：
-   ```powershell
-   cd C:\path\to\project
-   server\server.exe
-   ```
+2. 检查文件权限
+3. 查看启动日志中的"前端静态文件目录"输出
 
----
-
-## 开发环境构建
-
-### 构建前端
+### 4. 端口被占用
 
 ```bash
-# 安装依赖
-pnpm install
+# 查找占用端口的进程
+netstat -ano | findstr :5000  # Windows
+lsof -i :5000                  # Linux/Mac
 
-# 构建
+# 结束进程（替换 PID）
+taskkill /PID [进程ID] /F      # Windows
+kill -9 [PID]                  # Linux/Mac
+
+# 或使用其他端口
+./server-bin --web --port=8080
+```
+
+### 5. Windows 防火墙提示
+
+首次运行 Windows 版本时，可能会弹出防火墙提示。
+
+**解决方法：**
+- 选择"允许访问"
+- 或在防火墙设置中添加例外规则
+
+## 完整构建流程
+
+```bash
+# 1. 克隆项目
+git clone <repository-url>
+cd project
+
+# 2. 构建前端
+pnpm install
 pnpm run build
 
-# 产物在 web/dist/
+# 3. 编译后端
+go build -o server-bin main.go
+
+# 4. 运行
+./server-bin --web
 ```
 
-### 编译 Go 后端
+## 开发环境
 
-**Linux:**
+### 热重载开发
+
 ```bash
-cd server
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../server-bin main.go
+# 前端开发（端口 5000）
+pnpm dev
+
+# 后端开发
+go run main.go --web
 ```
 
-**Windows:**
-```powershell
-cd server
-go build -o server.exe main.go
-```
+### 代码检查
 
-**macOS:**
 ```bash
-cd server
-CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o server-darwin main.go
+# Go 代码检查
+go vet ./...
+go fmt ./...
+
+# 前端代码检查
+pnpm lint
 ```
 
----
+## 部署建议
 
-## 清理项目
+### 生产环境
 
-运行清理脚本删除测试文件：
-```bash
-bash clean.sh
+1. 使用 systemd 管理（Linux）
+2. 配置反向代理（Nginx）
+3. 启用 HTTPS
+4. 配置日志轮转
+
+### systemd 示例
+
+```ini
+[Unit]
+Description=BigData Config Generator
+After=network.target
+
+[Service]
+Type=simple
+User=app
+WorkingDirectory=/opt/bigdata-config
+ExecStart=/opt/bigdata-config/server-bin --web --port=5000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-或手动删除：
-- `output/` 目录
-- `tmp/` 目录
-- `config-generator` 二进制文件
-- `config-simple.yaml`
-- `run.log`
-- 根目录的 `index.html`（如果有）
+### Nginx 反向代理
+
+```nginx
+server {
+    listen 80;
+    server_name config.example.com;
+
+    location / {
+        proxy_pass http://localhost:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
