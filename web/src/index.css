@@ -677,3 +677,48 @@ body {
   margin: 0 auto 1rem;
   color: var(--gray-300);
 }
+
+/* 模态框只覆盖主内容区 */
+.modal-backdrop {
+  position: fixed;
+  left: 240px;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* 变量表格列宽调整 */
+.variable-table th.resizable-th {
+  position: relative;
+  padding-right: 10px;
+}
+
+.variable-table .resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  transition: background 0.2s;
+  user-select: none;
+}
+
+.variable-table .resize-handle:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.variable-table .resize-handle:active {
+  background: rgba(59, 130, 246, 0.2);
+}

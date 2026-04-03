@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, GripVertical } from 'lucide-react';
 
 interface VariableItem {
   key: string;
@@ -14,16 +14,37 @@ interface VariablesEditorProps {
   readonly?: boolean;
 }
 
+type ColumnType = 'key' | 'type' | 'value' | 'description' | 'action';
+
 export function VariablesEditor({ vars, onChange, readonly = false }: VariablesEditorProps) {
   const [items, setItems] = useState<VariableItem[]>([]);
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnType, number>>({
+    key: 150,
+    type: 120,
+    value: 300,
+    description: 200,
+    action: 80
+  });
 
   useEffect(() => {
-    const newItems: VariableItem[] = Object.entries(vars || {}).map(([key, value]) => ({
-      key,
-      value,
-      description: '',
-      type: inferType(value)
-    }));
+    const newItems: VariableItem[] = Object.entries(vars || {}).map(([key, value]) => {
+      // 检查是否有对应的描述字段
+      const descriptionKey = key + '_description';
+      const description = descriptionKey in vars ? vars[descriptionKey] : '';
+
+      // 如果是描述字段本身，则跳过
+      if (key.endsWith('_description')) {
+        return null;
+      }
+
+      return {
+        key,
+        value,
+        description: description || '',
+        type: inferType(value)
+      };
+    }).filter((item): item is VariableItem => item !== null);
+
     setItems(newItems);
   }, [vars]);
 
@@ -100,9 +121,35 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     newItems.forEach((item) => {
       if (item.key && item.key.trim() !== '') {
         newVars[item.key] = item.value;
+        if (item.description) {
+          newVars[item.key + '_description'] = item.description;
+        }
       }
     });
     onChange(newVars);
+  };
+
+  const handleMouseDown = (column: ColumnType, e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = columnWidths[column];
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const diff = moveEvent.clientX - startX;
+      const newWidth = Math.max(80, startWidth + diff);
+      setColumnWidths(prev => ({
+        ...prev,
+        [column]: newWidth
+      }));
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
   };
 
   const renderValueInput = (item: VariableItem, index: number) => {
@@ -190,74 +237,106 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
 
   return (
     <div className="space-y-3">
-      <div className="card">
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>变量名</th>
-                <th>类型</th>
-                <th>值</th>
-                <th>说明</th>
-                <th style={{ width: '80px' }}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, index) => (
-                <tr key={index}>
-                  <td>
-                    <input
-                      type="text"
-                      className={`input w-full text-sm ${readonly ? 'bg-gray-50' : ''}`}
-                      value={item.key}
-                      onChange={(e) => !readonly && handleKeyChange(index, e.target.value)}
-                      placeholder="变量名"
-                      disabled={readonly}
-                    />
-                  </td>
-                  <td>
-                    <select
-                      className="select w-full text-sm"
-                      value={item.type}
-                      onChange={(e) => !readonly && handleTypeChange(index, e.target.value as VariableItem['type'])}
-                      disabled={readonly}
+      <div className="card" style={{ overflow: 'auto' }}>
+        <table className="table variable-table" style={{ minWidth: '100%' }}>
+          <thead>
+            <tr>
+              <th style={{ width: columnWidths.key, minWidth: columnWidths.key }} className="resizable-th">
+                变量名
+                <div
+                  className="resize-handle"
+                  onMouseDown={(e) => handleMouseDown('key', e)}
+                >
+                  <GripVertical className="w-4 h-4 text-gray-400" />
+                </div>
+              </th>
+              <th style={{ width: columnWidths.type, minWidth: columnWidths.type }} className="resizable-th">
+                类型
+                <div
+                  className="resize-handle"
+                  onMouseDown={(e) => handleMouseDown('type', e)}
+                >
+                  <GripVertical className="w-4 h-4 text-gray-400" />
+                </div>
+              </th>
+              <th style={{ width: columnWidths.value, minWidth: columnWidths.value }} className="resizable-th">
+                值
+                <div
+                  className="resize-handle"
+                  onMouseDown={(e) => handleMouseDown('value', e)}
+                >
+                  <GripVertical className="w-4 h-4 text-gray-400" />
+                </div>
+              </th>
+              <th style={{ width: columnWidths.description, minWidth: columnWidths.description }} className="resizable-th">
+                说明
+                <div
+                  className="resize-handle"
+                  onMouseDown={(e) => handleMouseDown('description', e)}
+                >
+                  <GripVertical className="w-4 h-4 text-gray-400" />
+                </div>
+              </th>
+              <th style={{ width: columnWidths.action, minWidth: columnWidths.action }}>
+                操作
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, index) => (
+              <tr key={index}>
+                <td style={{ width: columnWidths.key, minWidth: columnWidths.key }}>
+                  <input
+                    type="text"
+                    className={`input w-full text-sm ${readonly ? 'bg-gray-50' : ''}`}
+                    value={item.key}
+                    onChange={(e) => !readonly && handleKeyChange(index, e.target.value)}
+                    placeholder="变量名"
+                    disabled={readonly}
+                  />
+                </td>
+                <td style={{ width: columnWidths.type, minWidth: columnWidths.type }}>
+                  <select
+                    className="select w-full text-sm"
+                    value={item.type}
+                    onChange={(e) => !readonly && handleTypeChange(index, e.target.value as VariableItem['type'])}
+                    disabled={readonly}
+                  >
+                    <option value="string">字符串</option>
+                    <option value="number">数字</option>
+                    <option value="boolean">布尔</option>
+                    <option value="object">对象</option>
+                    <option value="array">数组</option>
+                  </select>
+                </td>
+                <td style={{ width: columnWidths.value, minWidth: columnWidths.value }}>
+                  {renderValueInput(item, index)}
+                </td>
+                <td style={{ width: columnWidths.description, minWidth: columnWidths.description }}>
+                  <input
+                    type="text"
+                    className="input w-full text-sm"
+                    value={item.description}
+                    onChange={(e) => !readonly && handleDescriptionChange(index, e.target.value)}
+                    placeholder="配置项说明"
+                    disabled={readonly}
+                  />
+                </td>
+                <td style={{ width: columnWidths.action, minWidth: columnWidths.action }}>
+                  {!readonly && (
+                    <button
+                      className="btn btn-sm btn-danger w-full"
+                      onClick={() => handleDelete(index)}
+                      title="删除"
                     >
-                      <option value="string">字符串</option>
-                      <option value="number">数字</option>
-                      <option value="boolean">布尔</option>
-                      <option value="object">对象</option>
-                      <option value="array">数组</option>
-                    </select>
-                  </td>
-                  <td>
-                    {renderValueInput(item, index)}
-                  </td>
-                  <td>
-                    <input
-                      type="text"
-                      className="input w-full text-sm"
-                      value={item.description}
-                      onChange={(e) => !readonly && handleDescriptionChange(index, e.target.value)}
-                      placeholder="配置项说明"
-                      disabled={readonly}
-                    />
-                  </td>
-                  <td>
-                    {!readonly && (
-                      <button
-                        className="btn btn-sm btn-danger w-full"
-                        onClick={() => handleDelete(index)}
-                        title="删除"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
         {items.length === 0 && (
           <div className="empty-state">
