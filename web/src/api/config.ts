@@ -99,6 +99,21 @@ export async function fetchGlobalDescriptions(): Promise<Record<string, string>>
   return response.json();
 }
 
+// 检查引用
+export async function checkReferences(params: {
+  type: 'global' | 'node' | 'service';
+  key: string;
+  service?: string;
+}): Promise<{ hasReferences: boolean; references: Array<{ path: string; service: string; details: string[] }> }> {
+  const response = await fetch(`${API_BASE}/check-references`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) throw new Error('检查引用失败');
+  return response.json();
+}
+
 // 类型定义
 export interface AppConfig {
   global: GlobalConfig;

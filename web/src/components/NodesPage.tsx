@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, Edit2, Trash2, Server, AlertCircle } from 'lucide-react';
 import type { AppConfig, NodeInfo } from '../api/config';
+import { checkReferences } from '../api/config';
 
 interface NodesPageProps {
   config: AppConfig;
@@ -85,21 +86,39 @@ export function NodesPage({ config, onChange }: NodesPageProps) {
     closeModal();
   };
   
-  const handleDelete = (name: string) => {
+  const handleDelete = async (name: string) => {
     if (!confirm(`确定要删除节点 "${name}" 吗？\n注意：这将同时从所有服务拓扑中移除该节点。`)) {
       return;
     }
-    
+
+    // 检查是否被template引用
+    try {
+      const result = await checkReferences({ type: 'node', key: name });
+      if (result.hasReferences) {
+        const templateList = result.references.map(ref =>
+          `- ${ref.path} (${ref.service})`
+        ).join('\n');
+        alert(`无法删除节点 "${name}"，因为它被以下template引用：\n\n${templateList}\n\n请先修改这些template，删除相关引用后再尝试删除。`);
+        return;
+      }
+    } catch (err) {
+      console.error('检查引用失败:', err);
+      // 如果检查失败，仍然允许删除，但给出警告
+      if (!confirm('无法检查template引用，确定要继续删除吗？这可能影响template渲染。')) {
+        return;
+      }
+    }
+
     const newNodes = { ...config.nodes };
     delete newNodes[name];
-    
+
     // 从服务拓扑中移除该节点
     const newServiceTop = { ...config.serviceTop };
     Object.keys(newServiceTop).forEach(serviceName => {
       const service = newServiceTop[serviceName];
       service.nodes = (service.nodes || []).filter(n => n !== name);
     });
-    
+
     onChange({
       ...config,
       nodes: newNodes,

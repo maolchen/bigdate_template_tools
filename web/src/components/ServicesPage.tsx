@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Plus, Edit2, Trash2, Layers, Settings, Check, X, ChevronRight } from 'lucide-react';
 import * as yaml from 'js-yaml';
 import type { AppConfig, ServiceTopoItem, ServiceConfigItem } from '../api/config';
+import { checkReferences } from '../api/config';
 import { VariablesEditor } from './VariablesEditor';
 
 type ServiceTab = 'topo' | 'config';
@@ -103,8 +104,26 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
     closeModal();
   };
 
-  const handleDelete = (name: string) => {
+  const handleDelete = async (name: string) => {
     if (!confirm(`确定要删除服务拓扑 "${name}" 吗？`)) return;
+
+    // 检查是否被template引用
+    try {
+      const result = await checkReferences({ type: 'service', key: name, service: name });
+      if (result.hasReferences) {
+        const templateList = result.references.map(ref =>
+          `- ${ref.path} (${ref.service})`
+        ).join('\n');
+        alert(`无法删除服务拓扑 "${name}"，因为它被以下template引用：\n\n${templateList}\n\n请先修改这些template，删除相关引用后再尝试删除。`);
+        return;
+      }
+    } catch (err) {
+      console.error('检查引用失败:', err);
+      // 如果检查失败，仍然允许删除，但给出警告
+      if (!confirm('无法检查template引用，确定要继续删除吗？这可能影响template渲染。')) {
+        return;
+      }
+    }
 
     const newServiceTop = { ...config.serviceTop };
     delete newServiceTop[name];
@@ -385,8 +404,26 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
     closeModal();
   };
 
-  const handleDelete = (name: string) => {
+  const handleDelete = async (name: string) => {
     if (!confirm(`确定要删除服务配置 "${name}" 吗？`)) return;
+
+    // 检查是否被template引用
+    try {
+      const result = await checkReferences({ type: 'service', key: name, service: name });
+      if (result.hasReferences) {
+        const templateList = result.references.map(ref =>
+          `- ${ref.path} (${ref.service})`
+        ).join('\n');
+        alert(`无法删除服务配置 "${name}"，因为它被以下template引用：\n\n${templateList}\n\n请先修改这些template，删除相关引用后再尝试删除。`);
+        return;
+      }
+    } catch (err) {
+      console.error('检查引用失败:', err);
+      // 如果检查失败，仍然允许删除，但给出警告
+      if (!confirm('无法检查template引用，确定要继续删除吗？这可能影响template渲染。')) {
+        return;
+      }
+    }
 
     const newServerConfig = { ...config.serverConfig };
     delete newServerConfig[name];

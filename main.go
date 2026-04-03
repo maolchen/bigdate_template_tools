@@ -941,6 +941,96 @@ func webGetGlobalDescriptionsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(descriptions)
 }
 
+// POST /api/check-references - 检查删除对象时是否被template引用
+func webCheckReferencesHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 解析请求
+	var req struct {
+		Type     string `json:"type"`     // "global", "node", "service"
+		Key      string `json:"key"`      // 对于node和service，是名称；对于global，是字段名
+		Service  string `json:"service"`  // 对于service类型，指定服务名
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	references := []map[string]interface{}{}
+
+	// 遍历所有template文件
+	filepath.Walk(webTemplatesDir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil || !strings.HasSuffix(path, ".tmpl") {
+			return nil
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(webTemplatesDir, path)
+		serviceName := filepath.Dir(relPath)
+		if serviceName == "." {
+			serviceName = strings.TrimSuffix(filepath.Base(path), ".tmpl")
+		}
+
+		contentStr := string(content)
+		var isReferenced bool
+		var details []string
+
+		switch req.Type {
+		case "global":
+			// 检查全局配置引用: .Global.xxx
+			pattern := fmt.Sprintf(`.Global\.%s`, req.Key)
+			isReferenced = regexp.MustCompile(pattern).MatchString(contentStr)
+			if isReferenced {
+				details = append(details, fmt.Sprintf("引用全局配置: .Global.%s", req.Key))
+			}
+
+		case "node":
+			// 检查节点引用: .Instance.Node.NodeName 或 serviceNodes "nodeName"
+			pattern1 := fmt.Sprintf(`\.Instance\.Node\.NodeName\s*===\s*"%s"`, req.Key)
+			pattern2 := fmt.Sprintf(`serviceNodes\s+"%s"`, req.Key)
+			isReferenced = regexp.MustCompile(pattern1).MatchString(contentStr) ||
+				regexp.MustCompile(pattern2).MatchString(contentStr)
+			if isReferenced {
+				details = append(details, fmt.Sprintf("引用节点: %s", req.Key))
+			}
+
+		case "service":
+			// 检查服务引用: serviceNodes "serviceName" 或 serviceEndpointsJoin "serviceName"
+			pattern1 := fmt.Sprintf(`serviceNodes\s+"%s"`, req.Service)
+			pattern2 := fmt.Sprintf(`serviceEndpointsJoin\s+"%s"`, req.Service)
+			isReferenced = regexp.MustCompile(pattern1).MatchString(contentStr) ||
+				regexp.MustCompile(pattern2).MatchString(contentStr)
+			if isReferenced {
+				details = append(details, fmt.Sprintf("引用服务: %s", req.Service))
+			}
+		}
+
+		if isReferenced {
+			references = append(references, map[string]interface{}{
+				"path":    relPath,
+				"service": serviceName,
+				"details": details,
+			})
+		}
+
+		return nil
+	})
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"hasReferences": len(references) > 0,
+		"references":    references,
+	})
+}
+
 func webLoadConfig() error {
 	data, err := os.ReadFile(webConfigPath)
 	if err != nil {
@@ -1183,6 +1273,13 @@ func runWebMode(port string) {
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
+	})
+	mux.HandleFunc("/api/check-references", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		webCheckReferencesHandler(w, r)
 	})
 
 	// 静态文件服务（前端）

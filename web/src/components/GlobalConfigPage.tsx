@@ -7,7 +7,8 @@ import {
 } from '../lib/global-fields';
 import {
   fetchGlobalDescriptions,
-  saveGlobalDescriptions
+  saveGlobalDescriptions,
+  checkReferences
 } from '../api/config';
 
 interface GlobalConfigPageProps {
@@ -88,9 +89,27 @@ export function GlobalConfigPage({ config, onChange }: GlobalConfigPageProps) {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (key: string) => {
+  const handleDelete = async (key: string) => {
     if (!confirm(`确定要删除配置项 "${key}" 吗？`)) {
       return;
+    }
+
+    // 检查是否被template引用
+    try {
+      const result = await checkReferences({ type: 'global', key });
+      if (result.hasReferences) {
+        const templateList = result.references.map(ref =>
+          `- ${ref.path} (${ref.service})`
+        ).join('\n');
+        alert(`无法删除配置项 "${key}"，因为它被以下template引用：\n\n${templateList}\n\n请先修改这些template，删除相关引用后再尝试删除。`);
+        return;
+      }
+    } catch (err) {
+      console.error('检查引用失败:', err);
+      // 如果检查失败，仍然允许删除，但给出警告
+      if (!confirm('无法检查template引用，确定要继续删除吗？这可能影响template渲染。')) {
+        return;
+      }
     }
 
     const newGlobal = { ...config.global };
