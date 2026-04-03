@@ -424,6 +424,7 @@ func getWorkDir() string {
 func main() {
 	// 确定工作目录
 	workDir := getWorkDir()
+	fmt.Printf("工作目录: %s\n", workDir)
 
 	// 设置路径
 	configPath = filepath.Join(workDir, "config.yaml")
@@ -431,9 +432,11 @@ func main() {
 	templatesDir = filepath.Join(workDir, "templates")
 	webDir = filepath.Join(workDir, "web", "dist")
 
+	fmt.Printf("尝试前端目录: %s\n", webDir)
 	// 如果 web/dist 不存在，尝试 server/web/dist
 	if _, err := os.Stat(webDir); os.IsNotExist(err) {
 		webDir = filepath.Join(workDir, "server", "web", "dist")
+		fmt.Printf("前端目录不存在，尝试: %s\n", webDir)
 	}
 
 	// 加载配置
@@ -490,12 +493,20 @@ func main() {
 	})
 
 	// 静态文件服务（前端）
-	if _, err := os.Stat(webDir); err == nil {
-		fs := http.FileServer(http.Dir(webDir))
-		mux.Handle("/", fs)
-		fmt.Printf("前端静态文件目录: %s\n", webDir)
+	fmt.Printf("检查前端目录: %s\n", webDir)
+	if info, err := os.Stat(webDir); err == nil {
+		if info.IsDir() {
+			fs := http.FileServer(http.Dir(webDir))
+			mux.Handle("/", fs)
+			fmt.Printf("✓ 前端静态文件目录: %s\n", webDir)
+			// 列出文件数量
+			files, _ := os.ReadDir(webDir)
+			fmt.Printf("  文件数: %d\n", len(files))
+		} else {
+			fmt.Printf("✗ 前端路径不是目录: %s\n", webDir)
+		}
 	} else {
-		fmt.Printf("警告: 前端静态文件目录不存在: %s\n", webDir)
+		fmt.Printf("✗ 前端静态文件目录不存在: %s, 错误: %v\n", webDir, err)
 	}
 
 	// 启动服务器

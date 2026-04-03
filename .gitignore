@@ -38,6 +38,21 @@ yarn.lock
 
 # Go tooling
 bin/
+# Go 编译输出（二进制文件）
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+server-bin
+config-generator
+# 测试和输出目录
+output/
+tmp/
+# 测试配置
+config-simple.yaml
+# 运行日志
+run.log
 *.test
 
 # Editor / IDE
