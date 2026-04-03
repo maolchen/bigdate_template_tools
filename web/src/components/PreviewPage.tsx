@@ -52,13 +52,10 @@ function yamlValueToString(value: any, indent: number = 0): string {
       const valStr = yamlValueToString(value[key], indent + 1);
       // 如果值是多行格式（包含换行），需要正确处理缩进
       if (valStr.includes('\n')) {
-        // 移除valStr开头的换行符，然后将每一行都添加正确的缩进
-        const lines = valStr.split('\n');
-        // 跳过第一个空行，其他行添加缩进
-        const indentedLines = lines
-          .filter(line => line.trim() !== '')
-          .map(line => `${prefix}    ${line}`);
-        return `${prefix}  ${key}:\n${indentedLines.join('\n')}`;
+        // valStr的第一行已经包含了正确的缩进（prefix + 2空格）
+        // 后续行也已经有正确的缩进，只需要在valStr前面添加冒号
+        // 直接使用valStr，不做额外处理
+        return `${prefix}  ${key}:${valStr}`;
       }
       return `${prefix}  ${key}: ${valStr}`;
     });
