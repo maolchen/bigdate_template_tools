@@ -238,37 +238,37 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
         <div className="modal-fullscreen">
           <div className="modal-fullscreen-content">
             <div className="modal-header">
-              <h3 className="font-semibold text-gray-800">
+              <h3 className="font-bold text-gray-800 text-lg">
                 {editingService ? '编辑服务拓扑' : '添加服务拓扑'}
               </h3>
-              <button className="btn btn-sm btn-secondary" onClick={closeModal}>关闭</button>
+              <button className="btn btn-sm btn-secondary px-4 py-2 text-base font-medium border-2 border-gray-300 hover:border-gray-400" onClick={closeModal}>关闭</button>
             </div>
             <div className="modal-body">
               <div className="form-group max-w-3xl mx-auto">
-                <label className="form-label">
+                <label className="form-label text-base font-medium">
                   服务名称 <span className="text-danger">*</span>
                 </label>
                 <input
                   type="text"
-                  className={`input ${errors.name ? 'border-danger' : ''}`}
+                  className={`input ${errors.name ? 'border-danger' : ''} text-base`}
                   value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
                   placeholder="例如: zookeeper 或 hadoop/hdfs_namenode"
                   disabled={editingService !== null}
                 />
-                {errors.name && <p className="text-danger text-sm mt-1">{errors.name}</p>}
-                <p className="form-hint">可以使用斜杠表示层级关系，如 doris/fe</p>
+                {errors.name && <p className="text-danger text-base mt-1">{errors.name}</p>}
+                <p className="form-hint text-base">可以使用斜杠表示层级关系，如 doris/fe</p>
               </div>
 
               <div className="form-group max-w-3xl mx-auto">
-                <label className="form-label">
+                <label className="form-label text-base font-medium">
                   部署节点 <span className="text-danger">*</span>
                 </label>
                 <div className="flex gap-2 mb-3">
-                  <button type="button" className="btn btn-sm btn-secondary" onClick={selectAllNodes}>
+                  <button type="button" className="btn btn-sm btn-secondary text-base" onClick={selectAllNodes}>
                     所有节点
                   </button>
-                  <button type="button" className="btn btn-sm btn-secondary" onClick={clearAllNodes}>
+                  <button type="button" className="btn btn-sm btn-secondary text-base" onClick={clearAllNodes}>
                     清空
                   </button>
                 </div>
@@ -276,7 +276,7 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
                 {formData.nodes.includes('*') ? (
                   <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
                     <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-green-700">已选择所有节点 (*)</span>
+                    <span className="text-green-700 text-base">已选择所有节点 (*)</span>
                     <button className="ml-auto text-green-600 hover:text-green-800" onClick={clearAllNodes}>
                       <X className="w-4 h-4" />
                     </button>
@@ -284,7 +284,7 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
                 ) : (
                   <div className="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto p-3 border rounded-lg">
                     {allNodes.map(node => (
-                      <label key={node} className="flex items-center gap-2 cursor-pointer">
+                      <label key={node} className="flex items-center gap-2 cursor-pointer text-base">
                         <input
                           type="checkbox"
                           checked={formData.nodes.includes(node)}
@@ -295,14 +295,14 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
                     ))}
                   </div>
                 )}
-                {errors.nodes && <p className="text-danger text-sm mt-1">{errors.nodes}</p>}
+                {errors.nodes && <p className="text-danger text-base mt-1">{errors.nodes}</p>}
               </div>
 
               <div className="form-group max-w-3xl mx-auto">
-                <label className="form-label">描述</label>
+                <label className="form-label text-base font-medium">描述</label>
                 <input
                   type="text"
-                  className="input"
+                  className="input text-base"
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
                   placeholder="例如: ZooKeeper 集群"
@@ -310,21 +310,21 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
               </div>
 
               <div className="form-group max-w-3xl mx-auto">
-                <label className="form-label">自增ID配置</label>
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="form-label text-base font-medium">自增ID配置</label>
+                <label className="flex items-center gap-2 cursor-pointer text-base">
                   <input
                     type="checkbox"
                     checked={formData.id_auto_derive}
                     onChange={e => setFormData({ ...formData, id_auto_derive: e.target.checked })}
                   />
-                  <span className="text-sm">启用自动推导ID（需在服务配置中设置 id_field 和 id_format）</span>
+                  <span className="text-base">启用自动推导ID（需在服务配置中设置 id_field 和 id_format）</span>
                 </label>
-                <p className="form-hint">启用后，系统会自动为每个节点实例生成唯一ID，从服务器配置的 id_format 字段读取格式模板</p>
+                <p className="form-hint text-base">启用后，系统会自动为每个节点实例生成唯一ID，从服务器配置的 id_format 字段读取格式模板</p>
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={closeModal}>取消</button>
-              <button className="btn btn-primary" onClick={handleSubmit}>
+              <button className="btn btn-secondary text-base px-6 py-2.5" onClick={closeModal}>取消</button>
+              <button className="btn btn-primary text-base px-6 py-2.5" onClick={handleSubmit}>
                 {editingService ? '保存' : '添加'}
               </button>
             </div>
@@ -457,11 +457,10 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
                   <tr key={name}>
                     <td>
                       <button
-                        className="flex items-center gap-2 text-primary hover:underline cursor-pointer"
+                        className="flex items-center gap-2 text-primary hover:underline cursor-pointer text-base font-semibold"
                         onClick={() => handleViewDetail(name)}
                       >
-                        <Settings className="w-4 h-4" />
-                        <span className="font-semibold">{name}</span>
+                        <span>{name}</span>
                         <ChevronRight className="w-4 h-4" />
                       </button>
                     </td>
@@ -517,46 +516,46 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
           <div className="modal-fullscreen">
             <div className="modal-fullscreen-content">
               <div className="modal-header">
-                <h3 className="font-semibold text-gray-800">
+                <h3 className="font-bold text-gray-800 text-lg">
                   {editingConfig ? '编辑服务配置' : '添加服务配置'}
                 </h3>
-                <button className="btn btn-sm btn-secondary" onClick={closeModal}>关闭</button>
+                <button className="btn btn-sm btn-secondary px-4 py-2 text-base font-medium border-2 border-gray-300 hover:border-gray-400" onClick={closeModal}>关闭</button>
               </div>
               <div className="modal-body">
                 <div className="form-group max-w-3xl mx-auto">
-                  <label className="form-label">
+                  <label className="form-label text-base font-medium">
                     配置名称 <span className="text-danger">*</span>
                   </label>
                   <input
                     type="text"
-                    className={`input ${errors.name ? 'border-danger' : ''}`}
+                    className={`input ${errors.name ? 'border-danger' : ''} text-base`}
                     value={formData.name}
                     onChange={e => setFormData({ ...formData, name: e.target.value })}
                     placeholder="例如: zookeeper 或 doris/fe"
                     disabled={editingConfig !== null}
                   />
-                  {errors.name && <p className="text-danger text-sm mt-1">{errors.name}</p>}
-                  <p className="form-hint">建议与服务拓扑中的名称保持一致</p>
+                  {errors.name && <p className="text-danger text-base mt-1">{errors.name}</p>}
+                  <p className="form-hint text-base">建议与服务拓扑中的名称保持一致</p>
                 </div>
 
                 <div className="form-group max-w-3xl mx-auto">
-                  <label className="form-label">服务类型</label>
+                  <label className="form-label text-base font-medium">服务类型</label>
                   <select
-                    className="select"
+                    className="select text-base"
                     value={formData.type}
                     onChange={e => setFormData({ ...formData, type: e.target.value as '' | 'global' })}
                   >
                     <option value="">普通服务</option>
                     <option value="global">全局服务（所有节点）</option>
                   </select>
-                  <p className="form-hint">全局服务会在所有节点上执行</p>
+                  <p className="form-hint text-base">全局服务会在所有节点上执行</p>
                 </div>
 
                 <div className="form-group max-w-3xl mx-auto">
-                  <label className="form-label">描述</label>
+                  <label className="form-label text-base font-medium">描述</label>
                   <input
                     type="text"
-                    className="input"
+                    className="input text-base"
                     value={formData.description}
                     onChange={e => setFormData({ ...formData, description: e.target.value })}
                     placeholder="例如: ZooKeeper 详细配置"
@@ -564,17 +563,17 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
                 </div>
 
                 <div className="form-group max-w-full mx-auto">
-                  <label className="form-label">变量</label>
+                  <label className="form-label text-base font-medium">变量</label>
                   <VariablesEditor
                     vars={formData.vars}
                     onChange={(newVars) => setFormData({ ...formData, vars: newVars })}
                   />
-                  <p className="form-hint">服务的详细配置参数，支持字符串、数字、布尔、对象和数组</p>
+                  <p className="form-hint text-base">服务的详细配置参数，支持字符串、数字、布尔、对象和数组</p>
                 </div>
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={closeModal}>取消</button>
-                <button className="btn btn-primary" onClick={handleSubmit}>
+                <button className="btn btn-secondary text-base px-6 py-2.5" onClick={closeModal}>取消</button>
+                <button className="btn btn-primary text-base px-6 py-2.5" onClick={handleSubmit}>
                   {editingConfig ? '保存' : '添加'}
                 </button>
               </div>
@@ -612,65 +611,133 @@ function ServiceConfigDetail({ serviceName, config, onChange, onBack }: ServiceC
     return (
       <div className="card">
         <div className="card-body text-center py-12">
-          <p className="text-gray-500">服务配置不存在</p>
-          <button className="btn btn-secondary mt-4" onClick={onBack}>返回列表</button>
+          <p className="text-gray-500 text-lg">服务配置不存在</p>
+          <button className="btn btn-secondary mt-4 text-base px-6 py-2" onClick={onBack}>返回列表</button>
         </div>
       </div>
     );
   }
 
+  // 生成 YAML 格式的配置展示
+  const generateYAML = () => {
+    let yaml = `# ${serviceName} 配置\n`;
+    yaml += `# 服务类型: ${serviceConfig.type === 'global' ? '全局服务' : '普通服务'}\n`;
+    if (serviceConfig.description) {
+      yaml += `# 描述: ${serviceConfig.description}\n`;
+    }
+    if (serviceTopo) {
+      yaml += `# 部署节点: ${serviceTopo.nodes.includes('*') ? '所有节点 (*)' : serviceTopo.nodes.join(', ')}\n`;
+    }
+    yaml += '\n';
+
+    // 添加配置变量
+    const vars = serviceConfig.vars || {};
+    const keys = Object.keys(vars);
+    if (keys.length > 0) {
+      yaml += `vars:\n`;
+      keys.forEach(key => {
+        const value = vars[key];
+        if (typeof value === 'object' && value !== null) {
+          yaml += `  ${key}:\n`;
+          yaml += formatObjectAsYAML(value, 4);
+        } else if (typeof value === 'string') {
+          yaml += `  ${key}: "${value}"\n`;
+        } else if (typeof value === 'boolean') {
+          yaml += `  ${key}: ${value ? 'true' : 'false'}\n`;
+        } else {
+          yaml += `  ${key}: ${value}\n`;
+        }
+      });
+    } else {
+      yaml += `vars: {}\n`;
+    }
+
+    return yaml;
+  };
+
+  const formatObjectAsYAML = (obj: any, indent: number): string => {
+    let result = '';
+    const indentStr = ' '.repeat(indent);
+    Object.keys(obj).forEach(key => {
+      const value = obj[key];
+      if (typeof value === 'object' && value !== null) {
+        if (Array.isArray(value)) {
+          result += `${indentStr}${key}:\n`;
+          value.forEach((item: any) => {
+            if (typeof item === 'object') {
+              result += `${indentStr}  -\n`;
+              result += formatObjectAsYAML(item, indent + 4);
+            } else {
+              const valStr = typeof item === 'string' ? `"${item}"` : String(item);
+              result += `${indentStr}  - ${valStr}\n`;
+            }
+          });
+        } else {
+          result += `${indentStr}${key}:\n`;
+          result += formatObjectAsYAML(value, indent + 2);
+        }
+      } else {
+        const valStr = typeof value === 'string' ? `"${value}"` : String(value);
+        result += `${indentStr}${key}: ${valStr}\n`;
+      }
+    });
+    return result;
+  };
+
+  const yamlContent = generateYAML();
+
   return (
     <div className="space-y-6">
       {/* 面包屑导航 */}
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex items-center gap-2 text-base">
         <button
-          className="text-primary hover:underline cursor-pointer"
+          className="text-primary hover:underline cursor-pointer font-medium"
           onClick={onBack}
         >
           服务配置
         </button>
-        <ChevronRight className="w-4 h-4 text-gray-400" />
-        <span className="font-semibold text-gray-800">{serviceName}</span>
+        <ChevronRight className="w-5 h-5 text-gray-400" />
+        <span className="font-semibold text-gray-800 text-base">{serviceName}</span>
       </div>
 
       {/* 基本信息 */}
       <div className="card">
         <div className="card-header">
-          <h3 className="font-semibold text-gray-800">基本信息</h3>
+          <h3 className="font-bold text-gray-800 text-lg">基本信息</h3>
         </div>
         <div className="card-body">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-6">
             <div>
-              <label className="text-sm text-gray-500">服务名称</label>
-              <p className="font-medium text-gray-800">{serviceName}</p>
+              <label className="text-base text-gray-500 font-medium">服务名称</label>
+              <p className="font-semibold text-gray-800 text-lg">{serviceName}</p>
             </div>
             <div>
-              <label className="text-sm text-gray-500">服务类型</label>
+              <label className="text-base text-gray-500 font-medium">服务类型</label>
               <p>
                 {serviceConfig.type === 'global' ? (
-                  <span className="badge badge-green text-xs">全局服务</span>
+                  <span className="badge badge-green text-sm">全局服务</span>
                 ) : (
-                  <span className="badge badge-gray text-xs">普通服务</span>
+                  <span className="badge badge-gray text-sm">普通服务</span>
                 )}
               </p>
             </div>
             <div className="col-span-2">
-              <label className="text-sm text-gray-500">描述</label>
-              <p className="text-gray-800">{serviceConfig.description || '-'}</p>
+              <label className="text-base text-gray-500 font-medium">描述</label>
+              <p className="text-gray-800 text-base">{serviceConfig.description || '-'}</p>
             </div>
           </div>
 
           {/* 部署节点信息 */}
           {serviceTopo && (
-            <div className="mt-4 pt-4 border-t">
-              <label className="text-sm text-gray-500">部署节点</label>
-              <div className="mt-2">
+            <div className="mt-6 pt-6 border-t">
+              <label className="text-base text-gray-500 font-medium">部署节点</label>
+              <div className="mt-3">
                 {serviceTopo.nodes.includes('*') ? (
-                  <span className="badge badge-green">所有节点 (*)</span>
+                  <span className="badge badge-green text-sm">所有节点 (*)</span>
                 ) : (
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-2">
                     {serviceTopo.nodes.map(node => (
-                      <span key={node} className="badge badge-blue text-xs">{node}</span>
+                      <span key={node} className="badge badge-blue text-sm">{node}</span>
                     ))}
                   </div>
                 )}
@@ -680,30 +747,23 @@ function ServiceConfigDetail({ serviceName, config, onChange, onBack }: ServiceC
         </div>
       </div>
 
-      {/* 配置变量 */}
+      {/* YAML 配置展示 */}
       <div className="card">
         <div className="card-header">
-          <h3 className="font-semibold text-gray-800">
-            配置变量 ({Object.keys(serviceConfig.vars || {}).length} 项)
+          <h3 className="font-bold text-gray-800 text-lg">
+            配置 YAML ({Object.keys(serviceConfig.vars || {}).length} 项)
           </h3>
         </div>
         <div className="card-body">
-          <div className="bg-gray-50 rounded-lg p-6">
-            <VariablesEditor
-              vars={serviceConfig.vars || {}}
-              onChange={(newVars) => {
-                const newServerConfig = { ...config.serverConfig };
-                newServerConfig[serviceName] = { ...serviceConfig, vars: newVars };
-                onChange({ ...config, serverConfig: newServerConfig });
-              }}
-            />
-          </div>
+          <pre className="bg-gray-50 rounded-lg p-6 text-sm text-gray-800 font-mono overflow-x-auto whitespace-pre">
+            {yamlContent}
+          </pre>
         </div>
       </div>
 
       {/* 操作按钮 */}
-      <div className="flex justify-end gap-2">
-        <button className="btn btn-secondary" onClick={onBack}>返回列表</button>
+      <div className="flex justify-end gap-3 pb-4">
+        <button className="btn btn-secondary text-base px-6 py-2.5" onClick={onBack}>返回列表</button>
       </div>
     </div>
   );
