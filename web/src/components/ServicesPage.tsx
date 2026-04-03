@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Plus, Edit2, Trash2, Layers, Settings, Check, X, ChevronRight } from 'lucide-react';
+import * as yaml from 'js-yaml';
 import type { AppConfig, ServiceTopoItem, ServiceConfigItem } from '../api/config';
 import { VariablesEditor } from './VariablesEditor';
 
@@ -620,64 +621,32 @@ function ServiceConfigDetail({ serviceName, config, onBack }: ServiceConfigDetai
 
   // 生成 YAML 格式的配置展示
   const generateYAML = () => {
-    let yaml = `# ${serviceName} 配置\n`;
-    yaml += `# 服务类型: ${serviceConfig.type === 'global' ? '全局服务' : '普通服务'}\n`;
+    let yamlText = `# ${serviceName} 配置\n`;
+    yamlText += `# 服务类型: ${serviceConfig.type === 'global' ? '全局服务' : '普通服务'}\n`;
     if (serviceConfig.description) {
-      yaml += `# 描述: ${serviceConfig.description}\n`;
+      yamlText += `# 描述: ${serviceConfig.description}\n`;
     }
     if (serviceTopo) {
-      yaml += `# 部署节点: ${serviceTopo.nodes.includes('*') ? '所有节点 (*)' : serviceTopo.nodes.join(', ')}\n`;
+      yamlText += `# 部署节点: ${serviceTopo.nodes.includes('*') ? '所有节点 (*)' : serviceTopo.nodes.join(', ')}\n`;
     }
-    yaml += '\n';
+    yamlText += '\n';
 
-    // 添加配置变量
+    // 使用 js-yaml 库生成 vars 部分
     const vars = serviceConfig.vars || {};
-    const keys = Object.keys(vars);
-    if (keys.length > 0) {
-      yaml += `vars:\n`;
-      keys.forEach(key => {
-        const value = vars[key];
-        yaml += formatKeyValue(key, value, 2);
+    if (Object.keys(vars).length > 0) {
+      yamlText += 'vars:\n';
+      yamlText += yaml.dump(vars, {
+        indent: 2,
+        lineWidth: -1,
+        noRefs: true,
+        sortKeys: false,
+        forceQuotes: false
       });
     } else {
-      yaml += `vars: {}\n`;
+      yamlText += 'vars: {}\n';
     }
 
-    return yaml;
-  };
-
-  const formatKeyValue = (key: string, value: any, indent: number): string => {
-    const indentStr = ' '.repeat(indent);
-    if (typeof value === 'object' && value !== null) {
-      if (Array.isArray(value)) {
-        let result = `${indentStr}${key}:\n`;
-        value.forEach((item: any) => {
-          if (typeof item === 'object' && item !== null) {
-            result += `${indentStr}  -\n`;
-            result += formatObjectAsYAML(item, indent + 2);
-          } else {
-            const valStr = typeof item === 'string' ? `"${item}"` : String(item);
-            result += `${indentStr}  - ${valStr}\n`;
-          }
-        });
-        return result;
-      } else {
-        let result = `${indentStr}${key}:\n`;
-        result += formatObjectAsYAML(value, indent + 2);
-        return result;
-      }
-    } else {
-      const valStr = typeof value === 'string' ? `"${value}"` : String(value);
-      return `${indentStr}${key}: ${valStr}\n`;
-    }
-  };
-
-  const formatObjectAsYAML = (obj: any, indent: number): string => {
-    let result = '';
-    Object.keys(obj).forEach(key => {
-      result += formatKeyValue(key, obj[key], indent);
-    });
-    return result;
+    return yamlText;
   };
 
   const yamlContent = generateYAML();
