@@ -7,6 +7,57 @@ interface PreviewPageProps {
   config: AppConfig;
 }
 
+// 辅助函数：将任意值转换为 YAML 格式的字符串
+function yamlValueToString(value: any, indent: number = 0): string {
+  const prefix = '  '.repeat(indent);
+
+  if (value === null || value === undefined) {
+    return 'null';
+  } else if (typeof value === 'string') {
+    // 如果字符串包含特殊字符，使用引号
+    if (/[:{}\[\],\n\r\t]/.test(value)) {
+      return `"${value.replace(/"/g, '\\"')}"`;
+    }
+    return value;
+  } else if (typeof value === 'boolean') {
+    return String(value);
+  } else if (typeof value === 'number') {
+    return String(value);
+  } else if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return '[]';
+    }
+    // 如果数组元素都是简单类型，用单行格式
+    if (value.every(item =>
+      typeof item === 'string' ||
+      typeof item === 'number' ||
+      typeof item === 'boolean'
+    )) {
+      return `[${value.map(item =>
+        typeof item === 'string' ? `"${item}"` : String(item)
+      ).join(', ')}]`;
+    }
+    // 复杂数组用多行格式
+    const items = value.map(item => {
+      const itemStr = yamlValueToString(item, indent + 1);
+      return `${prefix}  - ${itemStr}`;
+    });
+    return `\n${items.join('\n')}`;
+  } else if (typeof value === 'object') {
+    const keys = Object.keys(value);
+    if (keys.length === 0) {
+      return '{}';
+    }
+    const entries = keys.map(key => {
+      const valStr = yamlValueToString(value[key], indent + 1);
+      return `${prefix}  ${key}: ${valStr}`;
+    });
+    return `\n${entries.join('\n')}`;
+  }
+
+  return String(value);
+}
+
 // 简单的 YAML 导出函数
 function configToYaml(config: AppConfig): string {
   const lines: string[] = [];
@@ -48,13 +99,8 @@ function configToYaml(config: AppConfig): string {
     if (service.vars && Object.keys(service.vars).length > 0) {
       lines.push('    vars:');
       Object.entries(service.vars).forEach(([k, v]) => {
-        if (typeof v === 'string') {
-          lines.push(`      ${k}: "${v}"`);
-        } else if (Array.isArray(v)) {
-          lines.push(`      ${k}: [${v.join(', ')}]`);
-        } else {
-          lines.push(`      ${k}: ${v}`);
-        }
+        const valStr = yamlValueToString(v, 2);
+        lines.push(`      ${k}: ${valStr}`);
       });
     }
   });
@@ -76,13 +122,8 @@ function configToYaml(config: AppConfig): string {
     if (cfg.vars && Object.keys(cfg.vars).length > 0) {
       lines.push('    vars:');
       Object.entries(cfg.vars).forEach(([k, v]) => {
-        if (typeof v === 'string') {
-          lines.push(`      ${k}: "${v}"`);
-        } else if (Array.isArray(v)) {
-          lines.push(`      ${k}: [${v.map((i: any) => typeof i === 'string' ? `"${i}"` : i).join(', ')}]`);
-        } else {
-          lines.push(`      ${k}: ${v}`);
-        }
+        const valStr = yamlValueToString(v, 2);
+        lines.push(`      ${k}: ${valStr}`);
       });
     }
   });

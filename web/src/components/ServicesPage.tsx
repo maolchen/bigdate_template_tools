@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, Edit2, Trash2, Layers, Settings, Check, X } from 'lucide-react';
 import type { AppConfig, ServiceTopoItem, ServiceConfigItem } from '../api/config';
+import { VariablesEditor } from './VariablesEditor';
 
 type ServiceTab = 'topo' | 'config';
 
@@ -349,47 +350,41 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
     name: '',
     type: '' as '' | 'global',
     description: '',
-    vars: '{}'
+    vars: {} as Record<string, any>
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  
+
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
-    
+
     if (!formData.name.trim()) {
       newErrors.name = '配置名称不能为空';
     } else if (editingConfig !== formData.name && config.serverConfig[formData.name]) {
       newErrors.name = '配置名称已存在';
     }
-    
-    try {
-      JSON.parse(formData.vars);
-    } catch {
-      newErrors.vars = '变量必须是有效的 JSON 格式';
-    }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
   
   const handleSubmit = () => {
     if (!validate()) return;
-    
+
     const newServerConfig = { ...config.serverConfig };
-    
+
     if (editingConfig && editingConfig !== formData.name) {
       delete newServerConfig[editingConfig];
     }
-    
+
     const configItem: ServiceConfigItem = {
       description: formData.description,
-      vars: JSON.parse(formData.vars)
+      vars: formData.vars || {}
     };
-    
+
     if (formData.type) {
       configItem.type = formData.type;
     }
-    
+
     newServerConfig[formData.name] = configItem;
     onChange({ ...config, serverConfig: newServerConfig });
     closeModal();
@@ -405,27 +400,27 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
   
   const openAddModal = () => {
     setEditingConfig(null);
-    setFormData({ name: '', type: '', description: '', vars: '{}' });
+    setFormData({ name: '', type: '', description: '', vars: {} });
     setErrors({});
     setIsModalOpen(true);
   };
-  
+
   const openEditModal = (name: string, cfg: ServiceConfigItem) => {
     setEditingConfig(name);
     setFormData({
       name,
       type: cfg.type || '',
       description: cfg.description || '',
-      vars: JSON.stringify(cfg.vars || {}, null, 2)
+      vars: cfg.vars || {}
     });
     setErrors({});
     setIsModalOpen(true);
   };
-  
+
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingConfig(null);
-    setFormData({ name: '', type: '', description: '', vars: '{}' });
+    setFormData({ name: '', type: '', description: '', vars: {} });
     setErrors({});
   };
   
@@ -558,16 +553,12 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
               </div>
               
               <div className="form-group">
-                <label className="form-label">变量 (JSON)</label>
-                <textarea
-                  className={`input font-mono text-sm ${errors.vars ? 'border-danger' : ''}`}
-                  value={formData.vars}
-                  onChange={e => setFormData({ ...formData, vars: e.target.value })}
-                  rows={8}
-                  placeholder='{"version": "3.7.1", "dataDir": "/data/zookeeper"}'
+                <label className="form-label">变量</label>
+                <VariablesEditor
+                  vars={formData.vars}
+                  onChange={(newVars) => setFormData({ ...formData, vars: newVars })}
                 />
-                {errors.vars && <p className="text-danger text-sm mt-1">{errors.vars}</p>}
-                <p className="form-hint">服务的详细配置参数，以 JSON 格式输入</p>
+                <p className="form-hint">服务的详细配置参数，支持字符串、数字、布尔、对象和数组</p>
               </div>
             </div>
             <div className="modal-footer">

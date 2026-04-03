@@ -72,6 +72,7 @@ export interface AppConfig {
 }
 
 export interface GlobalConfig {
+  [key: string]: any;
   user: string;
   group: string;
   version: string;

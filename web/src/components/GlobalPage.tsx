@@ -6,7 +6,7 @@ import {
   getCategories
 } from '../lib/global-fields';
 
-interface GlobalConfigPageProps {
+interface GlobalPageProps {
   config: AppConfig;
   onChange: (config: AppConfig) => void;
 }
@@ -19,7 +19,7 @@ interface ConfigItem {
   type: 'string' | 'number' | 'boolean';
 }
 
-export function GlobalConfigPage({ config, onChange }: GlobalConfigPageProps) {
+export function GlobalPage({ config, onChange }: GlobalPageProps) {
   const [configItems, setConfigItems] = useState<ConfigItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ConfigItem | null>(null);

@@ -582,6 +582,7 @@ func webGenerateConfigHandler(w http.ResponseWriter, r *http.Request) {
 
 	results := make(map[string][]string)
 	errors := []string{}
+	warnings := []string{}
 
 	// 构建服务实例
 	instances := BuildServiceInstances(&webConfig)
@@ -600,9 +601,9 @@ func webGenerateConfigHandler(w http.ResponseWriter, r *http.Request) {
 			// 确定模板路径
 			templatePath := filepath.Join(webTemplatesDir, serviceName)
 
-			// 检查模板目录是否存在
+			// 检查模板目录是否存在（改为警告而非错误）
 			if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-				errors = append(errors, fmt.Sprintf("服务 %s 没有对应的模板目录", serviceName))
+				warnings = append(warnings, fmt.Sprintf("服务 %s 没有对应的模板目录，已跳过生成", serviceName))
 				continue
 			}
 
@@ -678,14 +679,16 @@ func webGenerateConfigHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"success": len(errors) == 0,
-		"message": "配置生成完成",
-		"results": results,
-		"errors":  errors,
+		"success":  len(errors) == 0,
+		"message":  "配置生成完成",
+		"results":  results,
+		"errors":   errors,
+		"warnings": warnings,
 		"stats": map[string]int{
 			"nodes":     len(webConfig.Nodes),
 			"services":  len(webConfig.ServiceTop),
 			"generated": webCountGeneratedFiles(),
+			"skipped":   len(warnings),
 		},
 	}
 
