@@ -666,7 +666,7 @@ function ServiceConfigDetail({ serviceName, config, onBack }: ServiceConfigDetai
           value.forEach((item: any) => {
             if (typeof item === 'object') {
               result += `${indentStr}  -\n`;
-              result += formatObjectAsYAML(item, indent + 4);
+              result += formatObjectAsYAML(item, indent + 2);
             } else {
               const valStr = typeof item === 'string' ? `"${item}"` : String(item);
               result += `${indentStr}  - ${valStr}\n`;
