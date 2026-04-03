@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronRight, Info } from 'lucide-react';
 
 interface VariableItem {
   key: string;
   value: any;
+  description: string;
   type: 'string' | 'number' | 'boolean' | 'object' | 'array';
 }
 
@@ -21,6 +22,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     const newItems: VariableItem[] = Object.entries(vars || {}).map(([key, value]) => ({
       key,
       value,
+      description: '',
       type: inferType(value)
     }));
     setItems(newItems);
@@ -38,6 +40,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     const newItem: VariableItem = {
       key: `var_${items.length + 1}`,
       value: '',
+      description: '',
       type: 'string'
     };
     const newItems = [...items, newItem];
@@ -58,6 +61,13 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     saveChanges(newItems);
   };
 
+  const handleDescriptionChange = (index: number, newDescription: string) => {
+    const newItems = [...items];
+    newItems[index].description = newDescription;
+    setItems(newItems);
+    saveChanges(newItems);
+  };
+
   const handleTypeChange = (index: number, newType: VariableItem['type']) => {
     const newItems = [...items];
     newItems[index].type = newType;
@@ -69,8 +79,12 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
       newItems[index].value = false;
     } else if (newType === 'object') {
       newItems[index].value = {};
+      // 对象默认展开
+      setExpandedKeys(new Set([...expandedKeys, `temp_${index}`]));
     } else if (newType === 'array') {
       newItems[index].value = [];
+      // 数组默认展开
+      setExpandedKeys(new Set([...expandedKeys, `temp_${index}`]));
     } else {
       newItems[index].value = '';
     }
@@ -109,8 +123,8 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
   const renderValueInput = (item: VariableItem, index: number) => {
     if (readonly) {
       return (
-        <div className="flex-1 bg-gray-50 px-3 py-2 rounded border border-gray-200">
-          <code className="text-sm">{JSON.stringify(item.value, null, 2)}</code>
+        <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm overflow-x-auto">
+          <pre className="whitespace-pre-wrap break-all">{JSON.stringify(item.value, null, 2)}</pre>
         </div>
       );
     }
@@ -118,7 +132,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     if (item.type === 'boolean') {
       return (
         <select
-          className="input flex-1"
+          className="input w-full"
           value={String(item.value)}
           onChange={(e) => handleValueChange(index, e.target.value === 'true')}
         >
@@ -130,7 +144,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
       return (
         <input
           type="number"
-          className="input flex-1"
+          className="input w-full"
           value={item.value}
           onChange={(e) => handleValueChange(index, Number(e.target.value))}
         />
@@ -139,26 +153,31 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
       return (
         <input
           type="text"
-          className="input flex-1"
+          className="input w-full"
           value={item.value}
           onChange={(e) => handleValueChange(index, e.target.value)}
         />
       );
     } else if (item.type === 'array') {
       const isExpanded = expandedKeys.has(item.key);
+      const arrayLength = Array.isArray(item.value) ? item.value.length : 0;
       return (
-        <div className="flex-1 border border-gray-200 rounded overflow-hidden">
+        <div className="border border-gray-300 rounded-lg overflow-hidden">
           <div
-            className="flex items-center justify-between px-3 py-2 bg-gray-50 cursor-pointer hover:bg-gray-100"
+            className="flex items-center justify-between px-4 py-3 bg-gray-100 cursor-pointer hover:bg-gray-200 transition-colors"
             onClick={() => toggleExpand(item.key)}
           >
-            <span className="text-sm text-gray-600">数组 [{Array.isArray(item.value) ? item.value.length : 0}]</span>
-            {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            <div className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-medium text-gray-700">数组</span>
+              <span className="text-xs text-gray-500">({arrayLength} 项)</span>
+            </div>
+            {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronRight className="w-4 h-4 text-gray-500" />}
           </div>
           {isExpanded && (
-            <div className="p-3 bg-white">
+            <div className="p-4 bg-gray-900 text-green-400">
               <textarea
-                className="w-full h-32 p-2 border border-gray-200 rounded font-mono text-sm"
+                className="w-full h-40 bg-transparent text-green-400 font-mono text-sm resize-none focus:outline-none"
                 value={JSON.stringify(item.value, null, 2)}
                 onChange={(e) => {
                   try {
@@ -178,18 +197,22 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
       const isExpanded = expandedKeys.has(item.key);
       const keyCount = typeof item.value === 'object' && item.value !== null ? Object.keys(item.value).length : 0;
       return (
-        <div className="flex-1 border border-gray-200 rounded overflow-hidden">
+        <div className="border border-gray-300 rounded-lg overflow-hidden">
           <div
-            className="flex items-center justify-between px-3 py-2 bg-gray-50 cursor-pointer hover:bg-gray-100"
+            className="flex items-center justify-between px-4 py-3 bg-gray-100 cursor-pointer hover:bg-gray-200 transition-colors"
             onClick={() => toggleExpand(item.key)}
           >
-            <span className="text-sm text-gray-600">对象 [{keyCount}]</span>
-            {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            <div className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-medium text-gray-700">对象</span>
+              <span className="text-xs text-gray-500">({keyCount} 个字段)</span>
+            </div>
+            {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronRight className="w-4 h-4 text-gray-500" />}
           </div>
           {isExpanded && (
-            <div className="p-3 bg-white">
+            <div className="p-4 bg-gray-900 text-green-400">
               <textarea
-                className="w-full h-32 p-2 border border-gray-200 rounded font-mono text-sm"
+                className="w-full h-40 bg-transparent text-green-400 font-mono text-sm resize-none focus:outline-none"
                 value={JSON.stringify(item.value, null, 2)}
                 onChange={(e) => {
                   try {
@@ -209,30 +232,40 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {items.map((item, index) => (
-        <div key={index} className="flex items-center gap-2">
-          <input
-            type="text"
-            className={`input w-1/3 ${readonly ? 'bg-gray-50' : ''}`}
-            value={item.key}
-            onChange={(e) => !readonly && handleKeyChange(index, e.target.value)}
-            placeholder="变量名"
-            disabled={readonly}
-          />
-          {readonly ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 rounded">
-                {item.type}
-              </span>
-              <div className="flex-1">{renderValueInput(item, index)}</div>
+        <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-3">
+          {/* 第一行：变量名和操作 */}
+          <div className="flex items-start gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">变量名</label>
+              <input
+                type="text"
+                className={`input w-full ${readonly ? 'bg-gray-50' : ''}`}
+                value={item.key}
+                onChange={(e) => !readonly && handleKeyChange(index, e.target.value)}
+                placeholder="变量名"
+                disabled={readonly}
+              />
             </div>
-          ) : (
-            <>
+            {!readonly && (
+              <div className="flex items-end">
+                <button className="btn btn-sm btn-danger mt-6" onClick={() => handleDelete(index)}>
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 第二行：类型和说明 */}
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">类型</label>
               <select
-                className="input w-28"
+                className="select w-full"
                 value={item.type}
-                onChange={(e) => handleTypeChange(index, e.target.value as VariableItem['type'])}
+                onChange={(e) => !readonly && handleTypeChange(index, e.target.value as VariableItem['type'])}
+                disabled={readonly}
               >
                 <option value="string">字符串</option>
                 <option value="number">数字</option>
@@ -240,22 +273,33 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
                 <option value="object">对象</option>
                 <option value="array">数组</option>
               </select>
-              {renderValueInput(item, index)}
-              <button className="btn btn-sm btn-danger" onClick={() => handleDelete(index)}>
-                <Trash2 className="w-3 h-3" />
-              </button>
-            </>
-          )}
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">说明</label>
+              <input
+                type="text"
+                className="input w-full"
+                value={item.description}
+                onChange={(e) => !readonly && handleDescriptionChange(index, e.target.value)}
+                placeholder="配置项说明"
+                disabled={readonly}
+              />
+            </div>
+          </div>
+
+          {/* 第三行：值 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">值</label>
+            {renderValueInput(item, index)}
+          </div>
         </div>
       ))}
+
       {!readonly && (
         <button className="btn btn-secondary w-full" onClick={handleAdd}>
-          <Plus className="w-4 h-4" />
-          添加变量
+          <Plus className="w-4 h-4 mr-2" />
+          添加配置项
         </button>
-      )}
-      {items.length === 0 && (
-        <div className="text-center text-gray-400 py-4">暂无变量配置</div>
       )}
     </div>
   );

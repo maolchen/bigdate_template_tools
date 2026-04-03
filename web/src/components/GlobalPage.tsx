@@ -161,72 +161,57 @@ export function GlobalPage({ config, onChange }: GlobalPageProps) {
               <span className="badge badge-gray">{items.length} 项</span>
             </div>
             <div className="card-body">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '35%' }}>配置名称</th>
-                    <th style={{ width: '20%' }}>配置值</th>
-                    <th style={{ width: '15%' }}>类型</th>
-                    <th style={{ width: '25%' }}>描述</th>
-                    <th style={{ width: '5%' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => {
-                    const fieldDef = getFieldDescription(item.key);
-                    const isRequired = fieldDef?.required || false;
-                    const displayName = fieldDef?.name || item.key;
+              <div className="space-y-3">
+                {items.map((item) => {
+                  const fieldDef = getFieldDescription(item.key);
+                  const isRequired = fieldDef?.required || false;
+                  const displayName = fieldDef?.name || item.key;
 
-                    return (
-                      <tr key={item.key}>
-                        <td>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-800">{displayName}</span>
-                            <code className="text-xs text-gray-500 bg-gray-100 px-1 rounded">
-                              ({item.key})
-                            </code>
-                            {isRequired && <span className="text-xs text-danger">*</span>}
-                          </div>
-                        </td>
-                        <td>
-                          <code className="text-sm text-primary bg-blue-50 px-2 py-1 rounded block">
-                            {typeof item.value === 'string' ? `"${item.value}"` : String(item.value)}
-                          </code>
-                        </td>
-                        <td>
-                          <span className="badge badge-gray text-xs">{item.type}</span>
-                        </td>
-                        <td>
-                          <span className="text-sm text-gray-600">{item.description || '-'}</span>
-                        </td>
-                        <td>
-                          <div className="flex gap-1">
-                            <button
-                              className="btn btn-sm btn-secondary"
-                              onClick={() => handleEdit(item)}
-                            >
-                              <Edit2 className="w-3 h-3" />
-                            </button>
-                            <button
-                              className="btn btn-sm btn-danger"
-                              onClick={() => handleDelete(item.key)}
-                              disabled={isRequired}
-                              title={isRequired ? '必填项，不能删除' : ''}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {items.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="text-center text-gray-400 py-4">暂无配置项</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                  return (
+                    <div
+                      key={item.key}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-800">
+                            {displayName} ({item.key})
+                          </span>
+                          {isRequired && <span className="text-xs text-danger">*</span>}
+                        </div>
+                        {item.description && (
+                          <p className="text-xs text-gray-500 mt-1">{item.description}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+                        <code className="text-sm text-primary bg-white px-3 py-1.5 rounded border border-gray-200">
+                          {typeof item.value === 'string' ? `"${item.value}"` : String(item.value)}
+                        </code>
+                        <span className="badge badge-gray text-xs">{item.type}</span>
+                        <div className="flex gap-1">
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => handleEdit(item)}
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            className="btn btn-sm btn-danger"
+                            onClick={() => handleDelete(item.key)}
+                            disabled={isRequired}
+                            title={isRequired ? '必填项，不能删除' : ''}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {items.length === 0 && (
+                  <div className="text-center text-gray-400 py-4">暂无配置项</div>
+                )}
+              </div>
             </div>
           </div>
         ))}

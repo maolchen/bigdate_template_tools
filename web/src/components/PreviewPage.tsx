@@ -50,11 +50,15 @@ function yamlValueToString(value: any, indent: number = 0): string {
     }
     const entries = keys.map(key => {
       const valStr = yamlValueToString(value[key], indent + 1);
-      // 如果值是多行格式（包含换行），key应该单独一行
+      // 如果值是多行格式（包含换行），需要正确处理缩进
       if (valStr.includes('\n')) {
-        // 移除valStr开头的换行符，添加正确的缩进
-        const indentedVal = valStr.replace(/^\n/, '\n' + prefix + '    ');
-        return `${prefix}  ${key}:${indentedVal}`;
+        // 移除valStr开头的换行符，然后将每一行都添加正确的缩进
+        const lines = valStr.split('\n');
+        // 跳过第一个空行，其他行添加缩进
+        const indentedLines = lines
+          .filter(line => line.trim() !== '')
+          .map(line => `${prefix}    ${line}`);
+        return `${prefix}  ${key}:\n${indentedLines.join('\n')}`;
       }
       return `${prefix}  ${key}: ${valStr}`;
     });

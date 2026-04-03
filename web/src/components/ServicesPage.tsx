@@ -338,6 +338,7 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
 function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<string | null>(null);
+  const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState({
     name: '',
     type: '' as '' | 'global',
@@ -345,6 +346,16 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
     vars: {} as Record<string, any>
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const toggleExpand = (name: string) => {
+    const newExpanded = new Set(expandedServices);
+    if (newExpanded.has(name)) {
+      newExpanded.delete(name);
+    } else {
+      newExpanded.add(name);
+    }
+    setExpandedServices(newExpanded);
+  };
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -485,22 +496,35 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
                       <span className="text-sm font-medium text-gray-700">
                         配置变量 ({Object.keys(cfg.vars).length} 个)
                       </span>
+                      {Object.keys(cfg.vars).length > 5 && (
+                        <button
+                          className="text-xs text-primary hover:underline"
+                          onClick={() => toggleExpand(name)}
+                        >
+                          {expandedServices.has(name) ? '收起' : '展开全部'}
+                        </button>
+                      )}
                     </div>
                     <div className="space-y-2">
-                      {Object.entries(cfg.vars).slice(0, 5).map(([key, value]) => (
-                        <div key={key} className="flex items-start gap-2 text-sm">
-                          <code className="text-primary bg-blue-50 px-2 py-0.5 rounded text-xs min-w-0 flex-shrink-0">
-                            {key}
-                          </code>
-                          <span className="text-gray-600 truncate">
-                            {typeof value === 'string' ? `"${value}"` :
-                             typeof value === 'object' ? '{...}' :
-                             String(value)}
-                          </span>
-                        </div>
-                      ))}
-                      {Object.keys(cfg.vars).length > 5 && (
-                        <p className="text-xs text-gray-500">
+                      {Object.entries(cfg.vars)
+                        .slice(0, expandedServices.has(name) ? Object.keys(cfg.vars).length : 5)
+                        .map(([key, value]) => (
+                          <div key={key} className="flex items-start gap-2 text-sm">
+                            <code className="text-primary bg-blue-50 px-2 py-0.5 rounded text-xs min-w-0 flex-shrink-0">
+                              {key}
+                            </code>
+                            <span className="text-gray-600 truncate">
+                              {typeof value === 'string' ? `"${value}"` :
+                               typeof value === 'object' ? '{...}' :
+                               String(value)}
+                            </span>
+                          </div>
+                        ))}
+                      {Object.keys(cfg.vars).length > 5 && !expandedServices.has(name) && (
+                        <p
+                          className="text-xs text-primary cursor-pointer hover:underline"
+                          onClick={() => toggleExpand(name)}
+                        >
                           还有 {Object.keys(cfg.vars).length - 5} 个配置项...
                         </p>
                       )}

@@ -123,20 +123,20 @@ export function GeneratePage() {
             </span>
           </div>
           <div className="card-body">
-            <div className="grid grid-cols-4 gap-4 mb-4">
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
+            <div className="flex gap-4 mb-4">
+              <div className="flex-1 text-center p-3 bg-gray-50 rounded-lg">
                 <p className="text-2xl font-bold text-gray-800">{result.stats.nodes}</p>
                 <p className="text-sm text-gray-500">节点数</p>
               </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <div className="flex-1 text-center p-3 bg-gray-50 rounded-lg">
                 <p className="text-2xl font-bold text-gray-800">{result.stats.services}</p>
                 <p className="text-sm text-gray-500">服务数</p>
               </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <div className="flex-1 text-center p-3 bg-gray-50 rounded-lg">
                 <p className="text-2xl font-bold text-gray-800">{result.stats.generated}</p>
                 <p className="text-sm text-gray-500">生成文件</p>
               </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <div className="flex-1 text-center p-3 bg-gray-50 rounded-lg">
                 <p className="text-2xl font-bold text-warning">{result.stats.skipped}</p>
                 <p className="text-sm text-gray-500">跳过服务</p>
               </div>
