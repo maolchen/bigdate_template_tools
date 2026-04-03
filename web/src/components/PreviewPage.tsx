@@ -96,12 +96,8 @@ function configToYaml(config: AppConfig): string {
     if (service.description) {
       lines.push(`    description: "${service.description}"`);
     }
-    if (service.vars && Object.keys(service.vars).length > 0) {
-      lines.push('    vars:');
-      Object.entries(service.vars).forEach(([k, v]) => {
-        const valStr = yamlValueToString(v, 2);
-        lines.push(`      ${k}: ${valStr}`);
-      });
+    if (service.id_auto_derive) {
+      lines.push(`    id_auto_derive: true`);
     }
   });
   

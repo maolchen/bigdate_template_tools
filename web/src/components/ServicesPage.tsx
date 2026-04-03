@@ -59,85 +59,79 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
     name: '',
     nodes: [] as string[],
     description: '',
-    vars: '{}'
+    id_auto_derive: false
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  
+
   const allNodes = Object.keys(config.nodes);
-  
+
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
-    
+
     if (!formData.name.trim()) {
       newErrors.name = '服务名称不能为空';
     } else if (editingService !== formData.name && config.serviceTop[formData.name]) {
       newErrors.name = '服务名称已存在';
     }
-    
+
     if (formData.nodes.length === 0) {
       newErrors.nodes = '至少选择一个节点';
     }
-    
-    try {
-      JSON.parse(formData.vars);
-    } catch {
-      newErrors.vars = '变量必须是有效的 JSON 格式';
-    }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
-  
+
   const handleSubmit = () => {
     if (!validate()) return;
-    
+
     const newServiceTop = { ...config.serviceTop };
-    
+
     if (editingService && editingService !== formData.name) {
       delete newServiceTop[editingService];
     }
-    
+
     newServiceTop[formData.name] = {
       nodes: formData.nodes,
       description: formData.description,
-      vars: JSON.parse(formData.vars)
+      id_auto_derive: formData.id_auto_derive
     };
-    
+
     onChange({ ...config, serviceTop: newServiceTop });
     closeModal();
   };
-  
+
   const handleDelete = (name: string) => {
     if (!confirm(`确定要删除服务拓扑 "${name}" 吗？`)) return;
-    
+
     const newServiceTop = { ...config.serviceTop };
     delete newServiceTop[name];
     onChange({ ...config, serviceTop: newServiceTop });
   };
-  
+
   const openAddModal = () => {
     setEditingService(null);
-    setFormData({ name: '', nodes: [], description: '', vars: '{}' });
+    setFormData({ name: '', nodes: [], description: '', id_auto_derive: false });
     setErrors({});
     setIsModalOpen(true);
   };
-  
+
   const openEditModal = (name: string, service: ServiceTopoItem) => {
     setEditingService(name);
     setFormData({
       name,
       nodes: service.nodes,
       description: service.description || '',
-      vars: JSON.stringify(service.vars || {}, null, 2)
+      id_auto_derive: service.id_auto_derive || false
     });
     setErrors({});
     setIsModalOpen(true);
   };
-  
+
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingService(null);
-    setFormData({ name: '', nodes: [], description: '', vars: '{}' });
+    setFormData({ name: '', nodes: [], description: '', id_auto_derive: false });
     setErrors({});
   };
   
@@ -173,7 +167,7 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
                 <th>服务名称</th>
                 <th>部署节点</th>
                 <th>描述</th>
-                <th>变量</th>
+                <th>自增ID</th>
                 <th style={{ width: '120px' }}>操作</th>
               </tr>
             </thead>
@@ -202,10 +196,8 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
                   </td>
                   <td className="text-gray-600">{service.description || '-'}</td>
                   <td>
-                    {service.vars && Object.keys(service.vars).length > 0 ? (
-                      <span className="badge badge-gray text-xs">
-                        {Object.keys(service.vars).length} 个变量
-                      </span>
+                    {service.id_auto_derive ? (
+                      <span className="badge badge-blue text-xs">自动ID</span>
                     ) : (
                       <span className="text-gray-400 text-sm">-</span>
                     )}
@@ -242,8 +234,8 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
       
       {/* 弹窗 */}
       {isModalOpen && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px' }}>
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '700px' }}>
             <div className="modal-header">
               <h3 className="font-semibold text-gray-800">
                 {editingService ? '编辑服务拓扑' : '添加服务拓扑'}
@@ -315,18 +307,18 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
                   placeholder="例如: ZooKeeper 集群"
                 />
               </div>
-              
+
               <div className="form-group">
-                <label className="form-label">变量 (JSON)</label>
-                <textarea
-                  className={`input font-mono text-sm ${errors.vars ? 'border-danger' : ''}`}
-                  value={formData.vars}
-                  onChange={e => setFormData({ ...formData, vars: e.target.value })}
-                  rows={6}
-                  placeholder='{"version": "3.7.1", "port": 2181}'
-                />
-                {errors.vars && <p className="text-danger text-sm mt-1">{errors.vars}</p>}
-                <p className="form-hint">服务的自定义变量，以 JSON 格式输入</p>
+                <label className="form-label">自增ID配置</label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.id_auto_derive}
+                    onChange={e => setFormData({ ...formData, id_auto_derive: e.target.checked })}
+                  />
+                  <span className="text-sm">启用自动推导ID（需在服务配置中设置 id_field 和 id_format）</span>
+                </label>
+                <p className="form-hint">启用后，系统会自动为每个节点实例生成唯一ID，从服务器配置的 id_format 字段读取格式模板</p>
               </div>
             </div>
             <div className="modal-footer">
@@ -433,78 +425,98 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
         </button>
       </div>
       
-      <div className="card">
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>配置名称</th>
-                <th>类型</th>
-                <th>描述</th>
-                <th>变量数</th>
-                <th style={{ width: '120px' }}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(config.serverConfig).map(([name, cfg]) => (
-                <tr key={name}>
-                  <td>
-                    <div className="flex items-center gap-2">
-                      <Settings className="w-4 h-4 text-gray-400" />
-                      <span className="font-medium">{name}</span>
-                    </div>
-                  </td>
-                  <td>
-                    {cfg.type === 'global' ? (
-                      <span className="badge badge-green">全局服务</span>
-                    ) : (
-                      <span className="badge badge-gray">普通</span>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {Object.entries(config.serverConfig).map(([name, cfg]) => {
+          const serviceTopo = config.serviceTop[name];
+          const hasAutoId = serviceTopo?.id_auto_derive && cfg?.vars?.id_field;
+          
+          return (
+            <div key={name} className="card">
+              <div className="card-header">
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-primary" />
+                    <span className="font-semibold text-gray-800">{name}</span>
+                    {cfg.type === 'global' && (
+                      <span className="badge badge-green text-xs">全局</span>
                     )}
-                  </td>
-                  <td className="text-gray-600">{cfg.description || '-'}</td>
-                  <td>
-                    {cfg.vars ? (
-                      <span className="badge badge-blue text-xs">
-                        {Object.keys(cfg.vars).length} 个
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      className="btn btn-sm btn-secondary"
+                      onClick={() => openEditModal(name, cfg)}
+                    >
+                      <Edit2 className="w-3 h-3" />
+                    </button>
+                    <button
+                      className="btn btn-sm btn-danger"
+                      onClick={() => handleDelete(name)}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="card-body space-y-4">
+                {/* 描述 */}
+                {cfg.description && (
+                  <div>
+                    <p className="text-sm text-gray-600">{cfg.description}</p>
+                  </div>
+                )}
+
+                {/* 自增ID配置 */}
+                {hasAutoId && (
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <div className="flex items-center gap-2 text-blue-700">
+                      <span className="font-medium text-sm">自增ID配置</span>
+                    </div>
+                    <div className="mt-2 text-xs text-blue-600 space-y-1">
+                      <div>ID字段: <code className="bg-white px-1 rounded">{cfg.vars?.id_field || ''}</code></div>
+                      <div>ID格式: <code className="bg-white px-1 rounded">{cfg.vars?.id_format || ''}</code></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 变量列表 */}
+                {cfg.vars && Object.keys(cfg.vars).length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">
+                        配置变量 ({Object.keys(cfg.vars).length} 个)
                       </span>
-                    ) : (
-                      <span className="text-gray-400 text-sm">-</span>
-                    )}
-                  </td>
-                  <td>
-                    <div className="flex gap-1">
-                      <button 
-                        className="btn btn-sm btn-secondary"
-                        onClick={() => openEditModal(name, cfg)}
-                      >
-                        <Edit2 className="w-3 h-3" />
-                      </button>
-                      <button 
-                        className="btn btn-sm btn-danger"
-                        onClick={() => handleDelete(name)}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        
-        {Object.keys(config.serverConfig).length === 0 && (
-          <div className="empty-state">
-            <Settings className="empty-state-icon" />
-            <p>暂无服务配置</p>
-          </div>
-        )}
+                    <div className="space-y-2">
+                      {Object.entries(cfg.vars).slice(0, 5).map(([key, value]) => (
+                        <div key={key} className="flex items-start gap-2 text-sm">
+                          <code className="text-primary bg-blue-50 px-2 py-0.5 rounded text-xs min-w-0 flex-shrink-0">
+                            {key}
+                          </code>
+                          <span className="text-gray-600 truncate">
+                            {typeof value === 'string' ? `"${value}"` :
+                             typeof value === 'object' ? '{...}' :
+                             String(value)}
+                          </span>
+                        </div>
+                      ))}
+                      {Object.keys(cfg.vars).length > 5 && (
+                        <p className="text-xs text-gray-500">
+                          还有 {Object.keys(cfg.vars).length - 5} 个配置项...
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
       
       {/* 弹窗 */}
       {isModalOpen && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal">
             <div className="modal-header">
               <h3 className="font-semibold text-gray-800">
                 {editingConfig ? '编辑服务配置' : '添加服务配置'}

@@ -439,6 +439,28 @@ body {
   justify-content: space-between;
 }
 
+/* Modal close button */
+.modal-header button {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 24px;
+  line-height: 1;
+  transition: background 0.2s;
+  color: var(--gray-400);
+}
+
+.modal-header button:hover {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+
 .modal-body {
   padding: 1.5rem;
   overflow-y: auto;

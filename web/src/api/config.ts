@@ -92,7 +92,7 @@ export interface NodeInfo {
 export interface ServiceTopoItem {
   nodes: string[];
   description?: string;
-  vars?: Record<string, any>;
+  id_auto_derive?: boolean;
 }
 
 export interface ServiceConfigItem {
@@ -106,10 +106,12 @@ export interface GenerateResult {
   message: string;
   results: Record<string, string[]>;
   errors: string[];
+  warnings: string[];
   stats: {
     nodes: number;
     services: number;
     generated: number;
+    skipped: number;
   };
 }
 

@@ -123,7 +123,7 @@ export function GeneratePage() {
             </span>
           </div>
           <div className="card-body">
-            <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-4 gap-4 mb-4">
               <div className="text-center p-3 bg-gray-50 rounded-lg">
                 <p className="text-2xl font-bold text-gray-800">{result.stats.nodes}</p>
                 <p className="text-sm text-gray-500">节点数</p>
@@ -136,6 +136,10 @@ export function GeneratePage() {
                 <p className="text-2xl font-bold text-gray-800">{result.stats.generated}</p>
                 <p className="text-sm text-gray-500">生成文件</p>
               </div>
+              <div className="text-center p-3 bg-gray-50 rounded-lg">
+                <p className="text-2xl font-bold text-warning">{result.stats.skipped}</p>
+                <p className="text-sm text-gray-500">跳过服务</p>
+              </div>
             </div>
             
             {result.errors.length > 0 && (
@@ -146,6 +150,20 @@ export function GeneratePage() {
                     <li key={idx} className="flex items-start gap-2">
                       <span>•</span>
                       <span>{err}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {result.warnings.length > 0 && (
+              <div className="mt-4">
+                <h4 className="font-medium text-warning mb-2">警告信息：</h4>
+                <ul className="text-sm text-warning space-y-1">
+                  {result.warnings.map((warn, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <span>•</span>
+                      <span>{warn}</span>
                     </li>
                   ))}
                 </ul>

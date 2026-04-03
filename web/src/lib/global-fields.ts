@@ -1,6 +1,7 @@
 // 全局配置字段说明
 export interface GlobalFieldDescription {
   key: string;
+  name: string;
   label: string;
   description: string;
   type: 'string' | 'number' | 'boolean';
@@ -13,6 +14,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   // 基础目录
   {
     key: 'install_base_dir',
+    name: '安装基础目录',
     label: '安装基础目录',
     description: '所有软件安装的基础根目录',
     type: 'string',
@@ -21,6 +23,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   },
   {
     key: 'data_base_dir',
+    name: '数据基础目录',
     label: '数据基础目录',
     description: '所有数据存储的基础根目录',
     type: 'string',
@@ -29,6 +32,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   },
   {
     key: 'temp_dir',
+    name: '临时目录',
     label: '临时目录',
     description: '安装过程中的临时文件目录',
     type: 'string',
@@ -37,6 +41,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   },
   {
     key: 'software_dir',
+    name: '软件包目录',
     label: '软件包目录',
     description: '软件包（tar.gz 等）的存放目录',
     type: 'string',
@@ -45,6 +50,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   },
   {
     key: 'pkg_pro_dir',
+    name: '项目包目录',
     label: '项目包目录',
     description: '项目特定的软件包目录',
     type: 'string',
@@ -55,6 +61,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   // JDK 配置
   {
     key: 'jdk_version',
+    name: 'JDK 版本',
     label: 'JDK 版本',
     description: '安装的 JDK 版本号',
     type: 'string',
@@ -63,6 +70,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   },
   {
     key: 'jdk_path',
+    name: 'JDK 路径',
     label: 'JDK 路径',
     description: 'JDK 安装路径',
     type: 'string',
@@ -71,6 +79,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   },
   {
     key: 'java_home',
+    name: 'JAVA_HOME',
     label: 'JAVA_HOME',
     description: 'JAVA_HOME 环境变量路径',
     type: 'string',
@@ -81,6 +90,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   // 系统用户
   {
     key: 'user',
+    name: '运行用户',
     label: '运行用户',
     description: '运行大数据服务的系统用户',
     type: 'string',
@@ -89,6 +99,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   },
   {
     key: 'group',
+    name: '运行用户组',
     label: '运行用户组',
     description: '运行大数据服务的系统用户组',
     type: 'string',
@@ -97,6 +108,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   },
   {
     key: 'timezone',
+    name: '时区',
     label: '时区',
     description: '服务器时区设置',
     type: 'string',
@@ -105,6 +117,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   },
   {
     key: 'pkg_base_dir',
+    name: '软件包基础目录',
     label: '软件包基础目录',
     description: '软件包下载和存放的基础目录',
     type: 'string',
@@ -113,6 +126,7 @@ export const GLOBAL_FIELD_DEFINITIONS: GlobalFieldDescription[] = [
   },
   {
     key: 'log_base_dir',
+    name: '日志基础目录',
     label: '日志基础目录',
     description: '日志文件的基础目录',
     type: 'string',
