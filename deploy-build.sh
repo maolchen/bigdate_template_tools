@@ -10,7 +10,7 @@ pnpm install
 pnpm run build
 
 # 复制前端构建产物
-mkdir -p server/web/dist
-cp -r web/dist/* server/web/dist/
+mkdir -p web/dist
+cp -r server/web/dist/* web/dist/ 2>/dev/null || echo "server/web/dist 不存在，跳过复制"
 
 echo "Build completed successfully!"

@@ -7,4 +7,4 @@ run = ["pnpm", "run", "dev"]
 
 [deploy]
 build = ["bash", "deploy-build.sh"]
-run = ["./server-bin"]
+run = ["./server-bin --web"]

@@ -1,7 +1,13 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
+	"encoding/json"
+	"flag"
 	"fmt"
+	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,6 +94,18 @@ type Context struct {
 }
 
 // ============================================================
+// 全局变量（Web 模式使用）
+// ============================================================
+
+var (
+	webConfigPath   string
+	webConfig       Config
+	webOutputDir    string
+	webTemplatesDir string
+	webWebDir       string
+)
+
+// ============================================================
 // 辅助函数
 // ============================================================
 
@@ -157,6 +175,7 @@ func FormatID(format string, index int) interface{} {
 // 配置加载
 // ============================================================
 
+// LoadConfig 加载配置文件
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -514,10 +533,354 @@ func GenerateOutputs(cfg *Config, instances []ServiceInstance, outputDir string)
 }
 
 // ============================================================
-// 主函数
+// Web 模式 API Handlers
 // ============================================================
 
-func main() {
+// GET /api/config - 获取当前配置
+func webGetConfigHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(webConfig)
+}
+
+// PUT /api/config - 保存配置
+func webSaveConfigHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var newConfig Config
+	if err := json.NewDecoder(r.Body).Decode(&newConfig); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	webConfig = newConfig
+
+	// 保存到文件
+	data, err := yaml.Marshal(&webConfig)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(webConfigPath, data, 0644); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "配置已保存",
+	})
+}
+
+// POST /api/generate - 生成配置
+func webGenerateConfigHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// 清理输出目录
+	os.RemoveAll(webOutputDir)
+	os.MkdirAll(webOutputDir, 0755)
+
+	results := make(map[string][]string)
+	errors := []string{}
+
+	// 构建服务实例
+	instances := BuildServiceInstances(&webConfig)
+
+	// 按节点IP分组
+	nodeInstances := make(map[string][]ServiceInstance)
+	for _, inst := range instances {
+		nodeInstances[inst.Node.IP] = append(nodeInstances[inst.Node.IP], inst)
+	}
+
+	// 为每个节点生成配置
+	for _, svcs := range nodeInstances {
+		for _, inst := range svcs {
+			serviceName := inst.ServiceName
+
+			// 确定模板路径
+			templatePath := filepath.Join(webTemplatesDir, serviceName)
+
+			// 检查模板目录是否存在
+			if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+				errors = append(errors, fmt.Sprintf("服务 %s 没有对应的模板目录", serviceName))
+				continue
+			}
+
+			// 创建输出目录
+			nodeOutputDir := filepath.Join(webOutputDir, inst.Node.IP, serviceName)
+			os.MkdirAll(nodeOutputDir, 0755)
+
+			// 构建上下文
+			ctx := Context{
+				Global:       webConfig.Global,
+				Nodes:        webConfig.Nodes,
+				Instance:     inst,
+				AllInstances: instances,
+			}
+
+			// 递归查找所有模板文件
+			var tmplFiles []string
+			err := filepath.Walk(templatePath, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !info.IsDir() && strings.HasSuffix(info.Name(), ".tmpl") {
+					tmplFiles = append(tmplFiles, path)
+				}
+				return nil
+			})
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("查找模板失败: %v", err))
+				continue
+			}
+
+			generatedFiles := []string{}
+			for _, tmplFile := range tmplFiles {
+				// 渲染模板
+				content, err := RenderTemplate(tmplFile, ctx, &webConfig)
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("渲染 %s 失败: %v", tmplFile, err))
+					continue
+				}
+
+				// 计算相对路径，保持子目录结构
+				relPath, err := filepath.Rel(templatePath, tmplFile)
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("计算相对路径失败: %v", err))
+					continue
+				}
+
+				// 生成输出文件名
+				outputName := strings.TrimSuffix(relPath, ".tmpl")
+				outputPath := filepath.Join(nodeOutputDir, outputName)
+
+				// 创建子目录（如果需要）
+				outputSubDir := filepath.Dir(outputPath)
+				if outputSubDir != "." && outputSubDir != nodeOutputDir {
+					if err := os.MkdirAll(outputSubDir, 0755); err != nil {
+						errors = append(errors, fmt.Sprintf("创建输出子目录失败: %v", err))
+						continue
+					}
+				}
+
+				// 写入文件
+				if err := os.WriteFile(outputPath, []byte(content), 0644); err != nil {
+					errors = append(errors, fmt.Sprintf("写入文件失败: %v", err))
+					continue
+				}
+
+				relOutputPath, _ := filepath.Rel(webOutputDir, outputPath)
+				generatedFiles = append(generatedFiles, strings.ReplaceAll(relOutputPath, "\\", "/"))
+			}
+
+			results[inst.Node.IP] = append(results[inst.Node.IP], generatedFiles...)
+		}
+	}
+
+	response := map[string]interface{}{
+		"success": len(errors) == 0,
+		"message": "配置生成完成",
+		"results": results,
+		"errors":  errors,
+		"stats": map[string]int{
+			"nodes":     len(webConfig.Nodes),
+			"services":  len(webConfig.ServiceTop),
+			"generated": webCountGeneratedFiles(),
+		},
+	}
+
+	json.NewEncoder(w).Encode(response)
+}
+
+// GET /api/output - 获取生成的文件列表
+func webGetOutputHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	files := make(map[string][]string)
+
+	filepath.Walk(webOutputDir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(webOutputDir, path)
+		parts := strings.Split(relPath, string(filepath.Separator))
+		if len(parts) >= 2 {
+			ip := parts[0]
+			files[ip] = append(files[ip], strings.Join(parts[1:], "/"))
+		}
+		return nil
+	})
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"files": files,
+		"total": webCountGeneratedFiles(),
+	})
+}
+
+// GET /api/output/download - 下载生成的配置包
+func webDownloadOutputHandler(w http.ResponseWriter, r *http.Request) {
+	// 创建 zip 文件
+	buf := new(bytes.Buffer)
+	zipWriter := zip.NewWriter(buf)
+
+	filepath.Walk(webOutputDir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(webOutputDir, path)
+		zipFile, _ := zipWriter.Create(relPath)
+
+		fileContent, _ := os.ReadFile(path)
+		zipFile.Write(fileContent)
+
+		return nil
+	})
+
+	zipWriter.Close()
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", "attachment; filename=output.zip")
+	w.Write(buf.Bytes())
+}
+
+// GET /api/output/file?path=xxx - 获取单个文件内容
+func webGetOutputFileHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	filePath := r.URL.Query().Get("path")
+	if filePath == "" {
+		http.Error(w, "缺少 path 参数", http.StatusBadRequest)
+		return
+	}
+
+	fullPath := filepath.Join(webOutputDir, filePath)
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		http.Error(w, "文件不存在", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"path":    filePath,
+		"content": string(content),
+	})
+}
+
+// GET /api/templates - 获取模板列表
+func webGetTemplatesHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	templates := []map[string]interface{}{}
+
+	filepath.Walk(webTemplatesDir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		if strings.HasSuffix(path, ".tmpl") {
+			relPath, _ := filepath.Rel(webTemplatesDir, path)
+			serviceName := filepath.Dir(relPath)
+			if serviceName == "." {
+				serviceName = strings.TrimSuffix(filepath.Base(path), ".tmpl")
+			}
+
+			templates = append(templates, map[string]interface{}{
+				"path":    relPath,
+				"service": serviceName,
+				"name":    filepath.Base(path),
+			})
+		}
+		return nil
+	})
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"templates": templates,
+	})
+}
+
+// POST /api/config/reload - 从文件重新加载配置
+func webReloadConfigHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := webLoadConfig(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "配置已重新加载",
+		"config":  webConfig,
+	})
+}
+
+func webLoadConfig() error {
+	data, err := os.ReadFile(webConfigPath)
+	if err != nil {
+		return err
+	}
+	return yaml.Unmarshal(data, &webConfig)
+}
+
+func webCountGeneratedFiles() int {
+	count := 0
+	filepath.Walk(webOutputDir, func(path string, info fs.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			count++
+		}
+		return nil
+	})
+	return count
+}
+
+// CORS 中间件
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ============================================================
+// 获取工作目录
+// ============================================================
+
+func getWorkDir() string {
+	// 尝试获取可执行文件所在目录
+	execPath, err := os.Executable()
+	if err == nil {
+		// 如果在 server 目录下运行
+		serverDir := filepath.Dir(execPath)
+		if filepath.Base(serverDir) == "server" {
+			return filepath.Dir(serverDir)
+		}
+	}
+
+	// 尝试当前目录
+	cwd, _ := os.Getwd()
+	if filepath.Base(cwd) == "server" {
+		return filepath.Dir(cwd)
+	}
+
+	// 假设在项目根目录
+	return cwd
+}
+
+// ============================================================
+// 命令行模式
+// ============================================================
+
+func runCLIMode() {
 	// 加载配置
 	cfg, err := LoadConfig("config.yaml")
 	if err != nil {
@@ -598,4 +961,138 @@ func main() {
 	fmt.Println("生成完成！")
 	fmt.Println("============================================")
 	fmt.Printf("输出目录: %s\n", outputDir)
+}
+
+// ============================================================
+// Web 模式
+// ============================================================
+
+func runWebMode(port string) {
+	// 确定工作目录
+	workDir := getWorkDir()
+	fmt.Printf("工作目录: %s\n", workDir)
+
+	// 设置路径
+	webConfigPath = filepath.Join(workDir, "config.yaml")
+	webOutputDir = filepath.Join(workDir, "output")
+	webTemplatesDir = filepath.Join(workDir, "templates")
+	webWebDir = filepath.Join(workDir, "web", "dist")
+
+	fmt.Printf("尝试前端目录: %s\n", webWebDir)
+	// 如果 web/dist 不存在，尝试 server/web/dist
+	if _, err := os.Stat(webWebDir); os.IsNotExist(err) {
+		webWebDir = filepath.Join(workDir, "server", "web", "dist")
+		fmt.Printf("前端目录不存在，尝试: %s\n", webWebDir)
+	}
+
+	// 加载配置
+	if err := webLoadConfig(); err != nil {
+		fmt.Printf("警告: 无法加载配置文件 %s: %v\n", webConfigPath, err)
+		// 使用默认配置
+		webConfig = Config{
+			Global: map[string]interface{}{
+				"user":           "bigdata",
+				"group":          "bigdata",
+				"install_base_dir": "/data/localization",
+				"data_base_dir":    "/data",
+				"java_home":       "/data/jdk",
+			},
+			Nodes:        make(Nodes),
+			ServiceTop:   make(ServiceTopos),
+			ServerConfig: make(ServiceConfigs),
+		}
+	}
+
+	// 创建路由
+	mux := http.NewServeMux()
+
+	// API 路由
+	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			webGetConfigHandler(w, r)
+		case "PUT":
+			webSaveConfigHandler(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/generate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		webGenerateConfigHandler(w, r)
+	})
+
+	mux.HandleFunc("/api/output", webGetOutputHandler)
+	mux.HandleFunc("/api/output/download", webDownloadOutputHandler)
+	mux.HandleFunc("/api/output/file", webGetOutputFileHandler)
+	mux.HandleFunc("/api/templates", webGetTemplatesHandler)
+	mux.HandleFunc("/api/config/reload", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		webReloadConfigHandler(w, r)
+	})
+
+	// 静态文件服务（前端）
+	fmt.Printf("检查前端目录: %s\n", webWebDir)
+	if info, err := os.Stat(webWebDir); err == nil {
+		if info.IsDir() {
+			fs := http.FileServer(http.Dir(webWebDir))
+			mux.Handle("/", fs)
+			fmt.Printf("✓ 前端静态文件目录: %s\n", webWebDir)
+			// 列出文件数量
+			files, _ := os.ReadDir(webWebDir)
+			fmt.Printf("  文件数: %d\n", len(files))
+		} else {
+			fmt.Printf("✗ 前端路径不是目录: %s\n", webWebDir)
+		}
+	} else {
+		fmt.Printf("✗ 前端静态文件目录不存在: %s, 错误: %v\n", webWebDir, err)
+	}
+
+	// 启动服务器
+	if port == "" {
+		port = "5000"
+	}
+
+	fmt.Printf("============================================\n")
+	fmt.Printf("大数据平台配置生成器 Web 服务\n")
+	fmt.Printf("============================================\n")
+	fmt.Printf("工作目录: %s\n", workDir)
+	fmt.Printf("配置文件: %s\n", webConfigPath)
+	fmt.Printf("模板目录: %s\n", webTemplatesDir)
+	fmt.Printf("输出目录: %s\n", webOutputDir)
+	fmt.Printf("端口: %s\n", port)
+	fmt.Printf("API: http://localhost:%s/api/config\n", port)
+	fmt.Printf("Web: http://localhost:%s/\n", port)
+	fmt.Printf("============================================\n")
+
+	if err := http.ListenAndServe(":"+port, corsMiddleware(mux)); err != nil {
+		fmt.Printf("启动服务失败: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// ============================================================
+// 主函数
+// ============================================================
+
+func main() {
+	// 解析命令行参数
+	webMode := flag.Bool("web", false, "启动 Web 服务模式")
+	port := flag.String("port", "", "Web 服务端口（默认 5000）")
+	flag.Parse()
+
+	if *webMode {
+		// Web 模式
+		runWebMode(*port)
+	} else {
+		// 命令行模式（默认）
+		runCLIMode()
+	}
 }
