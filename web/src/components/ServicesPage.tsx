@@ -637,16 +637,7 @@ function ServiceConfigDetail({ serviceName, config, onBack }: ServiceConfigDetai
       yaml += `vars:\n`;
       keys.forEach(key => {
         const value = vars[key];
-        if (typeof value === 'object' && value !== null) {
-          yaml += `  ${key}:\n`;
-          yaml += formatObjectAsYAML(value, 4);
-        } else if (typeof value === 'string') {
-          yaml += `  ${key}: "${value}"\n`;
-        } else if (typeof value === 'boolean') {
-          yaml += `  ${key}: ${value ? 'true' : 'false'}\n`;
-        } else {
-          yaml += `  ${key}: ${value}\n`;
-        }
+        yaml += formatKeyValue(key, value, 2);
       });
     } else {
       yaml += `vars: {}\n`;
@@ -655,31 +646,36 @@ function ServiceConfigDetail({ serviceName, config, onBack }: ServiceConfigDetai
     return yaml;
   };
 
+  const formatKeyValue = (key: string, value: any, indent: number): string => {
+    const indentStr = ' '.repeat(indent);
+    if (typeof value === 'object' && value !== null) {
+      if (Array.isArray(value)) {
+        let result = `${indentStr}${key}:\n`;
+        value.forEach((item: any) => {
+          if (typeof item === 'object' && item !== null) {
+            result += `${indentStr}  -\n`;
+            result += formatObjectAsYAML(item, indent + 2);
+          } else {
+            const valStr = typeof item === 'string' ? `"${item}"` : String(item);
+            result += `${indentStr}  - ${valStr}\n`;
+          }
+        });
+        return result;
+      } else {
+        let result = `${indentStr}${key}:\n`;
+        result += formatObjectAsYAML(value, indent + 2);
+        return result;
+      }
+    } else {
+      const valStr = typeof value === 'string' ? `"${value}"` : String(value);
+      return `${indentStr}${key}: ${valStr}\n`;
+    }
+  };
+
   const formatObjectAsYAML = (obj: any, indent: number): string => {
     let result = '';
-    const indentStr = ' '.repeat(indent);
     Object.keys(obj).forEach(key => {
-      const value = obj[key];
-      if (typeof value === 'object' && value !== null) {
-        if (Array.isArray(value)) {
-          result += `${indentStr}${key}:\n`;
-          value.forEach((item: any) => {
-            if (typeof item === 'object') {
-              result += `${indentStr}  -\n`;
-              result += formatObjectAsYAML(item, indent + 2);
-            } else {
-              const valStr = typeof item === 'string' ? `"${item}"` : String(item);
-              result += `${indentStr}  - ${valStr}\n`;
-            }
-          });
-        } else {
-          result += `${indentStr}${key}:\n`;
-          result += formatObjectAsYAML(value, indent + 2);
-        }
-      } else {
-        const valStr = typeof value === 'string' ? `"${value}"` : String(value);
-        result += `${indentStr}${key}: ${valStr}\n`;
-      }
+      result += formatKeyValue(key, obj[key], indent);
     });
     return result;
   };
