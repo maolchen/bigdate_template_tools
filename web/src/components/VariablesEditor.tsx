@@ -108,7 +108,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
   const renderValueInput = (item: VariableItem, index: number) => {
     if (readonly) {
       return (
-        <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto whitespace-pre-wrap">
+        <div className="bg-gray-900 text-green-400 p-2 rounded font-mono text-sm overflow-x-auto whitespace-pre-wrap max-h-40 overflow-y-auto">
           {JSON.stringify(item.value, null, 2)}
         </div>
       );
@@ -117,7 +117,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     if (item.type === 'boolean') {
       return (
         <select
-          className="input text-base"
+          className="input w-full text-sm"
           value={String(item.value)}
           onChange={(e) => handleValueChange(index, e.target.value === 'true')}
         >
@@ -129,7 +129,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
       return (
         <input
           type="number"
-          className="input text-base"
+          className="input w-full text-sm"
           value={item.value}
           onChange={(e) => handleValueChange(index, Number(e.target.value))}
         />
@@ -138,7 +138,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
       return (
         <input
           type="text"
-          className="input text-base"
+          className="input w-full text-sm"
           value={item.value}
           onChange={(e) => handleValueChange(index, e.target.value)}
         />
@@ -146,7 +146,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     } else if (item.type === 'array') {
       const jsonStr = JSON.stringify(item.value, null, 2);
       const lines = jsonStr.split('\n');
-      const autoHeight = Math.max(120, Math.min(lines.length * 20, 400));
+      const autoHeight = Math.max(100, Math.min(lines.length * 20, 300));
 
       return (
         <textarea
@@ -167,7 +167,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     } else if (item.type === 'object') {
       const jsonStr = JSON.stringify(item.value, null, 2);
       const lines = jsonStr.split('\n');
-      const autoHeight = Math.max(120, Math.min(lines.length * 20, 400));
+      const autoHeight = Math.max(100, Math.min(lines.length * 20, 300));
 
       return (
         <textarea
@@ -190,72 +190,81 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
 
   return (
     <div className="space-y-3">
-      {/* 变量列表 */}
-      {items.map((item, index) => (
-        <div key={index} className="flex items-start gap-3 px-3 py-3 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
-          {/* 变量名 */}
-          <div className="flex items-center gap-1">
-            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">变量名:</label>
-            <input
-              type="text"
-              className={`input text-base w-32 ${readonly ? 'bg-gray-50' : ''}`}
-              value={item.key}
-              onChange={(e) => !readonly && handleKeyChange(index, e.target.value)}
-              placeholder="变量名"
-              disabled={readonly}
-            />
-          </div>
-
-          {/* 类型 */}
-          <div className="flex items-center gap-1">
-            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">类型:</label>
-            <select
-              className="select text-base w-28"
-              value={item.type}
-              onChange={(e) => !readonly && handleTypeChange(index, e.target.value as VariableItem['type'])}
-              disabled={readonly}
-            >
-              <option value="string">字符串</option>
-              <option value="number">数字</option>
-              <option value="boolean">布尔</option>
-              <option value="object">对象</option>
-              <option value="array">数组</option>
-            </select>
-          </div>
-
-          {/* 值 */}
-          <div className="flex items-center gap-1 flex-1 min-w-0">
-            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">值:</label>
-            <div className="flex-1 min-w-0">
-              {renderValueInput(item, index)}
-            </div>
-          </div>
-
-          {/* 说明 */}
-          <div className="flex items-center gap-1">
-            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">说明:</label>
-            <input
-              type="text"
-              className="input text-base w-36"
-              value={item.description}
-              onChange={(e) => !readonly && handleDescriptionChange(index, e.target.value)}
-              placeholder="配置项说明"
-              disabled={readonly}
-            />
-          </div>
-
-          {/* 删除按钮 */}
-          {!readonly && (
-            <button
-              className="btn btn-sm btn-danger flex-shrink-0"
-              onClick={() => handleDelete(index)}
-              title="删除"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
+      <div className="card">
+        <div className="table-container">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>变量名</th>
+                <th>类型</th>
+                <th>值</th>
+                <th>说明</th>
+                <th style={{ width: '80px' }}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, index) => (
+                <tr key={index}>
+                  <td>
+                    <input
+                      type="text"
+                      className={`input w-full text-sm ${readonly ? 'bg-gray-50' : ''}`}
+                      value={item.key}
+                      onChange={(e) => !readonly && handleKeyChange(index, e.target.value)}
+                      placeholder="变量名"
+                      disabled={readonly}
+                    />
+                  </td>
+                  <td>
+                    <select
+                      className="select w-full text-sm"
+                      value={item.type}
+                      onChange={(e) => !readonly && handleTypeChange(index, e.target.value as VariableItem['type'])}
+                      disabled={readonly}
+                    >
+                      <option value="string">字符串</option>
+                      <option value="number">数字</option>
+                      <option value="boolean">布尔</option>
+                      <option value="object">对象</option>
+                      <option value="array">数组</option>
+                    </select>
+                  </td>
+                  <td>
+                    {renderValueInput(item, index)}
+                  </td>
+                  <td>
+                    <input
+                      type="text"
+                      className="input w-full text-sm"
+                      value={item.description}
+                      onChange={(e) => !readonly && handleDescriptionChange(index, e.target.value)}
+                      placeholder="配置项说明"
+                      disabled={readonly}
+                    />
+                  </td>
+                  <td>
+                    {!readonly && (
+                      <button
+                        className="btn btn-sm btn-danger w-full"
+                        onClick={() => handleDelete(index)}
+                        title="删除"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      ))}
+
+        {items.length === 0 && (
+          <div className="empty-state">
+            <p>暂无配置项</p>
+          </div>
+        )}
+      </div>
 
       {/* 添加按钮 */}
       {!readonly && (
