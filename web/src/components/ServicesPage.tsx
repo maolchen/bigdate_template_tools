@@ -453,15 +453,12 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
               </thead>
               <tbody>
                 {Object.entries(config.serverConfig).map(([name, cfg]) => (
-                  <tr key={name}>
+                  <tr key={name} className="cursor-pointer hover:bg-blue-50" onClick={() => handleViewDetail(name)}>
                     <td>
-                      <button
-                        className="flex items-center gap-2 text-gray-800 hover:underline cursor-pointer text-base font-semibold"
-                        onClick={() => handleViewDetail(name)}
-                      >
-                        <span>{name}</span>
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <Settings className="w-4 h-4 text-gray-400" />
+                        <span className="font-medium text-gray-800">{name}</span>
+                      </div>
                     </td>
                     <td>
                       {cfg.type === 'global' ? (
@@ -482,14 +479,20 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
                       <div className="flex gap-1.5">
                         <button
                           className="btn btn-sm btn-secondary"
-                          onClick={() => openEditModal(name, cfg)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditModal(name, cfg);
+                          }}
                           title="编辑"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           className="btn btn-sm btn-danger"
-                          onClick={() => handleDelete(name)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(name);
+                          }}
                           title="删除"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
