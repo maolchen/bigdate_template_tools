@@ -233,7 +233,7 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
         )}
       </div>
 
-      {/* 弹窗 - 全屏模式 */}
+      {/* 弹窗 - 覆盖主内容区 */}
       {isModalOpen && (
         <div className="modal-fullscreen">
           <div className="modal-fullscreen-content">
@@ -241,7 +241,12 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
               <h3 className="font-bold text-gray-800 text-lg">
                 {editingService ? '编辑服务拓扑' : '添加服务拓扑'}
               </h3>
-              <button className="btn btn-sm btn-secondary px-4 py-2 text-base font-medium border-2 border-gray-300 hover:border-gray-400" onClick={closeModal}>关闭</button>
+              <div className="flex gap-2">
+                <button className="btn btn-sm btn-secondary text-base px-4 py-2" onClick={closeModal}>取消</button>
+                <button className="btn btn-sm btn-primary text-base px-4 py-2" onClick={handleSubmit}>
+                  {editingService ? '保存' : '添加'}
+                </button>
+              </div>
             </div>
             <div className="modal-body">
               <div className="form-group max-w-3xl mx-auto">
@@ -321,12 +326,6 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
                 </label>
                 <p className="form-hint text-base">启用后，系统会自动为每个节点实例生成唯一ID，从服务器配置的 id_format 字段读取格式模板</p>
               </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary text-base px-6 py-2.5" onClick={closeModal}>取消</button>
-              <button className="btn btn-primary text-base px-6 py-2.5" onClick={handleSubmit}>
-                {editingService ? '保存' : '添加'}
-              </button>
             </div>
           </div>
         </div>
@@ -511,7 +510,7 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
           )}
         </div>
 
-        {/* 弹窗 - 全屏模式 */}
+        {/* 弹窗 - 覆盖主内容区 */}
         {isModalOpen && (
           <div className="modal-fullscreen">
             <div className="modal-fullscreen-content">
@@ -519,7 +518,12 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
                 <h3 className="font-bold text-gray-800 text-lg">
                   {editingConfig ? '编辑服务配置' : '添加服务配置'}
                 </h3>
-                <button className="btn btn-sm btn-secondary px-4 py-2 text-base font-medium border-2 border-gray-300 hover:border-gray-400" onClick={closeModal}>关闭</button>
+                <div className="flex gap-2">
+                  <button className="btn btn-sm btn-secondary text-base px-4 py-2" onClick={closeModal}>取消</button>
+                  <button className="btn btn-sm btn-primary text-base px-4 py-2" onClick={handleSubmit}>
+                    {editingConfig ? '保存' : '添加'}
+                  </button>
+                </div>
               </div>
               <div className="modal-body">
                 <div className="form-group max-w-3xl mx-auto">
@@ -570,12 +574,6 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
                   />
                   <p className="form-hint text-base">服务的详细配置参数，支持字符串、数字、布尔、对象和数组</p>
                 </div>
-              </div>
-              <div className="modal-footer">
-                <button className="btn btn-secondary text-base px-6 py-2.5" onClick={closeModal}>取消</button>
-                <button className="btn btn-primary text-base px-6 py-2.5" onClick={handleSubmit}>
-                  {editingConfig ? '保存' : '添加'}
-                </button>
               </div>
             </div>
           </div>
