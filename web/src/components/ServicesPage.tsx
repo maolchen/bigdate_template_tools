@@ -642,32 +642,8 @@ function ServiceConfigDetail({ serviceName, config, onBack }: ServiceConfigDetai
         sortKeys: false,
         forceQuotes: false
       });
-      // 处理 js-yaml 输出，确保正确的缩进
-      const lines = varsYaml.split('\n');
-      const formattedLines: string[] = [];
-      
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const trimmed = line.trim();
-        
-        // 跳过空行
-        if (trimmed.length === 0) {
-          formattedLines.push('');
-          continue;
-        }
-        
-        // 如果这一行没有缩进但不是空行，需要添加缩进
-        const currentIndent = line.search(/\S/);
-        if (currentIndent === 0) {
-          // 添加2个空格缩进
-          formattedLines.push('  ' + trimmed);
-        } else {
-          // 已有缩进，保持原样
-          formattedLines.push(line);
-        }
-      }
-      
-      yamlText += formattedLines.join('\n');
+      // 直接使用 js-yaml 的输出，不做后处理
+      yamlText += varsYaml;
     } else {
       yamlText += 'vars: {}\n';
     }
