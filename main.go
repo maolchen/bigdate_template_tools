@@ -25,8 +25,8 @@ type Global map[string]interface{}
 
 // Node 节点信息
 type Node struct {
-	IP       string `yaml:"ip"`
-	Hostname string `yaml:"hostname"`
+	IP       string `yaml:"ip" json:"ip"`
+	Hostname string `yaml:"hostname" json:"hostname"`
 }
 
 // Nodes 节点池（支持一个IP对应多个节点别名）
@@ -58,11 +58,11 @@ type NodeOverrides map[string]map[string]map[string]interface{}
 
 // Config 完整配置
 type Config struct {
-	Global        Global         `yaml:"global"`
-	Nodes         Nodes          `yaml:"nodes"`
-	ServiceTop    ServiceTopos   `yaml:"serviceTop"`
-	ServerConfig  ServiceConfigs `yaml:"serverConfig"`
-	NodeOverrides NodeOverrides  `yaml:"nodeOverrides"`
+	Global        Global         `yaml:"global" json:"global"`
+	Nodes         Nodes          `yaml:"nodes" json:"nodes"`
+	ServiceTop    ServiceTopos   `yaml:"serviceTop" json:"serviceTop"`
+	ServerConfig  ServiceConfigs `yaml:"serverConfig" json:"serverConfig"`
+	NodeOverrides NodeOverrides  `yaml:"nodeOverrides" json:"nodeOverrides"`
 }
 
 // ============================================================
