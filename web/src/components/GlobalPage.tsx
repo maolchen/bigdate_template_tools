@@ -161,57 +161,52 @@ export function GlobalPage({ config, onChange }: GlobalPageProps) {
               <span className="badge badge-gray">{items.length} 项</span>
             </div>
             <div className="card-body">
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {items.map((item) => {
                   const fieldDef = getFieldDescription(item.key);
                   const isRequired = fieldDef?.required || false;
                   const displayName = fieldDef?.name || item.key;
 
                   return (
-                    <div
-                      key={item.key}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-800">
-                            {displayName} ({item.key})
-                          </span>
-                          {isRequired && <span className="text-xs text-danger">*</span>}
-                        </div>
-                        {item.description && (
-                          <p className="text-xs text-gray-500 mt-1">{item.description}</p>
-                        )}
+                    <div key={item.key} className="space-y-1.5">
+                      <label className="flex items-center gap-1 text-sm font-medium text-gray-700">
+                        <span>{displayName} ({item.key})</span>
+                        {isRequired && <span className="text-danger">*</span>}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          className="input flex-1"
+                          value={typeof item.value === 'string' ? item.value : String(item.value)}
+                          readOnly
+                          placeholder={item.description || '未配置'}
+                        />
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => handleEdit(item)}
+                          title="编辑"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => handleDelete(item.key)}
+                          disabled={isRequired}
+                          title={isRequired ? '必填项，不能删除' : '删除'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
-                      <div className="flex items-center gap-3 flex-shrink-0 ml-4">
-                        <code className="text-sm text-primary bg-white px-3 py-1.5 rounded border border-gray-200">
-                          {typeof item.value === 'string' ? `"${item.value}"` : String(item.value)}
-                        </code>
-                        <span className="badge badge-gray text-xs">{item.type}</span>
-                        <div className="flex gap-1">
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            onClick={() => handleEdit(item)}
-                          >
-                            <Edit2 className="w-3 h-3" />
-                          </button>
-                          <button
-                            className="btn btn-sm btn-danger"
-                            onClick={() => handleDelete(item.key)}
-                            disabled={isRequired}
-                            title={isRequired ? '必填项，不能删除' : ''}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
+                      {item.description && (
+                        <p className="text-xs text-gray-500">{item.description}</p>
+                      )}
                     </div>
                   );
                 })}
-                {items.length === 0 && (
-                  <div className="text-center text-gray-400 py-4">暂无配置项</div>
-                )}
               </div>
+              {items.length === 0 && (
+                <div className="text-center text-gray-400 py-8">暂无配置项</div>
+              )}
             </div>
           </div>
         ))}
