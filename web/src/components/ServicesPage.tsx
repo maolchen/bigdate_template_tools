@@ -599,11 +599,10 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
 interface ServiceConfigDetailProps {
   serviceName: string;
   config: AppConfig;
-  onChange: (config: AppConfig) => void;
   onBack: () => void;
 }
 
-function ServiceConfigDetail({ serviceName, config, onChange, onBack }: ServiceConfigDetailProps) {
+function ServiceConfigDetail({ serviceName, config, onBack }: ServiceConfigDetailProps) {
   const serviceConfig = config.serverConfig[serviceName];
   const serviceTopo = config.serviceTop[serviceName];
 
