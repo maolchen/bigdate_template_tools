@@ -589,7 +589,6 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
     <ServiceConfigDetail
       serviceName={selectedService!}
       config={config}
-      onChange={onChange}
       onBack={handleBackToList}
     />
   );
