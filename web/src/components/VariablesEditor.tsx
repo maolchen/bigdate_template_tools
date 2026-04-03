@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Info, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 
 interface VariableItem {
   key: string;
@@ -16,7 +16,6 @@ interface VariablesEditorProps {
 
 export function VariablesEditor({ vars, onChange, readonly = false }: VariablesEditorProps) {
   const [items, setItems] = useState<VariableItem[]>([]);
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const newItems: VariableItem[] = Object.entries(vars || {}).map(([key, value]) => ({
@@ -79,12 +78,8 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
       newItems[index].value = false;
     } else if (newType === 'object') {
       newItems[index].value = {};
-      // 对象默认展开
-      setExpandedKeys(new Set([...expandedKeys, `temp_${index}`]));
     } else if (newType === 'array') {
       newItems[index].value = [];
-      // 数组默认展开
-      setExpandedKeys(new Set([...expandedKeys, `temp_${index}`]));
     } else {
       newItems[index].value = '';
     }
@@ -108,16 +103,6 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
       }
     });
     onChange(newVars);
-  };
-
-  const toggleExpand = (key: string) => {
-    const newExpanded = new Set(expandedKeys);
-    if (newExpanded.has(key)) {
-      newExpanded.delete(key);
-    } else {
-      newExpanded.add(key);
-    }
-    setExpandedKeys(newExpanded);
   };
 
   const renderValueInput = (item: VariableItem, index: number) => {
@@ -159,84 +144,46 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
         />
       );
     } else if (item.type === 'array') {
-      const isExpanded = expandedKeys.has(item.key);
-      const arrayLength = Array.isArray(item.value) ? item.value.length : 0;
       const jsonStr = JSON.stringify(item.value, null, 2);
       const lines = jsonStr.split('\n');
       const autoHeight = Math.max(120, Math.min(lines.length * 20, 400));
 
       return (
-        <div className="border border-gray-300 rounded-lg overflow-hidden w-full">
-          <div
-            className="flex items-center justify-between px-3 py-2 bg-gray-100 cursor-pointer hover:bg-gray-200 transition-colors"
-            onClick={() => toggleExpand(item.key)}
-          >
-            <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-blue-600" />
-              <span className="text-sm font-medium text-gray-700">数组</span>
-              <span className="text-xs text-gray-500">({arrayLength} 项)</span>
-            </div>
-            {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronRight className="w-4 h-4 text-gray-500" />}
-          </div>
-          {isExpanded && (
-            <div className="p-3 bg-gray-900 text-green-400">
-              <textarea
-                className="w-full bg-transparent text-green-400 font-mono text-sm resize-none focus:outline-none"
-                value={jsonStr}
-                onChange={(e) => {
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    handleValueChange(index, parsed);
-                  } catch (err) {
-                    // Ignore JSON parse errors during typing
-                  }
-                }}
-                placeholder='输入 JSON 数组，例如: ["a", "b", "c"]'
-                style={{ height: `${autoHeight}px` }}
-              />
-            </div>
-          )}
-        </div>
+        <textarea
+          className="w-full bg-gray-900 text-green-400 font-mono text-sm p-3 rounded-lg focus:outline-none resize-none"
+          value={jsonStr}
+          onChange={(e) => {
+            try {
+              const parsed = JSON.parse(e.target.value);
+              handleValueChange(index, parsed);
+            } catch (err) {
+              // Ignore JSON parse errors during typing
+            }
+          }}
+          placeholder='输入 JSON 数组，例如: ["a", "b", "c"]'
+          style={{ height: `${autoHeight}px` }}
+        />
       );
     } else if (item.type === 'object') {
-      const isExpanded = expandedKeys.has(item.key);
-      const keyCount = typeof item.value === 'object' && item.value !== null ? Object.keys(item.value).length : 0;
       const jsonStr = JSON.stringify(item.value, null, 2);
       const lines = jsonStr.split('\n');
       const autoHeight = Math.max(120, Math.min(lines.length * 20, 400));
 
       return (
-        <div className="border border-gray-300 rounded-lg overflow-hidden w-full">
-          <div
-            className="flex items-center justify-between px-3 py-2 bg-gray-100 cursor-pointer hover:bg-gray-200 transition-colors"
-            onClick={() => toggleExpand(item.key)}
-          >
-            <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-blue-600" />
-              <span className="text-sm font-medium text-gray-700">对象</span>
-              <span className="text-xs text-gray-500">({keyCount} 个字段)</span>
-            </div>
-            {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronRight className="w-4 h-4 text-gray-500" />}
-          </div>
-          {isExpanded && (
-            <div className="p-3 bg-gray-900 text-green-400">
-              <textarea
-                className="w-full bg-transparent text-green-400 font-mono text-sm resize-none focus:outline-none"
-                value={jsonStr}
-                onChange={(e) => {
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    handleValueChange(index, parsed);
-                  } catch (err) {
-                    // Ignore JSON parse errors during typing
-                  }
-                }}
-                placeholder='输入 JSON 对象，例如: {"key": "value"}'
-                style={{ height: `${autoHeight}px` }}
-              />
-            </div>
-          )}
-        </div>
+        <textarea
+          className="w-full bg-gray-900 text-green-400 font-mono text-sm p-3 rounded-lg focus:outline-none resize-none"
+          value={jsonStr}
+          onChange={(e) => {
+            try {
+              const parsed = JSON.parse(e.target.value);
+              handleValueChange(index, parsed);
+            } catch (err) {
+              // Ignore JSON parse errors during typing
+            }
+          }}
+          placeholder='输入 JSON 对象，例如: {"key": "value"}'
+          style={{ height: `${autoHeight}px` }}
+        />
       );
     }
   };
@@ -248,8 +195,8 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
         <div className="grid grid-cols-12 gap-3 px-3 py-2 bg-gray-100 rounded-lg">
           <div className="col-span-3 text-sm font-medium text-gray-700">变量名</div>
           <div className="col-span-2 text-sm font-medium text-gray-700">类型</div>
-          <div className="col-span-3 text-sm font-medium text-gray-700">说明</div>
           <div className="col-span-3 text-sm font-medium text-gray-700">值</div>
+          <div className="col-span-3 text-sm font-medium text-gray-700">说明</div>
           <div className="col-span-1 text-sm font-medium text-gray-700">操作</div>
         </div>
       )}
@@ -285,6 +232,11 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
             </select>
           </div>
 
+          {/* 值 */}
+          <div className="col-span-3">
+            {renderValueInput(item, index)}
+          </div>
+
           {/* 说明 */}
           <div className="col-span-3">
             <input
@@ -295,11 +247,6 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
               placeholder="配置项说明"
               disabled={readonly}
             />
-          </div>
-
-          {/* 值 */}
-          <div className="col-span-3">
-            {renderValueInput(item, index)}
           </div>
 
           {/* 删除按钮 */}
