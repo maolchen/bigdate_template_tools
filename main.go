@@ -819,6 +819,128 @@ func webReloadConfigHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// POST /api/descriptions/{serviceName} - 保存服务配置说明
+func webSaveDescriptionsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// 从URL路径中提取服务名称
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) < 4 {
+		http.Error(w, "无效的路径", http.StatusBadRequest)
+		return
+	}
+	serviceName := pathParts[3]
+
+	// 解析说明数据
+	var descriptions map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&descriptions); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// 确定数据目录
+	dataDir := filepath.Join(getWorkDir(), "data", "descriptions")
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 保存到文件
+	descPath := filepath.Join(dataDir, serviceName+".json")
+	data, err := json.MarshalIndent(descriptions, "", "  ")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(descPath, data, 0644); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "说明已保存",
+	})
+}
+
+// GET /api/descriptions/{serviceName} - 获取服务配置说明
+func webGetDescriptionsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// 从URL路径中提取服务名称
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) < 4 {
+		http.Error(w, "无效的路径", http.StatusBadRequest)
+		return
+	}
+	serviceName := pathParts[3]
+
+	// 读取说明文件
+	dataDir := filepath.Join(getWorkDir(), "data", "descriptions")
+	descPath := filepath.Join(dataDir, serviceName+".json")
+
+	descriptions := make(map[string]string)
+	if data, err := os.ReadFile(descPath); err == nil {
+		json.Unmarshal(data, &descriptions)
+	}
+
+	json.NewEncoder(w).Encode(descriptions)
+}
+
+// POST /api/descriptions/global - 保存全局配置说明
+func webSaveGlobalDescriptionsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// 解析说明数据
+	var descriptions map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&descriptions); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// 确定数据目录
+	dataDir := filepath.Join(getWorkDir(), "data", "descriptions")
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 保存到文件
+	descPath := filepath.Join(dataDir, "global.json")
+	data, err := json.MarshalIndent(descriptions, "", "  ")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(descPath, data, 0644); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "说明已保存",
+	})
+}
+
+// GET /api/descriptions/global - 获取全局配置说明
+func webGetGlobalDescriptionsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// 读取说明文件
+	dataDir := filepath.Join(getWorkDir(), "data", "descriptions")
+	descPath := filepath.Join(dataDir, "global.json")
+
+	descriptions := make(map[string]string)
+	if data, err := os.ReadFile(descPath); err == nil {
+		json.Unmarshal(data, &descriptions)
+	}
+
+	json.NewEncoder(w).Encode(descriptions)
+}
+
 func webLoadConfig() error {
 	data, err := os.ReadFile(webConfigPath)
 	if err != nil {
@@ -1039,6 +1161,28 @@ func runWebMode(port string) {
 			return
 		}
 		webReloadConfigHandler(w, r)
+	})
+
+	// 说明相关API
+	mux.HandleFunc("/api/descriptions/global", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			webGetGlobalDescriptionsHandler(w, r)
+		case "POST":
+			webSaveGlobalDescriptionsHandler(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/descriptions/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			webGetDescriptionsHandler(w, r)
+		case "POST":
+			webSaveDescriptionsHandler(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
 	})
 
 	// 静态文件服务（前端）

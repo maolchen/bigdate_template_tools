@@ -5,6 +5,10 @@ import {
   getFieldDescription,
   getCategories
 } from '../lib/global-fields';
+import {
+  fetchGlobalDescriptions,
+  saveGlobalDescriptions
+} from '../api/config';
 
 interface GlobalConfigPageProps {
   config: AppConfig;
@@ -31,22 +35,38 @@ export function GlobalConfigPage({ config, onChange }: GlobalConfigPageProps) {
     type: 'string'
   });
   const [errors, setErrors] = useState<Partial<ConfigItem>>({});
+  const [descriptions, setDescriptions] = useState<Record<string, string>>({});
+
+  // 加载说明
+  useEffect(() => {
+    const loadDescriptions = async () => {
+      try {
+        const desc = await fetchGlobalDescriptions();
+        setDescriptions(desc);
+      } catch (err) {
+        console.warn('加载全局配置说明失败:', err);
+      }
+    };
+    loadDescriptions();
+  }, []);
 
   // 初始化配置项列表
   useEffect(() => {
     const items: ConfigItem[] = [];
     Object.entries(config.global).forEach(([key, value]) => {
       const fieldDef = getFieldDescription(key);
+      // 从持久化的说明中获取
+      const description = descriptions[key] || '';
       items.push({
         key,
         value,
-        description: fieldDef?.description || '',
+        description: description || fieldDef?.description || '',
         category: fieldDef?.category || '其他',
         type: fieldDef?.type || 'string'
       });
     });
     setConfigItems(items);
-  }, [config]);
+  }, [config, descriptions]);
 
   const handleAdd = () => {
     setEditingItem(null);
@@ -82,7 +102,7 @@ export function GlobalConfigPage({ config, onChange }: GlobalConfigPageProps) {
     });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const newErrors: Partial<ConfigItem> = {};
 
     if (!formData.key.trim()) {
@@ -114,6 +134,16 @@ export function GlobalConfigPage({ config, onChange }: GlobalConfigPageProps) {
       ...config,
       global: newGlobal
     });
+
+    // 保存说明
+    if (formData.description) {
+      try {
+        await saveGlobalDescriptions({ [formData.key]: formData.description });
+        setDescriptions(prev => ({ ...prev, [formData.key]: formData.description }));
+      } catch (err) {
+        console.warn('保存说明失败:', err);
+      }
+    }
 
     setIsModalOpen(false);
   };

@@ -571,6 +571,7 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
                   <VariablesEditor
                     vars={formData.vars}
                     onChange={(newVars) => setFormData({ ...formData, vars: newVars })}
+                    serviceName={editingConfig || formData.name}
                   />
                   <p className="form-hint text-base">服务的详细配置参数，支持字符串、数字、布尔、对象和数组</p>
                 </div>

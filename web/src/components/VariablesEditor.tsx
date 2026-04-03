@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, GripVertical } from 'lucide-react';
+import {
+  saveDescriptions,
+  fetchDescriptions,
+  saveGlobalDescriptions,
+  fetchGlobalDescriptions
+} from '../api/config';
 
 interface VariableItem {
   key: string;
@@ -12,12 +18,15 @@ interface VariablesEditorProps {
   vars: Record<string, any>;
   onChange: (vars: Record<string, any>) => void;
   readonly?: boolean;
+  serviceName?: string; // 服务名称，用于持久化说明
+  isGlobal?: boolean; // 是否为全局配置
 }
 
 type ColumnType = 'key' | 'type' | 'value' | 'description' | 'action';
 
-export function VariablesEditor({ vars, onChange, readonly = false }: VariablesEditorProps) {
+export function VariablesEditor({ vars, onChange, readonly = false, serviceName, isGlobal = false }: VariablesEditorProps) {
   const [items, setItems] = useState<VariableItem[]>([]);
+  const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const [columnWidths, setColumnWidths] = useState<Record<ColumnType, number>>({
     key: 150,
     type: 120,
@@ -26,16 +35,37 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     action: 80
   });
 
+  // 加载说明
+  useEffect(() => {
+    const loadDescriptions = async () => {
+      if (isGlobal) {
+        try {
+          const desc = await fetchGlobalDescriptions();
+          setDescriptions(desc);
+        } catch (err) {
+          console.warn('加载全局配置说明失败:', err);
+        }
+      } else if (serviceName) {
+        try {
+          const desc = await fetchDescriptions(serviceName);
+          setDescriptions(desc);
+        } catch (err) {
+          console.warn('加载服务配置说明失败:', err);
+        }
+      }
+    };
+    loadDescriptions();
+  }, [serviceName, isGlobal]);
+
   useEffect(() => {
     const newItems: VariableItem[] = Object.entries(vars || {}).map(([key, value]) => {
-      // 检查是否有对应的描述字段
-      const descriptionKey = key + '_description';
-      const description = descriptionKey in vars ? vars[descriptionKey] : '';
-
       // 如果是描述字段本身，则跳过
       if (key.endsWith('_description')) {
         return null;
       }
+
+      // 从持久化的说明中获取
+      const description = descriptions[key] || '';
 
       return {
         key,
@@ -46,7 +76,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     }).filter((item): item is VariableItem => item !== null);
 
     setItems(newItems);
-  }, [vars]);
+  }, [vars, descriptions]);
 
   const inferType = (value: any): 'string' | 'number' | 'boolean' | 'object' | 'array' => {
     if (Array.isArray(value)) return 'array';
@@ -54,6 +84,27 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     if (typeof value === 'number') return 'number';
     if (typeof value === 'boolean') return 'boolean';
     return 'string';
+  };
+
+  // 保存说明到持久化
+  const saveDescriptionsToStorage = async (newItems: VariableItem[]) => {
+    const newDescriptions: Record<string, string> = {};
+    newItems.forEach((item) => {
+      if (item.key && item.key.trim() !== '' && item.description) {
+        newDescriptions[item.key] = item.description;
+      }
+    });
+
+    try {
+      if (isGlobal) {
+        await saveGlobalDescriptions(newDescriptions);
+      } else if (serviceName) {
+        await saveDescriptions(serviceName, newDescriptions);
+      }
+      setDescriptions(newDescriptions);
+    } catch (err) {
+      console.warn('保存说明失败:', err);
+    }
   };
 
   const handleAdd = () => {
@@ -72,6 +123,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     const newItems = items.filter((_, i) => i !== index);
     setItems(newItems);
     saveChanges(newItems);
+    saveDescriptionsToStorage(newItems);
   };
 
   const handleKeyChange = (index: number, newKey: string) => {
@@ -85,7 +137,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     const newItems = [...items];
     newItems[index].description = newDescription;
     setItems(newItems);
-    saveChanges(newItems);
+    saveDescriptionsToStorage(newItems);
   };
 
   const handleTypeChange = (index: number, newType: VariableItem['type']) => {
@@ -121,9 +173,6 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     newItems.forEach((item) => {
       if (item.key && item.key.trim() !== '') {
         newVars[item.key] = item.value;
-        if (item.description) {
-          newVars[item.key + '_description'] = item.description;
-        }
       }
     });
     onChange(newVars);
@@ -152,52 +201,64 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  // 计算文本高度
+  const calculateTextareaHeight = (text: string, minLines: number = 1, maxLines: number = 10): number => {
+    const lineHeight = 24; // 每行高度
+    const lines = Math.ceil(text.length / 50) || minLines;
+    const height = Math.max(minLines * lineHeight, Math.min(lines * lineHeight, maxLines * lineHeight));
+    return height;
+  };
+
   const renderValueInput = (item: VariableItem, index: number) => {
     if (readonly) {
+      const valueStr = JSON.stringify(item.value, null, 2);
       return (
         <div className="bg-gray-900 text-green-400 p-2 rounded font-mono text-sm overflow-x-auto whitespace-pre-wrap max-h-40 overflow-y-auto">
-          {JSON.stringify(item.value, null, 2)}
+          {valueStr}
         </div>
       );
     }
 
     if (item.type === 'boolean') {
       return (
-        <select
-          className="input w-full text-sm"
+        <textarea
+          className="w-full bg-white text-gray-800 text-sm p-2 rounded border border-gray-300 focus:outline-none focus:border-blue-500 resize-vertical"
           value={String(item.value)}
           onChange={(e) => handleValueChange(index, e.target.value === 'true')}
-        >
-          <option value="true">true</option>
-          <option value="false">false</option>
-        </select>
+          style={{ height: '38px', minHeight: '38px', resize: 'both' }}
+        />
       );
     } else if (item.type === 'number') {
       return (
-        <input
-          type="number"
-          className="input w-full text-sm"
+        <textarea
+          className="w-full bg-white text-gray-800 text-sm p-2 rounded border border-gray-300 focus:outline-none focus:border-blue-500 resize-vertical"
           value={item.value}
-          onChange={(e) => handleValueChange(index, Number(e.target.value))}
+          onChange={(e) => {
+            const num = parseFloat(e.target.value);
+            handleValueChange(index, isNaN(num) ? 0 : num);
+          }}
+          style={{ height: '38px', minHeight: '38px', resize: 'both' }}
         />
       );
     } else if (item.type === 'string') {
+      const height = calculateTextareaHeight(String(item.value), 1, 5);
       return (
-        <input
-          type="text"
-          className="input w-full text-sm"
+        <textarea
+          className="w-full bg-white text-gray-800 text-sm p-2 rounded border border-gray-300 focus:outline-none focus:border-blue-500 resize-vertical"
           value={item.value}
           onChange={(e) => handleValueChange(index, e.target.value)}
+          placeholder="输入字符串值"
+          style={{ height: `${height}px`, minHeight: '38px', resize: 'both' }}
         />
       );
     } else if (item.type === 'array') {
       const jsonStr = JSON.stringify(item.value, null, 2);
       const lines = jsonStr.split('\n');
-      const autoHeight = Math.max(100, Math.min(lines.length * 20, 300));
+      const height = Math.max(100, Math.min(lines.length * 20, 300));
 
       return (
         <textarea
-          className="w-full bg-gray-900 text-green-400 font-mono text-sm p-2 rounded focus:outline-none resize-none"
+          className="w-full bg-gray-900 text-green-400 font-mono text-sm p-2 rounded focus:outline-none resize-vertical"
           value={jsonStr}
           onChange={(e) => {
             try {
@@ -208,17 +269,17 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
             }
           }}
           placeholder='输入 JSON 数组，例如: ["a", "b", "c"]'
-          style={{ height: `${autoHeight}px` }}
+          style={{ height: `${height}px`, minHeight: '100px', resize: 'both' }}
         />
       );
     } else if (item.type === 'object') {
       const jsonStr = JSON.stringify(item.value, null, 2);
       const lines = jsonStr.split('\n');
-      const autoHeight = Math.max(100, Math.min(lines.length * 20, 300));
+      const height = Math.max(100, Math.min(lines.length * 20, 300));
 
       return (
         <textarea
-          className="w-full bg-gray-900 text-green-400 font-mono text-sm p-2 rounded focus:outline-none resize-none"
+          className="w-full bg-gray-900 text-green-400 font-mono text-sm p-2 rounded focus:outline-none resize-vertical"
           value={jsonStr}
           onChange={(e) => {
             try {
@@ -229,7 +290,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
             }
           }}
           placeholder='输入 JSON 对象，例如: {"key": "value"}'
-          style={{ height: `${autoHeight}px` }}
+          style={{ height: `${height}px`, minHeight: '100px', resize: 'both' }}
         />
       );
     }
@@ -313,13 +374,13 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
                   {renderValueInput(item, index)}
                 </td>
                 <td style={{ width: columnWidths.description, minWidth: columnWidths.description }}>
-                  <input
-                    type="text"
-                    className="input w-full text-sm"
+                  <textarea
+                    className="w-full text-sm p-2 rounded border border-gray-300 focus:outline-none focus:border-blue-500 resize-vertical"
                     value={item.description}
                     onChange={(e) => !readonly && handleDescriptionChange(index, e.target.value)}
                     placeholder="配置项说明"
                     disabled={readonly}
+                    style={{ height: '38px', minHeight: '38px', resize: 'both' }}
                   />
                 </td>
                 <td style={{ width: columnWidths.action, minWidth: columnWidths.action }}>

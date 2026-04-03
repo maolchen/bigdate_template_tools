@@ -63,6 +63,42 @@ export async function fetchTemplates(): Promise<TemplatesResult> {
   return response.json();
 }
 
+// 保存配置项说明
+export async function saveDescriptions(serviceName: string, descriptions: Record<string, string>): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE}/descriptions/${encodeURIComponent(serviceName)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(descriptions),
+  });
+  if (!response.ok) throw new Error('保存说明失败');
+  return response.json();
+}
+
+// 获取配置项说明
+export async function fetchDescriptions(serviceName: string): Promise<Record<string, string>> {
+  const response = await fetch(`${API_BASE}/descriptions/${encodeURIComponent(serviceName)}`);
+  if (!response.ok) throw new Error('获取说明失败');
+  return response.json();
+}
+
+// 保存全局配置说明
+export async function saveGlobalDescriptions(descriptions: Record<string, string>): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE}/descriptions/global`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(descriptions),
+  });
+  if (!response.ok) throw new Error('保存说明失败');
+  return response.json();
+}
+
+// 获取全局配置说明
+export async function fetchGlobalDescriptions(): Promise<Record<string, string>> {
+  const response = await fetch(`${API_BASE}/descriptions/global`);
+  if (!response.ok) throw new Error('获取说明失败');
+  return response.json();
+}
+
 // 类型定义
 export interface AppConfig {
   global: GlobalConfig;
