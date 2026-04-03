@@ -1005,13 +1005,20 @@ func webCheckReferencesHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "service":
-			// 检查服务引用: serviceNodes "serviceName" 或 serviceEndpointsJoin "serviceName"
+			// 检查服务引用: serviceNodes "serviceName", serviceEndpointsJoin "serviceName", 或者该服务有template文件夹
 			pattern1 := fmt.Sprintf(`serviceNodes\s+"%s"`, req.Service)
 			pattern2 := fmt.Sprintf(`serviceEndpointsJoin\s+"%s"`, req.Service)
+			// 检查是否有其他template引用了该服务（通过template路径）
 			isReferenced = regexp.MustCompile(pattern1).MatchString(contentStr) ||
-				regexp.MustCompile(pattern2).MatchString(contentStr)
+				regexp.MustCompile(pattern2).MatchString(contentStr) ||
+				(filepath.Dir(relPath) == req.Service)
+
 			if isReferenced {
-				details = append(details, fmt.Sprintf("引用服务: %s", req.Service))
+				if filepath.Dir(relPath) == req.Service {
+					details = append(details, fmt.Sprintf("该服务的template目录: %s", relPath))
+				} else {
+					details = append(details, fmt.Sprintf("引用服务: %s", req.Service))
+				}
 			}
 		}
 

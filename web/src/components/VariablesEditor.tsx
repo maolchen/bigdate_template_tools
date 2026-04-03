@@ -4,7 +4,8 @@ import {
   saveDescriptions,
   fetchDescriptions,
   saveGlobalDescriptions,
-  fetchGlobalDescriptions
+  fetchGlobalDescriptions,
+  checkReferences
 } from '../api/config';
 
 interface VariableItem {
@@ -119,7 +120,41 @@ export function VariablesEditor({ vars, onChange, readonly = false, serviceName,
     saveChanges(newItems);
   };
 
-  const handleDelete = (index: number) => {
+  const handleDelete = async (index: number) => {
+    const item = items[index];
+    console.log('[VariablesEditor] 尝试删除变量:', item.key);
+
+    if (readonly) return;
+
+    // 检查是否被template引用
+    console.log('[VariablesEditor] 检查template引用...');
+    try {
+      // 对于服务配置，检查服务引用；对于全局配置，检查全局引用
+      let checkResult;
+      if (isGlobal) {
+        checkResult = await checkReferences({ type: 'global', key: item.key });
+      } else if (serviceName) {
+        // 检查这个服务是否被引用
+        checkResult = await checkReferences({ type: 'service', key: serviceName, service: serviceName });
+      }
+
+      console.log('[VariablesEditor] template引用检查结果:', checkResult);
+
+      if (checkResult && checkResult.hasReferences) {
+        const templateList = checkResult.references.map(ref =>
+          `- ${ref.path} (${ref.service})`
+        ).join('\n');
+        alert(`无法删除变量 "${item.key}"，因为该服务被以下template引用：\n\n${templateList}\n\n请先修改这些template，删除相关引用后再尝试删除。`);
+        return;
+      }
+    } catch (err) {
+      console.error('[VariablesEditor] 检查引用失败:', err);
+      // 如果检查失败，仍然允许删除，但给出警告
+      if (!confirm('无法检查template引用，确定要继续删除吗？这可能影响template渲染。')) {
+        return;
+      }
+    }
+
     const newItems = items.filter((_, i) => i !== index);
     setItems(newItems);
     saveChanges(newItems);

@@ -105,11 +105,19 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
   };
 
   const handleDelete = async (name: string) => {
-    if (!confirm(`确定要删除服务拓扑 "${name}" 吗？`)) return;
+    console.log('[ServicesPage] 尝试删除服务拓扑:', name);
+
+    if (!confirm(`确定要删除服务拓扑 "${name}" 吗？`)) {
+      console.log('[ServicesPage] 用户取消了删除');
+      return;
+    }
 
     // 检查是否被template引用
+    console.log('[ServicesPage] 检查template引用...');
     try {
       const result = await checkReferences({ type: 'service', key: name, service: name });
+      console.log('[ServicesPage] template引用检查结果:', result);
+
       if (result.hasReferences) {
         const templateList = result.references.map(ref =>
           `- ${ref.path} (${ref.service})`
@@ -118,13 +126,14 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
         return;
       }
     } catch (err) {
-      console.error('检查引用失败:', err);
+      console.error('[ServicesPage] 检查引用失败:', err);
       // 如果检查失败，仍然允许删除，但给出警告
       if (!confirm('无法检查template引用，确定要继续删除吗？这可能影响template渲染。')) {
         return;
       }
     }
 
+    console.log('[ServicesPage] 执行删除操作');
     const newServiceTop = { ...config.serviceTop };
     delete newServiceTop[name];
     onChange({ ...config, serviceTop: newServiceTop });
@@ -405,11 +414,19 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
   };
 
   const handleDelete = async (name: string) => {
-    if (!confirm(`确定要删除服务配置 "${name}" 吗？`)) return;
+    console.log('[ServiceConfig] 尝试删除服务配置:', name);
+
+    if (!confirm(`确定要删除服务配置 "${name}" 吗？`)) {
+      console.log('[ServiceConfig] 用户取消了删除');
+      return;
+    }
 
     // 检查是否被template引用
+    console.log('[ServiceConfig] 检查template引用...');
     try {
       const result = await checkReferences({ type: 'service', key: name, service: name });
+      console.log('[ServiceConfig] template引用检查结果:', result);
+
       if (result.hasReferences) {
         const templateList = result.references.map(ref =>
           `- ${ref.path} (${ref.service})`
@@ -418,13 +435,14 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
         return;
       }
     } catch (err) {
-      console.error('检查引用失败:', err);
+      console.error('[ServiceConfig] 检查引用失败:', err);
       // 如果检查失败，仍然允许删除，但给出警告
       if (!confirm('无法检查template引用，确定要继续删除吗？这可能影响template渲染。')) {
         return;
       }
     }
 
+    console.log('[ServiceConfig] 执行删除操作');
     const newServerConfig = { ...config.serverConfig };
     delete newServerConfig[name];
     onChange({ ...config, serverConfig: newServerConfig });

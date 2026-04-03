@@ -87,13 +87,27 @@ export function NodesPage({ config, onChange }: NodesPageProps) {
   };
   
   const handleDelete = async (name: string) => {
-    if (!confirm(`确定要删除节点 "${name}" 吗？\n注意：这将同时从所有服务拓扑中移除该节点。`)) {
-      return;
+    console.log('[NodesPage] 尝试删除节点:', name);
+
+    // 检查是否被服务引用
+    const refs = getNodeReferences(name);
+    if (refs.length > 0) {
+      const refList = refs.join(', ');
+      if (!confirm(`节点 "${name}" 正在被以下服务引用：${refList}\n\n确定要删除吗？删除后将同时从这些服务中移除该节点。`)) {
+        return;
+      }
+    } else {
+      if (!confirm(`确定要删除节点 "${name}" 吗？`)) {
+        return;
+      }
     }
 
     // 检查是否被template引用
+    console.log('[NodesPage] 检查template引用...');
     try {
       const result = await checkReferences({ type: 'node', key: name });
+      console.log('[NodesPage] template引用检查结果:', result);
+
       if (result.hasReferences) {
         const templateList = result.references.map(ref =>
           `- ${ref.path} (${ref.service})`
@@ -102,7 +116,7 @@ export function NodesPage({ config, onChange }: NodesPageProps) {
         return;
       }
     } catch (err) {
-      console.error('检查引用失败:', err);
+      console.error('[NodesPage] 检查引用失败:', err);
       // 如果检查失败，仍然允许删除，但给出警告
       if (!confirm('无法检查template引用，确定要继续删除吗？这可能影响template渲染。')) {
         return;
@@ -225,8 +239,7 @@ export function NodesPage({ config, onChange }: NodesPageProps) {
                         <button
                           className="btn btn-sm btn-danger"
                           onClick={() => handleDelete(name)}
-                          disabled={refs.length > 0}
-                          title={refs.length > 0 ? '该节点正在被服务引用，无法删除' : ''}
+                          title={refs.length > 0 ? `该节点被 ${refs.length} 个服务引用` : '删除节点'}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
