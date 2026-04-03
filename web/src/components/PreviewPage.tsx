@@ -10,7 +10,6 @@ interface PreviewPageProps {
 // 辅助函数：将任意值转换为 YAML 格式的字符串
 function yamlValueToString(value: any, indent: number = 0): string {
   const prefix = '  '.repeat(indent);
-  console.log(`[yamlValueToString] indent=${indent}, prefix="${prefix}", value type=${typeof value}`, Array.isArray(value) ? 'array' : '');
 
   if (value === null || value === undefined) {
     return 'null';
@@ -41,9 +40,7 @@ function yamlValueToString(value: any, indent: number = 0): string {
     // 复杂数组用多行格式
     const items = value.map(item => {
       const itemStr = yamlValueToString(item, indent + 1);
-      const line = `${prefix}  - ${itemStr}`;
-      console.log(`[yamlValueToString] array item: "${line}"`);
-      return line;
+      return `${prefix}  - ${itemStr}`;
     });
     return `\n${items.join('\n')}`;
   } else if (typeof value === 'object') {
@@ -57,14 +54,10 @@ function yamlValueToString(value: any, indent: number = 0): string {
       // valStr已经包含了完整的缩进（从下一行开始）
       // 所以应该格式为：${prefix}  ${key}:\n${valStr}
       if (valStr.includes('\n')) {
-        const line = `${prefix}  ${key}:\n${valStr}`;
-        console.log(`[yamlValueToString] object entry (multiline): key=${key}`);
-        return line;
+        return `${prefix}  ${key}:\n${valStr}`;
       }
       // 简单值，放在同一行
-      const line = `${prefix}  ${key}: ${valStr}`;
-      console.log(`[yamlValueToString] object entry (singleline): "${line}"`);
-      return line;
+      return `${prefix}  ${key}: ${valStr}`;
     });
     return `\n${entries.join('\n')}`;
   }
@@ -133,10 +126,10 @@ function configToYaml(config: AppConfig): string {
       lines.push('    vars:');
       Object.entries(cfg.vars).forEach(([k, v]) => {
         const valStr = yamlValueToString(v, 3);
-        // 如果值是多行格式，单独处理
+        // 如果值是多行格式，直接使用，不做后处理
         if (valStr.includes('\n')) {
-          // 移除开头的换行符，并添加正确的缩进
-          lines.push(`      ${k}:${valStr.replace(/^\n/, '\n      ')}`);
+          // valStr已经包含了正确的缩进，直接追加即可
+          lines.push(`      ${k}:${valStr}`);
         } else {
           lines.push(`      ${k}: ${valStr}`);
         }
