@@ -108,8 +108,8 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
   const renderValueInput = (item: VariableItem, index: number) => {
     if (readonly) {
       return (
-        <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm overflow-x-auto">
-          <pre className="whitespace-pre-wrap break-all">{JSON.stringify(item.value, null, 2)}</pre>
+        <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto whitespace-pre-wrap">
+          {JSON.stringify(item.value, null, 2)}
         </div>
       );
     }
@@ -117,7 +117,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
     if (item.type === 'boolean') {
       return (
         <select
-          className="input w-full text-base"
+          className="input text-base"
           value={String(item.value)}
           onChange={(e) => handleValueChange(index, e.target.value === 'true')}
         >
@@ -129,7 +129,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
       return (
         <input
           type="number"
-          className="input w-full text-base"
+          className="input text-base"
           value={item.value}
           onChange={(e) => handleValueChange(index, Number(e.target.value))}
         />
@@ -138,7 +138,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
       return (
         <input
           type="text"
-          className="input w-full text-base"
+          className="input text-base"
           value={item.value}
           onChange={(e) => handleValueChange(index, e.target.value)}
         />
@@ -150,7 +150,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
 
       return (
         <textarea
-          className="w-full bg-gray-900 text-green-400 font-mono text-sm p-3 rounded-lg focus:outline-none resize-none"
+          className="w-full bg-gray-900 text-green-400 font-mono text-sm p-2 rounded focus:outline-none resize-none"
           value={jsonStr}
           onChange={(e) => {
             try {
@@ -171,7 +171,7 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
 
       return (
         <textarea
-          className="w-full bg-gray-900 text-green-400 font-mono text-sm p-3 rounded-lg focus:outline-none resize-none"
+          className="w-full bg-gray-900 text-green-400 font-mono text-sm p-2 rounded focus:outline-none resize-none"
           value={jsonStr}
           onChange={(e) => {
             try {
@@ -190,25 +190,15 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
 
   return (
     <div className="space-y-3">
-      {/* 表头 */}
-      {!readonly && (
-        <div className="grid grid-cols-12 gap-3 px-3 py-2 bg-gray-100 rounded-lg">
-          <div className="col-span-3 text-sm font-medium text-gray-700">变量名</div>
-          <div className="col-span-2 text-sm font-medium text-gray-700">类型</div>
-          <div className="col-span-3 text-sm font-medium text-gray-700">值</div>
-          <div className="col-span-3 text-sm font-medium text-gray-700">说明</div>
-          <div className="col-span-1 text-sm font-medium text-gray-700">操作</div>
-        </div>
-      )}
-
       {/* 变量列表 */}
       {items.map((item, index) => (
-        <div key={index} className="grid grid-cols-12 gap-3 items-start px-3 py-3 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
+        <div key={index} className="flex items-start gap-3 px-3 py-3 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
           {/* 变量名 */}
-          <div className="col-span-3">
+          <div className="flex items-center gap-1">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">变量名:</label>
             <input
               type="text"
-              className={`input w-full text-base ${readonly ? 'bg-gray-50' : ''}`}
+              className={`input text-base w-32 ${readonly ? 'bg-gray-50' : ''}`}
               value={item.key}
               onChange={(e) => !readonly && handleKeyChange(index, e.target.value)}
               placeholder="变量名"
@@ -217,9 +207,10 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
           </div>
 
           {/* 类型 */}
-          <div className="col-span-2">
+          <div className="flex items-center gap-1">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">类型:</label>
             <select
-              className="select w-full text-base"
+              className="select text-base w-28"
               value={item.type}
               onChange={(e) => !readonly && handleTypeChange(index, e.target.value as VariableItem['type'])}
               disabled={readonly}
@@ -233,15 +224,19 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
           </div>
 
           {/* 值 */}
-          <div className="col-span-3">
-            {renderValueInput(item, index)}
+          <div className="flex items-center gap-1 flex-1 min-w-0">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">值:</label>
+            <div className="flex-1 min-w-0">
+              {renderValueInput(item, index)}
+            </div>
           </div>
 
           {/* 说明 */}
-          <div className="col-span-3">
+          <div className="flex items-center gap-1">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">说明:</label>
             <input
               type="text"
-              className="input w-full text-base"
+              className="input text-base w-36"
               value={item.description}
               onChange={(e) => !readonly && handleDescriptionChange(index, e.target.value)}
               placeholder="配置项说明"
@@ -250,17 +245,15 @@ export function VariablesEditor({ vars, onChange, readonly = false }: VariablesE
           </div>
 
           {/* 删除按钮 */}
-          <div className="col-span-1">
-            {!readonly && (
-              <button
-                className="btn btn-sm btn-danger w-full"
-                onClick={() => handleDelete(index)}
-                title="删除"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+          {!readonly && (
+            <button
+              className="btn btn-sm btn-danger flex-shrink-0"
+              onClick={() => handleDelete(index)}
+              title="删除"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       ))}
 
