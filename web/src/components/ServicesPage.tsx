@@ -203,18 +203,18 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
                     )}
                   </td>
                   <td>
-                    <div className="flex gap-1">
-                      <button 
+                    <div className="flex gap-1.5">
+                      <button
                         className="btn btn-sm btn-secondary"
                         onClick={() => openEditModal(name, service)}
                       >
-                        <Edit2 className="w-3 h-3" />
+                        <Edit2 className="w-3.5 h-3.5" />
                       </button>
-                      <button 
+                      <button
                         className="btn btn-sm btn-danger"
                         onClick={() => handleDelete(name)}
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </td>
@@ -452,18 +452,18 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
                       <span className="badge badge-green text-xs">全局</span>
                     )}
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1.5">
                     <button
                       className="btn btn-sm btn-secondary"
                       onClick={() => openEditModal(name, cfg)}
                     >
-                      <Edit2 className="w-3 h-3" />
+                      <Edit2 className="w-3.5 h-3.5" />
                     </button>
                     <button
                       className="btn btn-sm btn-danger"
                       onClick={() => handleDelete(name)}
                     >
-                      <Trash2 className="w-3 h-3" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>

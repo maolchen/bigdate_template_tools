@@ -196,20 +196,20 @@ export function NodesPage({ config, onChange }: NodesPageProps) {
                       )}
                     </td>
                     <td>
-                      <div className="flex gap-1">
-                        <button 
+                      <div className="flex gap-1.5">
+                        <button
                           className="btn btn-sm btn-secondary"
                           onClick={() => openEditModal(name, node)}
                         >
-                          <Edit2 className="w-3 h-3" />
+                          <Edit2 className="w-3.5 h-3.5" />
                         </button>
-                        <button 
+                        <button
                           className="btn btn-sm btn-danger"
                           onClick={() => handleDelete(name)}
                           disabled={refs.length > 0}
                           title={refs.length > 0 ? '该节点正在被服务引用，无法删除' : ''}
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
