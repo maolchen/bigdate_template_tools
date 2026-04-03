@@ -50,6 +50,12 @@ function yamlValueToString(value: any, indent: number = 0): string {
     }
     const entries = keys.map(key => {
       const valStr = yamlValueToString(value[key], indent + 1);
+      // 如果值是多行格式（包含换行），key应该单独一行
+      if (valStr.includes('\n')) {
+        // 移除valStr开头的换行符，添加正确的缩进
+        const indentedVal = valStr.replace(/^\n/, '\n' + prefix + '    ');
+        return `${prefix}  ${key}:${indentedVal}`;
+      }
       return `${prefix}  ${key}: ${valStr}`;
     });
     return `\n${entries.join('\n')}`;
@@ -118,8 +124,14 @@ function configToYaml(config: AppConfig): string {
     if (cfg.vars && Object.keys(cfg.vars).length > 0) {
       lines.push('    vars:');
       Object.entries(cfg.vars).forEach(([k, v]) => {
-        const valStr = yamlValueToString(v, 2);
-        lines.push(`      ${k}: ${valStr}`);
+        const valStr = yamlValueToString(v, 3);
+        // 如果值是多行格式，单独处理
+        if (valStr.includes('\n')) {
+          // 移除开头的换行符，并添加正确的缩进
+          lines.push(`      ${k}:${valStr.replace(/^\n/, '\n      ')}`);
+        } else {
+          lines.push(`      ${k}: ${valStr}`);
+        }
       });
     }
   });
