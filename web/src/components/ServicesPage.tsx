@@ -242,8 +242,8 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
                 {editingService ? '编辑服务拓扑' : '添加服务拓扑'}
               </h3>
               <div className="flex gap-2">
-                <button className="btn btn-sm btn-secondary text-base px-4 py-2" onClick={closeModal}>取消</button>
-                <button className="btn btn-sm btn-primary text-base px-4 py-2" onClick={handleSubmit}>
+                <button className="btn btn-secondary" onClick={closeModal}>取消</button>
+                <button className="btn btn-primary" onClick={handleSubmit}>
                   {editingService ? '保存' : '添加'}
                 </button>
               </div>
@@ -456,11 +456,11 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
                   <tr key={name}>
                     <td>
                       <button
-                        className="flex items-center gap-2 text-primary hover:underline cursor-pointer text-base font-semibold"
+                        className="flex items-center gap-2 text-gray-800 hover:underline cursor-pointer text-base font-semibold"
                         onClick={() => handleViewDetail(name)}
                       >
                         <span>{name}</span>
-                        <ChevronRight className="w-4 h-4" />
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
                       </button>
                     </td>
                     <td>
@@ -519,8 +519,8 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
                   {editingConfig ? '编辑服务配置' : '添加服务配置'}
                 </h3>
                 <div className="flex gap-2">
-                  <button className="btn btn-sm btn-secondary text-base px-4 py-2" onClick={closeModal}>取消</button>
-                  <button className="btn btn-sm btn-primary text-base px-4 py-2" onClick={handleSubmit}>
+                  <button className="btn btn-secondary" onClick={closeModal}>取消</button>
+                  <button className="btn btn-primary" onClick={handleSubmit}>
                     {editingConfig ? '保存' : '添加'}
                   </button>
                 </div>
@@ -687,7 +687,7 @@ function ServiceConfigDetail({ serviceName, config, onBack }: ServiceConfigDetai
       {/* 面包屑导航 */}
       <div className="flex items-center gap-2 text-base">
         <button
-          className="text-primary hover:underline cursor-pointer font-medium"
+          className="text-gray-800 hover:underline cursor-pointer font-medium"
           onClick={onBack}
         >
           服务配置
