@@ -635,6 +635,8 @@ function ServiceConfigDetail({ serviceName, config, onBack }: ServiceConfigDetai
     const vars = serviceConfig.vars || {};
     if (Object.keys(vars).length > 0) {
       yamlText += 'vars:\n';
+      // 调试：打印vars数据
+      console.log(`[Debug] vars for ${serviceName}:`, JSON.stringify(vars, null, 2));
       const varsYaml = yaml.dump(vars, {
         indent: 2,
         lineWidth: -1,
@@ -642,6 +644,8 @@ function ServiceConfigDetail({ serviceName, config, onBack }: ServiceConfigDetai
         sortKeys: false,
         forceQuotes: false
       });
+      // 调试：打印生成的YAML
+      console.log(`[Debug] varsYaml for ${serviceName}:`, JSON.stringify(varsYaml));
       // 直接使用 js-yaml 的输出，不做后处理
       yamlText += varsYaml;
     } else {
