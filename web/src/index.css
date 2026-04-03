@@ -231,6 +231,7 @@ body {
 .table {
   width: 100%;
   border-collapse: collapse;
+  border: 1px solid var(--gray-200);
 }
 
 .table th,
@@ -238,6 +239,12 @@ body {
   padding: 0.75rem 1rem;
   text-align: left;
   border-bottom: 1px solid var(--gray-200);
+  border-right: 1px solid var(--gray-200);
+}
+
+.table th:last-child,
+.table td:last-child {
+  border-right: none;
 }
 
 .table th {
@@ -251,6 +258,10 @@ body {
 
 .table tr:hover {
   background: var(--gray-50);
+}
+
+.table tr:last-child td {
+  border-bottom: none;
 }
 
 /* Sidebar */

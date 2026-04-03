@@ -160,77 +160,79 @@ export function GlobalPage({ config, onChange }: GlobalPageProps) {
               </div>
               <span className="badge badge-gray">{items.length} 项</span>
             </div>
-            <div className="card-body">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '30%' }}>配置项</th>
-                    <th style={{ width: '20%' }}>值</th>
-                    <th style={{ width: '12%' }}>数据类型</th>
-                    <th style={{ width: '28%' }}>描述</th>
-                    <th style={{ width: '10%' }}>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => {
-                    const fieldDef = getFieldDescription(item.key);
-                    const isRequired = fieldDef?.required || false;
-                    const displayName = fieldDef?.name || item.key;
-
-                    return (
-                      <tr key={item.key}>
-                        <td>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-800">{displayName}</span>
-                            <code className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                              {item.key}
-                            </code>
-                            {isRequired && <span className="text-danger">*</span>}
-                          </div>
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            className="input w-full"
-                            value={typeof item.value === 'string' ? item.value : String(item.value)}
-                            readOnly
-                          />
-                        </td>
-                        <td>
-                          <span className="badge badge-gray text-xs">{item.type}</span>
-                        </td>
-                        <td>
-                          <span className="text-sm text-gray-600">{item.description || '-'}</span>
-                        </td>
-                        <td>
-                          <div className="flex gap-1">
-                            <button
-                              className="btn btn-sm btn-secondary"
-                              onClick={() => handleEdit(item)}
-                              title="编辑"
-                            >
-                              <Edit2 className="w-3 h-3" />
-                            </button>
-                            <button
-                              className="btn btn-sm btn-danger"
-                              onClick={() => handleDelete(item.key)}
-                              disabled={isRequired}
-                              title={isRequired ? '必填项，不能删除' : '删除'}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {items.length === 0 && (
+            <div className="card-body p-0">
+              <div className="table-container">
+                <table className="table">
+                  <thead>
                     <tr>
-                      <td colSpan={5} className="text-center text-gray-400 py-8">暂无配置项</td>
+                      <th style={{ width: '30%' }}>配置项</th>
+                      <th style={{ width: '20%' }}>值</th>
+                      <th style={{ width: '12%' }}>数据类型</th>
+                      <th style={{ width: '28%' }}>描述</th>
+                      <th style={{ width: '10%' }}>操作</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => {
+                      const fieldDef = getFieldDescription(item.key);
+                      const isRequired = fieldDef?.required || false;
+                      const displayName = fieldDef?.name || item.key;
+
+                      return (
+                        <tr key={item.key}>
+                          <td>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-800">{displayName}</span>
+                              <code className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                                {item.key}
+                              </code>
+                              {isRequired && <span className="text-danger">*</span>}
+                            </div>
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              className="input w-full"
+                              value={typeof item.value === 'string' ? item.value : String(item.value)}
+                              readOnly
+                            />
+                          </td>
+                          <td>
+                            <span className="badge badge-gray text-xs">{item.type}</span>
+                          </td>
+                          <td>
+                            <span className="text-sm text-gray-600">{item.description || '-'}</span>
+                          </td>
+                          <td>
+                            <div className="flex gap-1">
+                              <button
+                                className="btn btn-sm btn-secondary"
+                                onClick={() => handleEdit(item)}
+                                title="编辑"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                              <button
+                                className="btn btn-sm btn-danger"
+                                onClick={() => handleDelete(item.key)}
+                                disabled={isRequired}
+                                title={isRequired ? '必填项，不能删除' : '删除'}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {items.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="text-center text-gray-400 py-8">暂无配置项</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         ))}
