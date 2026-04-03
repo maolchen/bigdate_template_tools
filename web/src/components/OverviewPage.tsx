@@ -30,7 +30,8 @@ export function OverviewPage({ config, onReload }: OverviewPageProps) {
   const invalidNodeRefs: { service: string; node: string }[] = [];
   
   Object.entries(config.serviceTop).forEach(([serviceName, service]) => {
-    service.nodes.forEach(node => {
+    const nodes = service.nodes || [];
+    nodes.forEach(node => {
       if (node !== '*' && !allNodeNames.includes(node)) {
         invalidNodeRefs.push({ service: serviceName, node });
       }

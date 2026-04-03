@@ -34,8 +34,8 @@ type Nodes map[string]Node
 
 // ServiceTopo 服务拓扑配置
 type ServiceTopo struct {
-	Nodes        []string `yaml:"nodes"`          // 节点别名列表，支持 ["*"]
-	IDAutoDerive bool     `yaml:"id_auto_derive"` // 是否自动推导ID
+	Nodes        []string `yaml:"nodes" json:"nodes"`                 // 节点别名列表，支持 ["*"]
+	IDAutoDerive bool     `yaml:"id_auto_derive" json:"id_auto_derive"` // 是否自动推导ID
 }
 
 // ServiceTopos 服务拓扑列表
@@ -43,11 +43,11 @@ type ServiceTopos map[string]ServiceTopo
 
 // ServiceConfig 服务配置（完全配置化）
 type ServiceConfig struct {
-	Type        string                 `yaml:"type"`        // 服务类型：global 或 空
-	Description string                 `yaml:"description"` // 服务描述
-	IDField     string                 `yaml:"id_field"`    // ID字段名
-	IDFormat    string                 `yaml:"id_format"`   // ID格式化模板
-	Vars        map[string]interface{} `yaml:"vars"`        // 服务变量
+	Type        string                 `yaml:"type" json:"type"`               // 服务类型：global 或 空
+	Description string                 `yaml:"description" json:"description"` // 服务描述
+	IDField     string                 `yaml:"id_field" json:"id_field"`       // ID字段名
+	IDFormat    string                 `yaml:"id_format" json:"id_format"`     // ID格式化模板
+	Vars        map[string]interface{} `yaml:"vars" json:"vars"`               // 服务变量
 }
 
 // ServiceConfigs 服务配置列表

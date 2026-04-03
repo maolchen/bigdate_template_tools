@@ -36,8 +36,9 @@ function configToYaml(config: AppConfig): string {
   lines.push('# ============================================================');
   lines.push('serviceTop:');
   Object.entries(config.serviceTop).forEach(([name, service]) => {
+    const nodes = service.nodes || [];
     lines.push(`  ${name}:`);
-    lines.push(`    nodes: [${service.nodes.join(', ')}]`);
+    lines.push(`    nodes: [${nodes.join(', ')}]`);
     if (service.description) {
       lines.push(`    description: "${service.description}"`);
     }

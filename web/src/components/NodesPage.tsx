@@ -57,9 +57,10 @@ export function NodesPage({ config, onChange }: NodesPageProps) {
       const newServiceTop = { ...config.serviceTop };
       Object.keys(newServiceTop).forEach(serviceName => {
         const service = newServiceTop[serviceName];
-        const nodeIndex = service.nodes.indexOf(editingNode);
+        const nodes = service.nodes || [];
+        const nodeIndex = nodes.indexOf(editingNode);
         if (nodeIndex !== -1) {
-          service.nodes[nodeIndex] = formData.name;
+          nodes[nodeIndex] = formData.name;
         }
       });
       
@@ -96,7 +97,7 @@ export function NodesPage({ config, onChange }: NodesPageProps) {
     const newServiceTop = { ...config.serviceTop };
     Object.keys(newServiceTop).forEach(serviceName => {
       const service = newServiceTop[serviceName];
-      service.nodes = service.nodes.filter(n => n !== name);
+      service.nodes = (service.nodes || []).filter(n => n !== name);
     });
     
     onChange({
@@ -131,7 +132,8 @@ export function NodesPage({ config, onChange }: NodesPageProps) {
   const getNodeReferences = (nodeName: string): string[] => {
     const refs: string[] = [];
     Object.entries(config.serviceTop).forEach(([serviceName, service]) => {
-      if (service.nodes.includes(nodeName)) {
+      const nodes = service.nodes || [];
+      if (nodes.includes(nodeName)) {
         refs.push(serviceName);
       }
     });

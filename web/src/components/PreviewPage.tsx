@@ -39,8 +39,9 @@ function configToYaml(config: AppConfig): string {
   lines.push('# ============================================================');
   lines.push('serviceTop:');
   Object.entries(config.serviceTop).forEach(([name, service]) => {
+    const nodes = service.nodes || [];
     lines.push(`  ${name}:`);
-    lines.push(`    nodes: [${service.nodes.join(', ')}]`);
+    lines.push(`    nodes: [${nodes.join(', ')}]`);
     if (service.description) {
       lines.push(`    description: "${service.description}"`);
     }
@@ -121,7 +122,8 @@ export function PreviewPage({ config }: PreviewPageProps) {
     // 检查服务拓扑中的节点引用
     const allNodeNames = Object.keys(config.nodes);
     Object.entries(config.serviceTop).forEach(([serviceName, service]) => {
-      service.nodes.forEach(node => {
+      const nodes = service.nodes || [];
+      nodes.forEach(node => {
         if (node !== '*' && !allNodeNames.includes(node)) {
           errors.push(`服务拓扑 ${serviceName}：引用了不存在的节点 "${node}"`);
         }
