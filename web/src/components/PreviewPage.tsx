@@ -50,13 +50,13 @@ function yamlValueToString(value: any, indent: number = 0): string {
     }
     const entries = keys.map(key => {
       const valStr = yamlValueToString(value[key], indent + 1);
-      // 如果值是多行格式（包含换行），需要正确处理缩进
+      // 如果值是多行格式（包含换行），说明是嵌套对象或数组
+      // valStr已经包含了完整的缩进（从下一行开始）
+      // 所以应该格式为：${prefix}  ${key}:\n${valStr}
       if (valStr.includes('\n')) {
-        // valStr的第一行已经包含了正确的缩进（prefix + 2空格）
-        // 后续行也已经有正确的缩进，只需要在valStr前面添加冒号
-        // 直接使用valStr，不做额外处理
-        return `${prefix}  ${key}:${valStr}`;
+        return `${prefix}  ${key}:\n${valStr}`;
       }
+      // 简单值，放在同一行
       return `${prefix}  ${key}: ${valStr}`;
     });
     return `\n${entries.join('\n')}`;
