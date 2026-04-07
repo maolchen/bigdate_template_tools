@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,7 +36,6 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 		s.cfg = &newConfig
 
-		// 保存到文件
 		data, err := yaml.Marshal(s.cfg)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -66,10 +66,8 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 构建服务实例
 	instances := generator.BuildServiceInstances(s.cfg)
 
-	// 生成配置
 	summary, err := generator.GenerateOutputs(s.cfg, instances, s.outputDir)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -129,7 +127,6 @@ func (s *Server) handleGetOutput(w http.ResponseWriter, r *http.Request) {
 
 // handleDownloadOutput 处理下载输出文件请求
 func (s *Server) handleDownloadOutput(w http.ResponseWriter, r *http.Request) {
-	// 创建 ZIP 文件
 	buf := new(bytes.Buffer)
 	zipWriter := zip.NewWriter(buf)
 
@@ -170,11 +167,9 @@ func (s *Server) handleGetOutputFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 安全检查
 	cleanPath := filepath.Clean(path)
 	fullPath := filepath.Join(s.outputDir, cleanPath)
 
-	// 确保路径在输出目录内
 	if !strings.HasPrefix(fullPath, s.outputDir) {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
@@ -251,32 +246,22 @@ func (s *Server) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDescriptions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// 从路径中提取服务名
-	pathParts := strings.Split(r.URL.Path, "/")
-	if len(pathParts) < 4 {
+	escapedServiceName := strings.TrimPrefix(r.URL.EscapedPath(), "/api/descriptions/")
+	if escapedServiceName == "" || escapedServiceName == r.URL.EscapedPath() {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
-	serviceName := pathParts[3]
 
-	descPath := getDescriptionPath(serviceName, s.webDir)
+	serviceName, err := url.PathUnescape(escapedServiceName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	switch r.Method {
 	case "GET":
-		// 读取描述文件
-		if _, err := os.Stat(descPath); os.IsNotExist(err) {
-			json.NewEncoder(w).Encode(map[string]string{})
-			return
-		}
-
-		data, err := os.ReadFile(descPath)
+		descriptions, err := s.getFilteredDescriptions(serviceName)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		var descriptions map[string]string
-		if err := json.Unmarshal(data, &descriptions); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -284,25 +269,18 @@ func (s *Server) handleDescriptions(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(descriptions)
 
 	case "POST":
-		var descriptions map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&descriptions); err != nil {
+		var updates map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		// 保存到文件
-		data, err := json.MarshalIndent(descriptions, "", "  ")
+		descriptions, err := s.saveDescriptionUpdates(serviceName, updates)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		if err := os.WriteFile(descPath, data, 0644); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 合并到配置
 		mergeDescriptions(serviceName, descriptions, s.cfg)
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -319,23 +297,10 @@ func (s *Server) handleDescriptions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGlobalDescriptions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	descPath := getDescriptionPath("global", s.webDir)
-
 	switch r.Method {
 	case "GET":
-		if _, err := os.Stat(descPath); os.IsNotExist(err) {
-			json.NewEncoder(w).Encode(map[string]string{})
-			return
-		}
-
-		data, err := os.ReadFile(descPath)
+		descriptions, err := s.getFilteredDescriptions("global")
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		var descriptions map[string]string
-		if err := json.Unmarshal(data, &descriptions); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -343,19 +308,13 @@ func (s *Server) handleGlobalDescriptions(w http.ResponseWriter, r *http.Request
 		json.NewEncoder(w).Encode(descriptions)
 
 	case "POST":
-		var descriptions map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&descriptions); err != nil {
+		var updates map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		data, err := json.MarshalIndent(descriptions, "", "  ")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if err := os.WriteFile(descPath, data, 0644); err != nil {
+		if _, err := s.saveDescriptionUpdates("global", updates); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -379,7 +338,6 @@ func (s *Server) handleCheckReferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 解析请求
 	var req checker.CheckRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

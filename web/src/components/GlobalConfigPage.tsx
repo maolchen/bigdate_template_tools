@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, Globe, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Edit2, Globe, AlertCircle, X } from 'lucide-react';
 import type { AppConfig } from '../api/config';
 import {
   getFieldDescription,
@@ -304,16 +304,16 @@ export function GlobalConfigPage({ config, onChange }: GlobalConfigPageProps) {
       {/* 添加/编辑弹窗 */}
       {isModalOpen && (
         <div className="modal-overlay">
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal-form-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="font-semibold text-gray-800">
                 {editingItem ? '编辑配置项' : '添加配置项'}
               </h3>
-              <button className="text-gray-400 hover:text-gray-600" onClick={handleClose}>
-                ×
+              <button className="modal-close" onClick={handleClose} aria-label="关闭">
+                <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body modal-form-body">
               <div className="form-group">
                 <label className="form-label">
                   配置项名称 <span className="text-danger">*</span>
@@ -398,7 +398,7 @@ export function GlobalConfigPage({ config, onChange }: GlobalConfigPageProps) {
                 </select>
               </div>
             </div>
-            <div className="modal-footer">
+            <div className="modal-footer modal-footer-actions">
               <button className="btn btn-secondary" onClick={handleClose}>
                 取消
               </button>

@@ -91,8 +91,8 @@ export function VariablesEditor({ vars, onChange, readonly = false, serviceName,
   const saveDescriptionsToStorage = async (newItems: VariableItem[]) => {
     const newDescriptions: Record<string, string> = {};
     newItems.forEach((item) => {
-      if (item.key && item.key.trim() !== '' && item.description) {
-        newDescriptions[item.key] = item.description;
+      if (item.key && item.key.trim() !== '') {
+        newDescriptions[item.key] = item.description ?? '';
       }
     });
 
@@ -102,7 +102,11 @@ export function VariablesEditor({ vars, onChange, readonly = false, serviceName,
       } else if (serviceName) {
         await saveDescriptions(serviceName, newDescriptions);
       }
-      setDescriptions(newDescriptions);
+      setDescriptions(
+        Object.fromEntries(
+          Object.entries(newDescriptions).filter(([, value]) => value.trim() !== '')
+        )
+      );
     } catch (err) {
       console.warn('保存说明失败:', err);
     }

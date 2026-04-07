@@ -70,21 +70,21 @@ export function OverviewPage({ config, onReload }: OverviewPageProps) {
   ];
   
   return (
-    <div>
-      <div className="mb-6">
+    <div className="overview-page">
+      <div className="mb-6 overview-intro">
         <h2 className="text-2xl font-bold text-gray-800">配置概览</h2>
         <p className="text-gray-500 mt-1">查看当前配置的整体状态和统计信息</p>
       </div>
       
       {/* 快速操作 */}
       <div className="card card-hero mb-6">
-        <div className="card-body text-white">
-          <div className="flex items-center justify-between">
-            <div>
+        <div className="card-body text-white overview-hero-body">
+          <div className="flex items-center justify-between overview-hero-inner">
+            <div className="overview-hero-copy">
               <h3 className="text-lg font-semibold">准备生成配置？</h3>
               <p className="text-sm opacity-90 mt-1">点击「生成配置」按钮，根据当前配置生成部署脚本</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 overview-hero-actions">
               {onReload && (
                 <button 
                   className="btn btn-glass-light"
@@ -107,13 +107,13 @@ export function OverviewPage({ config, onReload }: OverviewPageProps) {
       </div>
       
       {/* 统计卡片 */}
-      <div className="grid grid-cols-4 mb-6">
+      <div className="grid grid-cols-4 mb-6 overview-stats">
         {cards.map((card) => {
           const Icon = card.icon;
           return (
-            <div key={card.title} className="card">
-              <div className="card-body">
-                <div className="flex items-center justify-between mb-4">
+            <div key={card.title} className="card overview-stat-card">
+              <div className="card-body overview-stat-body">
+                <div className="flex items-center justify-between mb-4 overview-stat-top">
                   <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
                     card.color === 'blue' ? 'bg-blue-50' : 
                     card.color === 'green' ? 'bg-green-50' : 'bg-gray-100'
@@ -123,10 +123,12 @@ export function OverviewPage({ config, onReload }: OverviewPageProps) {
                       card.color === 'green' ? 'text-green-500' : 'text-gray-500'
                     }`} />
                   </div>
-                  <span className="text-2xl font-bold text-gray-800">{card.count}</span>
+                  <span className="text-2xl font-bold text-gray-800 overview-stat-count">{card.count}</span>
                 </div>
-                <h3 className="font-medium text-gray-800">{card.title}</h3>
-                <p className="text-sm text-gray-500">{card.desc}</p>
+                <div className="overview-stat-copy">
+                  <h3 className="font-medium text-gray-800">{card.title}</h3>
+                  <p className="text-sm text-gray-500">{card.desc}</p>
+                </div>
               </div>
             </div>
           );

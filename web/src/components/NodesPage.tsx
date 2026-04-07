@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Edit2, Trash2, Server, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Server, AlertCircle, X } from 'lucide-react';
 import type { AppConfig, NodeInfo } from '../api/config';
 import { checkReferences } from '../api/config';
 
@@ -286,14 +286,16 @@ export function NodesPage({ config, onChange }: NodesPageProps) {
       {/* 添加/编辑弹窗 */}
       {isModalOpen && (
         <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+          <div className="modal modal-form-card" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="font-semibold text-gray-800">
                 {editingNode ? '编辑节点' : '添加节点'}
               </h3>
-              <button className="text-gray-400 hover:text-gray-600" onClick={closeModal}>×</button>
+              <button className="modal-close" onClick={closeModal} aria-label="关闭">
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body modal-form-body">
               <div className="form-group">
                 <label className="form-label">
                   节点名称 <span className="text-danger">*</span>
@@ -338,7 +340,7 @@ export function NodesPage({ config, onChange }: NodesPageProps) {
                 {errors.hostname && <p className="text-danger text-sm mt-1">{errors.hostname}</p>}
               </div>
             </div>
-            <div className="modal-footer">
+            <div className="modal-footer modal-footer-actions">
               <button className="btn btn-secondary" onClick={closeModal}>取消</button>
               <button className="btn btn-primary" onClick={handleSubmit}>
                 {editingNode ? '保存' : '添加'}

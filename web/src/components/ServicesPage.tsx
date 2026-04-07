@@ -265,19 +265,16 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
       {/* 弹窗 - 覆盖主内容区 */}
       {isModalOpen && (
         <div className="modal-fullscreen">
-          <div className="modal-fullscreen-content">
+          <div className="modal-fullscreen-content modal-form-card">
             <div className="modal-header">
               <h3 className="font-bold text-gray-800 text-lg">
                 {editingService ? '编辑服务拓扑' : '添加服务拓扑'}
               </h3>
-              <div className="flex gap-2">
-                <button className="btn btn-secondary" onClick={closeModal}>取消</button>
-                <button className="btn btn-primary" onClick={handleSubmit}>
-                  {editingService ? '保存' : '添加'}
-                </button>
-              </div>
+              <button className="modal-close" onClick={closeModal} aria-label="关闭">
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body modal-form-body">
               <div className="form-group max-w-3xl mx-auto">
                 <label className="form-label text-base font-medium">
                   服务名称 <span className="text-danger">*</span>
@@ -355,6 +352,12 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
                 </label>
                 <p className="form-hint text-base">启用后，系统会自动为每个节点实例生成唯一ID，从服务器配置的 id_format 字段读取格式模板</p>
               </div>
+            </div>
+            <div className="modal-footer modal-footer-actions">
+              <button className="btn btn-secondary" onClick={closeModal}>取消</button>
+              <button className="btn btn-primary" onClick={handleSubmit}>
+                {editingService ? '保存' : '添加'}
+              </button>
             </div>
           </div>
         </div>
@@ -572,61 +575,63 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
         {/* 弹窗 - 覆盖主内容区 */}
         {isModalOpen && (
           <div className="modal-fullscreen">
-            <div className="modal-fullscreen-content">
+            <div className="modal-fullscreen-content modal-form-card">
               <div className="modal-header">
                 <h3 className="font-bold text-gray-800 text-lg">
                   {editingConfig ? '编辑服务配置' : '添加服务配置'}
                 </h3>
-                <div className="flex gap-2">
-                  <button className="btn btn-secondary" onClick={closeModal}>取消</button>
-                  <button className="btn btn-primary" onClick={handleSubmit}>
-                    {editingConfig ? '保存' : '添加'}
-                  </button>
-                </div>
+                <button className="modal-close" onClick={closeModal} aria-label="关闭">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div className="modal-body">
-                <div className="form-group max-w-3xl mx-auto">
+              <div className="modal-body modal-form-body">
+                <div className="service-config-form-grid">
+                  <div className="form-group">
+                    <label className="form-label text-base font-medium">
+                      配置名称 <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className={`input ${errors.name ? 'border-danger' : ''} text-base`}
+                      value={formData.name}
+                      onChange={e => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="例如: zookeeper 或 doris/fe"
+                      disabled={editingConfig !== null}
+                    />
+                    {errors.name && <p className="text-danger text-base mt-1">{errors.name}</p>}
+                    <p className="form-hint text-base">必须与服务拓扑中的名称保持一致</p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label text-base font-medium">服务类型</label>
+                    <select
+                      className="select text-base"
+                      value={formData.type}
+                      onChange={e => setFormData({ ...formData, type: e.target.value as '' | 'global' })}
+                    >
+                      <option value="">普通服务</option>
+                      <option value="global">全局服务（所有节点）</option>
+                    </select>
+                    <p className="form-hint text-base">全局服务会在所有节点上执行</p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label text-base font-medium">描述</label>
+                    <input
+                      type="text"
+                      className="input text-base"
+                      value={formData.description}
+                      onChange={e => setFormData({ ...formData, description: e.target.value })}
+                      placeholder="例如: ZooKeeper 详细配置"
+                    />
+                    <p className="form-hint text-base">用于解释该服务配置的用途</p>
+                  </div>
+                </div>
+
+                <div className="form-group service-config-vars">
                   <label className="form-label text-base font-medium">
-                    配置名称 <span className="text-danger">*</span>
+                    变量
                   </label>
-                  <input
-                    type="text"
-                    className={`input ${errors.name ? 'border-danger' : ''} text-base`}
-                    value={formData.name}
-                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="例如: zookeeper 或 doris/fe"
-                    disabled={editingConfig !== null}
-                  />
-                  {errors.name && <p className="text-danger text-base mt-1">{errors.name}</p>}
-                  <p className="form-hint text-base">建议与服务拓扑中的名称保持一致</p>
-                </div>
-
-                <div className="form-group max-w-3xl mx-auto">
-                  <label className="form-label text-base font-medium">服务类型</label>
-                  <select
-                    className="select text-base"
-                    value={formData.type}
-                    onChange={e => setFormData({ ...formData, type: e.target.value as '' | 'global' })}
-                  >
-                    <option value="">普通服务</option>
-                    <option value="global">全局服务（所有节点）</option>
-                  </select>
-                  <p className="form-hint text-base">全局服务会在所有节点上执行</p>
-                </div>
-
-                <div className="form-group max-w-3xl mx-auto">
-                  <label className="form-label text-base font-medium">描述</label>
-                  <input
-                    type="text"
-                    className="input text-base"
-                    value={formData.description}
-                    onChange={e => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="例如: ZooKeeper 详细配置"
-                  />
-                </div>
-
-                <div className="form-group max-w-full mx-auto">
-                  <label className="form-label text-base font-medium">变量</label>
                   <VariablesEditor
                     vars={formData.vars}
                     onChange={(newVars) => setFormData({ ...formData, vars: newVars })}
@@ -634,6 +639,12 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
                   />
                   <p className="form-hint text-base">服务的详细配置参数，支持字符串、数字、布尔、对象和数组</p>
                 </div>
+              </div>
+              <div className="modal-footer modal-footer-actions">
+                <button className="btn btn-secondary" onClick={closeModal}>取消</button>
+                <button className="btn btn-primary" onClick={handleSubmit}>
+                  {editingConfig ? '保存' : '添加'}
+                </button>
               </div>
             </div>
           </div>

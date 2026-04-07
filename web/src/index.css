@@ -635,15 +635,25 @@ textarea::placeholder {
 
 .modal,
 .modal-fullscreen-content {
-  width: min(760px, 100%);
-  max-height: min(90vh, 920px);
-  overflow: auto;
+  width: min(760px, calc(100vw - 2.5rem));
+  max-height: min(calc(100vh - 2.5rem), 900px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border-radius: 30px;
   border: 1px solid rgba(255, 255, 255, 0.62);
   background: rgba(255, 255, 255, 0.82);
   box-shadow: 0 28px 60px rgba(2, 6, 23, 0.18);
   backdrop-filter: blur(28px) saturate(140%);
   -webkit-backdrop-filter: blur(28px) saturate(140%);
+}
+
+.modal-fullscreen-content {
+  width: min(1480px, calc(100vw - 4.5rem));
+}
+
+.modal-form-card {
+  min-height: min(760px, calc(100vh - 3rem));
 }
 
 .modal-preview {
@@ -669,7 +679,102 @@ textarea::placeholder {
 
 .modal-body,
 .modal-preview-body {
+  flex: 1 1 auto;
   padding: 1.35rem;
+  overflow-y: auto;
+}
+
+.modal-form-body {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  padding-inline: 2.25rem;
+}
+
+.service-config-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.85fr) minmax(0, 1fr);
+  gap: 1rem 1.25rem;
+  align-items: start;
+}
+
+.service-config-vars {
+  margin-top: 0.9rem;
+}
+
+.service-config-vars .card,
+.service-config-vars .btn,
+.service-config-vars .form-hint {
+  margin-inline: 0;
+}
+
+.service-config-vars .card {
+  width: 100%;
+}
+
+.modal-footer-actions {
+  padding-inline: 2.25rem;
+}
+
+.modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 999px;
+  color: var(--gray-500);
+  background: rgba(237, 242, 249, 0.84);
+  border: 1px solid rgba(197, 208, 223, 0.9);
+  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.modal-close:hover {
+  color: var(--gray-800);
+  background: rgba(255, 255, 255, 0.96);
+  transform: scale(1.02);
+}
+
+.modal-footer-actions {
+  justify-content: flex-end;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.modal-body::-webkit-scrollbar,
+.modal-preview-body::-webkit-scrollbar,
+.table-container::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-auto::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.modal-body::-webkit-scrollbar-track,
+.modal-preview-body::-webkit-scrollbar-track,
+.table-container::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track,
+.overflow-auto::-webkit-scrollbar-track {
+  background: rgba(228, 235, 244, 0.82);
+  border-radius: 999px;
+}
+
+.modal-body::-webkit-scrollbar-thumb,
+.modal-preview-body::-webkit-scrollbar-thumb,
+.table-container::-webkit-scrollbar-thumb,
+.overflow-y-auto::-webkit-scrollbar-thumb,
+.overflow-auto::-webkit-scrollbar-thumb {
+  background: rgba(140, 154, 176, 0.7);
+  border-radius: 999px;
+  border: 2px solid rgba(228, 235, 244, 0.82);
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover,
+.modal-preview-body::-webkit-scrollbar-thumb:hover,
+.table-container::-webkit-scrollbar-thumb:hover,
+.overflow-y-auto::-webkit-scrollbar-thumb:hover,
+.overflow-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(103, 116, 137, 0.85);
 }
 
 .preview-code {
@@ -751,6 +856,15 @@ textarea::placeholder {
   .table thead th,
   .table tbody td {
     padding-inline: 0.8rem;
+  }
+
+  .service-config-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-form-body,
+  .modal-footer-actions {
+    padding-inline: 1rem;
   }
 }
 

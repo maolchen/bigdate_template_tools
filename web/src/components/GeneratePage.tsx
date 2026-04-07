@@ -258,7 +258,9 @@ export function GeneratePage() {
                 <FileCode className="w-5 h-5 text-primary" />
                 <span className="font-medium">{selectedFile.path}</span>
               </div>
-              <button className="text-gray-400 hover:text-gray-600" onClick={() => setSelectedFile(null)}>×</button>
+              <button className="modal-close" onClick={() => setSelectedFile(null)} aria-label="关闭">
+                ×
+              </button>
             </div>
             <div className="modal-body modal-preview-body">
               <pre className="preview-code">{selectedFile.content}</pre>

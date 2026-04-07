@@ -40,7 +40,7 @@
 
 .sidebar {
   width: 290px;
-  padding: 20px 18px 18px;
+  padding: 16px 18px 18px;
 }
 
 .sidebar-header,
@@ -53,8 +53,9 @@
 }
 
 .sidebar-header {
+  min-height: 126px;
   border-radius: 28px;
-  padding: 20px 18px;
+  padding: 16px 18px;
   margin-bottom: 14px;
 }
 
@@ -88,7 +89,7 @@
 .main-content {
   flex: 1;
   min-width: 0;
-  padding: 20px 20px 20px 0;
+  padding: 16px 20px 20px 0;
 }
 
 .header {
@@ -96,8 +97,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 22px 24px;
-  margin-bottom: 18px;
+  min-height: 126px;
+  padding: 16px 24px;
+  margin-bottom: 12px;
   border-radius: 30px;
   background: rgba(255, 255, 255, 0.58);
   border: 1px solid rgba(255, 255, 255, 0.65);
@@ -109,7 +111,7 @@
 .header-title-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.82rem;
 }
 
 .header-kicker {
@@ -128,8 +130,9 @@
 
 .page-title {
   letter-spacing: -0.04em;
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   line-height: 1.1;
+  margin: 0;
 }
 
 .header-actions {
@@ -152,7 +155,7 @@
 
 .page-content {
   min-height: calc(100vh - 132px);
-  padding: 4px 0 20px;
+  padding: 0 0 20px;
 }
 
 .card-hero {
@@ -172,6 +175,85 @@
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.16);
   filter: blur(10px);
+}
+
+.card-hero .card-body {
+  padding-top: 1.05rem;
+  padding-bottom: 1.05rem;
+}
+
+.overview-page {
+  margin-top: -2px;
+}
+
+.overview-intro {
+  margin-bottom: 1.1rem;
+}
+
+.overview-hero-body {
+  min-height: 132px;
+  display: flex;
+  align-items: center;
+}
+
+.overview-hero-inner {
+  width: 100%;
+  gap: 1.2rem;
+}
+
+.overview-hero-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.overview-hero-actions {
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.overview-stats {
+  gap: 1rem;
+  align-items: stretch;
+  grid-auto-rows: minmax(0, 1fr);
+  margin-top: 0.85rem;
+}
+
+.overview-stat-card {
+  align-self: stretch;
+  min-height: 0;
+}
+
+.overview-stat-body {
+  display: grid;
+  grid-template-rows: 58px auto auto;
+  align-content: start;
+  min-height: 196px;
+  height: 196px;
+  gap: 0.32rem;
+}
+
+.overview-stat-top {
+  align-items: flex-start;
+  margin-bottom: 0;
+}
+
+.overview-stat-count {
+  font-size: 2.15rem;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.overview-stat-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  justify-content: start;
+}
+
+.overview-stat-copy h3,
+.overview-stat-copy p {
+  margin: 0;
 }
 
 .btn-glass-light {
@@ -224,6 +306,16 @@
 }
 
 @media (max-width: 768px) {
+  .overview-hero-inner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .overview-hero-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
   .header {
     padding: 18px;
     border-radius: 24px;
