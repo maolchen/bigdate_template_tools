@@ -1051,6 +1051,7 @@ func webCheckReferencesHandler(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 				}
+			}
 
 		if isReferenced {
 			references = append(references, map[string]interface{}{

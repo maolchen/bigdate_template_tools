@@ -491,6 +491,78 @@ try {
 3. 测试用户/组配置
 4. 测试脚本幂等性
 
+## 🔧 Go 开发环境规范
+
+### Go 版本要求
+本项目需要 **Go 1.21** 或更高版本。推荐使用 Go 1.21.13。
+
+### 环境变量配置
+```bash
+# 设置 Go 国内镜像（加速依赖下载）
+export GOPROXY=https://goproxy.cn,direct
+
+# 设置 Go 工作目录
+export GOPATH=$HOME/go
+export PATH=$PATH:$GOPATH/bin
+```
+
+### 本地安装 Go（Linux/macOS）
+```bash
+# 下载 Go 1.21.13
+wget https://go.dev/dl/go1.21.13.linux-amd64.tar.gz
+
+# 解压到 /usr/local（需要 root 权限）
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.21.13.linux-amd64.tar.gz
+
+# 配置环境变量
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+echo 'export GOPROXY=https://goproxy.cn,direct' >> ~/.bashrc
+source ~/.bashrc
+
+# 验证安装
+go version
+```
+
+### 依赖管理
+```bash
+# 进入项目目录
+cd /workspace/projects
+
+# 下载依赖
+go mod download
+
+# 验证依赖完整性
+go mod verify
+
+# 整理依赖（移除未使用的依赖）
+go mod tidy
+```
+
+### 构建二进制文件
+```bash
+# 构建生产版本
+go build -o server-bin main.go
+
+# 交叉编译（例如编译 Linux amd64）
+GOOS=linux GOARCH=amd64 go build -o server-bin main.go
+```
+
+### 开发调试
+```bash
+# 直接运行（带调试信息）
+go run main.go --web
+
+# 运行测试
+go test ./...
+
+# 代码格式化
+go fmt ./...
+
+# 代码检查
+go vet ./...
+```
+
 ## 📚 构建和部署
 
 ### 开发环境
@@ -532,7 +604,14 @@ CMD ["./server-bin", "--web"]
 
 ## 🔄 版本历史
 
-### v5（当前版本）
+### v5.1（当前版本）
+- **新增**：Go 开发环境规范，明确版本要求和依赖管理
+- **修复**：main.go 语法错误（缺失闭合大括号）
+- **验证**：所有删除按钮的引用检查逻辑符合规范
+- **验证**：嵌套变量引用检查正常工作（如 `mysql.vars.port`）
+- **完善**：文档结构，补充完整的组件列表
+
+### v5
 - 实现四层分离结构（global + nodes + serviceTop + serverConfig）
 - 实现删除前的 template 引用检查
 - 修复服务配置页面变量删除的引用检查逻辑
