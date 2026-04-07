@@ -122,7 +122,7 @@ export function VariablesEditor({ vars, onChange, readonly = false, serviceName,
 
   const handleDelete = async (index: number) => {
     const item = items[index];
-    console.log('[VariablesEditor] 尝试删除变量:', item.key);
+    console.log('[VariablesEditor] 尝试删除变量:', item.key, 'serviceName:', serviceName, 'isGlobal:', isGlobal);
 
     if (readonly) return;
 
@@ -132,16 +132,21 @@ export function VariablesEditor({ vars, onChange, readonly = false, serviceName,
       // 对于服务配置，检查具体变量引用；对于全局配置，检查全局引用
       let checkResult;
       if (isGlobal) {
+        console.log('[VariablesEditor] 检查全局变量引用:', item.key);
         checkResult = await checkReferences({ type: 'global', key: item.key });
       } else if (serviceName) {
-        // 检查具体变量是否被引用
+        console.log('[VariablesEditor] 检查服务变量引用:', item.key, 'serviceName:', serviceName);
         checkResult = await checkReferences({ type: 'vars', key: item.key, service: serviceName });
+      } else {
+        console.warn('[VariablesEditor] serviceName为空，跳过引用检查，允许删除');
+        // 如果serviceName为空，直接允许删除
+        checkResult = { hasReferences: false };
       }
 
       console.log('[VariablesEditor] template引用检查结果:', checkResult);
 
       if (checkResult && checkResult.hasReferences) {
-        const templateList = checkResult.references.map(ref =>
+        const templateList = (checkResult.references || []).map(ref =>
           `- ${ref.path} (${ref.service})`
         ).join('\n');
         alert(`无法删除变量 "${item.key}"，因为该变量被以下template引用：\n\n${templateList}\n\n请先修改这些template，删除相关引用后再尝试删除。`);
