@@ -1,61 +1,79 @@
-# AGENTS.md - 项目概览与开发指南
+# AGENTS.md - 项目开发规范与指南
 
-## 项目概述
+## 📋 项目概述
 
 本项目是一个基于 Go Template 的大数据平台离线配置生成器，用于在无 SSH 互通的网络环境下自动化交付 Hadoop 生态组件。项目提供 Web 可视化配置界面和 REST API，读取 YAML 配置文件，渲染生成各服务的配置文件和安装脚本。
 
 ### 核心功能
-- 配置管理：支持全局配置、节点配置、服务拓扑和服务配置的四层分离结构
-- 模板渲染：基于 Go Template 语法，支持条件判断、循环、函数调用等高级功能
-- Web 界面：提供可视化配置界面，支持 CRUD 操作和实时预览
-- 引用检查：删除前检查 template 引用，防止误删被引用的对象
+- **配置管理**：支持全局配置、节点配置、服务拓扑和服务配置的四层分离结构
+- **模板渲染**：基于 Go Template 语法，支持条件判断、循环、函数调用等高级功能
+- **Web 界面**：提供可视化配置界面，支持 CRUD 操作和实时预览
+- **引用检查**：删除前检查 template 引用，防止误删被引用的对象
 
-## 技术栈
-
-### 后端
-- Go 1.21
-- gopkg.in/yaml.v3 (YAML 解析)
-- text/template (模板引擎)
-- net/http (HTTP 服务)
-
-### 前端
-- Vite + React + TypeScript
-- js-yaml (YAML 格式化)
-- Tailwind CSS (样式)
-
-### 配置格式
-- YAML (主配置文件：config.yaml)
-- Go Template (.tmpl 文件)
-
-## 项目结构
+## 🏗️ 项目结构
 
 ```
 .
-├── main.go                 # Go 后端主入口（单体架构，约1374行）
-├── config.yaml             # 主配置文件
-├── templates/              # Go Template 模板目录
-│   ├── service1/          # 服务1的模板
-│   └── service2/          # 服务2的模板
-├── web/                   # 前端源码目录
+├── main.go                      # Go 后端主入口（单体架构，约 1374 行）
+├── config.yaml                  # 主配置文件
+├── templates/                   # Go Template 模板目录
+│   ├── 服务名称/               # 每个服务一个目录
+│   │   ├── install.sh.tmpl     # 安装脚本模板
+│   │   ├── start.sh.tmpl       # 启动脚本模板
+│   │   └── ...                  # 其他配置文件模板
+├── web/                         # 前端源码目录
 │   ├── src/
-│   │   ├── components/   # React 组件
-│   │   │   ├── VariablesEditor.tsx      # 变量编辑器
-│   │   │   ├── ServicesPage.tsx        # 服务配置页面
-│   │   │   ├── GlobalConfigPage.tsx    # 全局配置页面
-│   │   │   └── NodesPage.tsx           # 节点配置页面
-│   │   └── api/        # API 调用
-│   │       └── config.ts # 配置相关 API
-│   ├── dist/            # 构建输出
+│   │   ├── api/               # API 调用封装
+│   │   │   └── config.ts      # 配置相关 API 和类型定义
+│   │   ├── components/        # React 组件
+│   │   │   ├── VariablesEditor.tsx    # 变量编辑器组件
+│   │   │   ├── ServicesPage.tsx      # 服务配置页面
+│   │   │   ├── GlobalConfigPage.tsx  # 全局配置页面
+│   │   │   ├── NodesPage.tsx         # 节点配置页面
+│   │   │   └── ...                  # 其他页面组件
+│   │   ├── lib/               # 工具库
+│   │   │   └── global-fields.ts # 全局字段定义
+│   │   ├── types/             # TypeScript 类型定义
+│   │   │   └── config.ts      # 配置类型导出
+│   │   ├── App.tsx            # 主应用组件
+│   │   └── main.tsx           # 应用入口
+│   ├── dist/                  # 构建输出（生产环境使用）
 │   └── package.json
-├── .coze                 # 项目配置（构建和运行）
-└── AGENTS.md             # 本文档
+├── docs/                       # 项目文档
+│   ├── GLOBAL_VARS_GUIDE.md    # 全局变量复用规范
+│   └── TEMPLATE_MODIFICATIONS.md # 模板修改记录
+├── .coze                       # 项目配置（构建和运行）
+├── go.mod                      # Go 模块依赖
+├── go.sum                      # Go 依赖锁定文件
+├── package.json                # 前端依赖管理
+├── tsconfig.json              # TypeScript 配置
+├── vite.config.ts             # Vite 配置
+└── AGENTS.md                  # 本文档
 ```
 
-## 配置结构（v5）
+## 🔧 技术栈
 
-项目采用四层分离结构，职责清晰：
+### 后端
+- **语言**：Go 1.21
+- **依赖**：
+  - `gopkg.in/yaml.v3` - YAML 解析
+  - `text/template` - Go 模板引擎
+  - `net/http` - HTTP 服务
 
-### 1. Global（全局配置）
+### 前端
+- **框架**：React 19 + TypeScript 5
+- **构建工具**：Vite 8
+- **样式**：Tailwind CSS 4
+- **依赖**：
+  - `js-yaml` - YAML 格式化和解析
+  - `lucide-react` - 图标库
+  - `@monaco-editor/react` - 代码编辑器
+
+## 📐 配置结构
+
+### 四层分离架构
+
+#### 1. Global（全局配置）
 ```yaml
 global:
   user: bigdata
@@ -65,7 +83,7 @@ global:
   java_home: /data/jdk
 ```
 
-### 2. Nodes（节点池）
+#### 2. Nodes（节点池）
 ```yaml
 nodes:
   master:
@@ -76,7 +94,7 @@ nodes:
     hostname: worker1.hadoop.local
 ```
 
-### 3. ServiceTop（服务拓扑）
+#### 3. ServiceTop（服务拓扑）
 ```yaml
 serviceTop:
   zookeeper:
@@ -89,7 +107,7 @@ serviceTop:
     id_auto_derive: true
 ```
 
-### 4. ServerConfig（服务配置）
+#### 4. ServerConfig（服务配置）
 ```yaml
 serverConfig:
   zookeeper:
@@ -99,32 +117,157 @@ serverConfig:
       tick_time: 2000
 ```
 
-## 核心 API
+## 🎯 核心编码规范
 
-### 配置管理
-- `GET /api/config` - 获取完整配置
-- `PUT /api/config` - 保存完整配置
-- `POST /api/config/reload` - 从文件重新加载配置
+### 1. 职责分离原则（CRITICAL）
 
-### 配置生成
-- `POST /api/generate` - 生成配置文件和安装脚本
-- `GET /api/output` - 获取生成的文件列表
-- `GET /api/output/file?path=xxx` - 获取指定文件内容
-- `GET /api/output/download` - 下载生成的文件
+#### 后端职责
+- **唯一责任**：提供 REST API 接口，处理业务逻辑
+- **数据验证**：在 API Handler 中验证请求数据
+- **引用检查**：所有引用检查逻辑必须在后端完成
+- **模板渲染**：负责 Go Template 的解析和渲染
 
-### 引用检查
-- `POST /api/check-references` - 检查对象是否被 template 引用
+#### 前端职责
+- **UI 交互**：提供用户界面和交互逻辑
+- **状态管理**：管理组件状态和表单数据
+- **API 调用**：封装 API 调用，处理响应和错误
+- **用户反馈**：显示错误提示和成功消息
 
-请求体：
+#### ❌ 禁止模式
+```typescript
+// ❌ 错误示例：前端做业务判断
+const handleDelete = async (key: string) => {
+  if (serviceName === '') {
+    // 前端判断 serviceName 为空，跳过检查
+    return;
+  }
+  // 调用后端接口
+  await checkReferences({ type: 'vars', key, service: serviceName });
+}
+```
+
+#### ✅ 正确模式
+```typescript
+// ✅ 正确示例：前端只负责调用接口，不做业务判断
+const handleDelete = async (key: string) => {
+  // 直接调用后端接口，后端负责所有业务逻辑
+  const result = await checkReferences({ type: 'vars', key, service: serviceName || '' });
+
+  if (result.hasReferences) {
+    alert('无法删除，变量被引用...');
+    return;
+  }
+
+  // 执行删除
+  await deleteItem(key);
+}
+```
+
+### 2. API 调用规范
+
+#### 统一错误处理
+```typescript
+// ✅ 正确示例：统一的错误处理
+export async function checkReferences(params: CheckParams): Promise<CheckResult> {
+  try {
+    const response = await fetch('/api/check-references', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+      throw new Error(`检查引用失败: ${response.statusText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('[API] checkReferences error:', error);
+    throw error; // 重新抛出，让调用者处理
+  }
+}
+```
+
+### 3. 组件设计规范
+
+#### Props 定义
+```typescript
+// ✅ 正确示例：清晰的 Props 定义
+interface VariablesEditorProps {
+  vars: Record<string, any>;
+  onChange: (vars: Record<string, any>) => void;
+  readonly?: boolean;           // 可选参数，使用默认值
+  serviceName?: string;          // 可选参数
+  isGlobal?: boolean;           // 可选参数
+}
+
+export function VariablesEditor({
+  vars,
+  onChange,
+  readonly = false,
+  serviceName,
+  isGlobal = false,
+}: VariablesEditorProps) {
+  // ...
+}
+```
+
+### 4. 日志规范
+
+#### 前端日志
+```typescript
+// ✅ 正确示例：结构化日志
+console.log('[ComponentName] 操作描述', params);
+console.warn('[ComponentName] 警告信息', params);
+console.error('[ComponentName] 错误信息', error);
+
+// 示例：
+console.log('[VariablesEditor] 尝试删除变量:', item.key, 'serviceName:', serviceName);
+console.error('[VariablesEditor] 检查引用失败:', err);
+```
+
+#### 后端日志
+```go
+// ✅ 正确示例：结构化日志
+fmt.Printf("[HandlerName] 操作描述: 参数1=%s, 参数2=%s\n", val1, val2)
+fmt.Printf("[HandlerName] 错误信息: %v\n", err)
+
+// 示例：
+fmt.Printf("[CheckReferences] 请求参数: type=%s, key=%s, service=%s\n", req.Type, req.Key, req.Service)
+```
+
+## 🔌 核心 API
+
+### 配置管理 API
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/config` | 获取完整配置 |
+| PUT | `/api/config` | 保存完整配置 |
+| POST | `/api/config/reload` | 从文件重新加载配置 |
+
+### 配置生成 API
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/generate` | 生成配置文件和安装脚本 |
+| GET | `/api/output` | 获取生成的文件列表 |
+| GET | `/api/output/file?path=xxx` | 获取指定文件内容 |
+| GET | `/api/output/download` | 下载生成的文件 |
+
+### 引用检查 API
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/check-references` | 检查对象是否被 template 引用 |
+
+**请求体**：
 ```json
 {
   "type": "global|node|service|vars",
   "key": "对象名称",
-  "service": "服务名称（仅type为service或vars时需要）"
+  "service": "服务名称（仅 type 为 service 或 vars 时需要）"
 }
 ```
 
-响应体：
+**响应体**：
 ```json
 {
   "hasReferences": true,
@@ -138,184 +281,213 @@ serverConfig:
 }
 ```
 
-### 描述管理
-- `GET /api/descriptions/global` - 获取全局配置描述
-- `POST /api/descriptions/global` - 保存全局配置描述
-- `GET /api/descriptions/:serviceName` - 获取服务配置描述
-- `POST /api/descriptions/:serviceName` - 保存服务配置描述
+### 描述管理 API
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/descriptions/global` | 获取全局配置描述 |
+| POST | `/api/descriptions/global` | 保存全局配置描述 |
+| GET | `/api/descriptions/:serviceName` | 获取服务配置描述 |
+| POST | `/api/descriptions/:serviceName` | 保存服务配置描述 |
 
-## 引用检查机制
+## 📝 模板编写规范
 
-### 检查逻辑
+### 1. 全局变量使用规范
 
-系统在删除对象前会检查该对象是否被 template 引用，防止误删导致配置生成失败。
+#### 目录配置规范
+```yaml
+# config.yaml 中（服务配置）
+vars:
+  data_subdir: "service_name/data"
+  install_subdir: "service_name"
 
-#### 1. Global 变量引用检查
-- 检查模式：`.Global.xxx`
-- 示例：删除 `global.user` 会检查 template 中是否有 `.Global.user` 引用
-
-#### 2. Node 引用检查
-- 检查模式：
-  - `.Instance.Node.NodeName === "nodeName"`
-  - `serviceNodes "nodeName"`
-- 示例：删除节点 `master` 会检查 template 中是否有对该节点的引用
-
-#### 3. Service 引用检查
-- 检查模式：
-  - `serviceNodes "serviceName"`
-  - `serviceEndpointsJoin "serviceName"`
-  - 该服务有 template 目录
-- 示例：删除服务 `zookeeper` 会检查其他 template 是否引用了该服务
-
-#### 4. Vars 变量引用检查（关键修复）
-- 检查模式：`.Instance.Vars.xxx`
-- **修复前问题**：当 `serviceName` 为空时（如添加新服务配置时），后端无法正确匹配变量引用
-- **修复后逻辑**：
-  - 如果指定了 `service`，只检查该服务的 template 文件
-  - 如果 `service` 为空，检查所有 template 文件（覆盖所有可能的情况）
-- 示例：删除服务变量 `client_port` 会检查 template 中是否有 `.Instance.Vars.client_port` 引用
-
-### 引用检查使用场景
-
-#### 前端删除流程
-```typescript
-const handleDelete = async (index: number) => {
-  const item = items[index];
-
-  // 检查是否被template引用
-  let checkResult;
-  if (isGlobal) {
-    checkResult = await checkReferences({ type: 'global', key: item.key });
-  } else if (serviceName) {
-    checkResult = await checkReferences({ type: 'vars', key: item.key, service: serviceName });
-  } else {
-    // serviceName为空，跳过引用检查，直接允许删除
-    checkResult = { hasReferences: false };
-  }
-
-  if (checkResult && checkResult.hasReferences) {
-    alert('无法删除，变量被以下template引用...');
-    return;
-  }
-
-  // 执行删除操作
-};
+# 模板中
+DATA_DIR="{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}"
+INSTALL_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
 ```
 
-#### 后端引用检查实现（main.go）
-```go
-func webCheckReferencesHandler(w http.ResponseWriter, r *http.Request) {
-    // 解析请求
-    var req struct {
-        Type    string `json:"type"`    // "global", "node", "service", "vars"
-        Key     string `json:"key"`     // 对象名称
-        Service string `json:"service"` // 服务名称（仅type为service或vars时需要）
-    }
-    // ...
+#### 用户/组配置规范
+```yaml
+# ❌ 错误：服务级别定义
+vars:
+  run_user: "bigdata"
+  run_group: "bigdata"
 
-    // 遍历所有template文件，检查引用
-    switch req.Type {
-    case "vars":
-        // 关键修复：处理serviceName为空的情况
-        if req.Service == "" || filepath.Dir(relPath) == req.Service || filepath.Dir(relPath) == "." {
-            pattern := fmt.Sprintf(`\.Instance\.Vars\.%s`, req.Key)
-            isReferenced = regexp.MustCompile(pattern).MatchString(contentStr)
-            if isReferenced {
-                if req.Service != "" {
-                    details = append(details, fmt.Sprintf("引用服务变量: .Instance.Vars.%s (在服务 %s 中)", req.Key, req.Service))
-                } else {
-                    details = append(details, fmt.Sprintf("引用服务变量: .Instance.Vars.%s (在 %s 中)", req.Key, relPath))
-                }
-            }
-        } else if req.Service != "" {
-            // 检查其他服务是否间接引用了该服务的变量
-            // ...
-        }
-    }
+# ✅ 正确：使用全局变量
+# 模板中
+RUN_USER="{{ .Global.user }}"
+RUN_GROUP="{{ .Global.group }}"
+```
+
+#### JAVA_HOME 配置规范
+```yaml
+# ❌ 错误：服务级别定义
+vars:
+  java_home: "/data/jdk"
+
+# ✅ 正确：使用全局变量
+# 模板中
+JAVA_HOME="{{ .Global.java_home }}"
+```
+
+### 2. 脚本编写规范
+
+#### 用户权限判断
+```bash
+# ✅ 正确：添加用户权限判断函数
+run_as_root() {
+  if [ "$(whoami)" != "root" ]; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+# 需要root权限的操作
+run_as_root mkdir -p "{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}"
+```
+
+#### 环境变量配置
+```bash
+# ✅ 正确：根据用户类型选择配置文件
+if [ "{{ .Global.user }}" = "root" ]; then
+  echo "export XXX=yyy" >> /etc/profile.d/xxx.sh
+else
+  echo "export XXX=yyy" >> /home/{{ .Global.user }}/.bash_profile
+  echo "export XXX=yyy" >> /etc/profile.d/xxx.sh
+fi
+```
+
+#### 服务启动规范
+```bash
+# ✅ 正确：使用全局用户启动
+# 非 systemd 服务
+su - {{ .Global.user }} -c "xxx start"
+
+# systemd 服务
+[Unit]
+Description=XXX Service
+After=network.target
+
+[Service]
+Type=forking
+User={{ .Global.user }}
+Group={{ .Global.group }}
+ExecStart=xxx
+ExecStop=xxx
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 3. 幂等性要求（CRITICAL）
+
+所有安装脚本必须具备幂等性，即多次执行结果一致：
+
+```bash
+# ✅ 正确示例：幂等性操作
+# 1. 创建目录（已存在不会报错）
+run_as_root mkdir -p "{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
+
+# 2. 创建软链接（已存在先删除再创建）
+run_as_root rm -f /usr/local/xxx
+run_as_root ln -s "{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}" /usr/local/xxx
+
+# 3. 配置文件（先备份再覆盖）
+if [ -f /etc/xxx.conf ]; then
+  cp /etc/xxx.conf /etc/xxx.conf.bak.$(date +%Y%m%d%H%M%S)
+fi
+cat > /etc/xxx.conf << 'EOF'
+{{ content }}
+EOF
+```
+
+### 4. 模板文件命名规范
+
+```
+服务名称/
+├── install.sh.tmpl      # 安装脚本
+├── start.sh.tmpl        # 启动脚本
+├── stop.sh.tmpl         # 停止脚本
+├── check.sh.tmpl        # 健康检查脚本
+├── install_binary.sh.tmpl  # 安装二进制包
+├── setup_dirs.sh.tmpl   # 创建目录结构
+└── config.conf.tmpl     # 配置文件模板
+```
+
+## 🚫 常见问题与规范
+
+### 1. 编码混乱问题
+
+#### 问题：前后端职责不清
+```typescript
+// ❌ 错误：前端做业务判断
+if (serviceName === '') {
+  return; // 跳过检查
+}
+
+// ✅ 正确：后端统一处理
+const result = await checkReferences({ type: 'vars', key, service: serviceName || '' });
+```
+
+#### 解决方案
+- **前端**：只负责 UI 交互和 API 调用
+- **后端**：负责所有业务逻辑、数据验证和引用检查
+
+### 2. 类型安全问题
+
+#### 问题：any 类型滥用
+```typescript
+// ❌ 错误：滥用 any
+const vars: Record<string, any> = {};
+
+// ✅ 正确：定义具体类型
+interface ServiceVars {
+  [key: string]: string | number | boolean | object | null;
+}
+const vars: Record<string, ServiceVars> = {};
+```
+
+### 3. 错误处理不规范
+
+#### 问题：错误被吞掉
+```typescript
+// ❌ 错误：错误被吞掉
+try {
+  await apiCall();
+} catch (err) {
+  console.log(err); // 只打印，不处理
+}
+
+// ✅ 正确：错误向上抛出
+try {
+  await apiCall();
+} catch (err) {
+  console.error('[API] apiCall error:', err);
+  throw err; // 重新抛出
 }
 ```
 
-## 模板语法示例
+## 🧪 测试规范
 
-### 基础引用
-```go
-# 全局配置
-{{ .Global.user }}
+### 1. 功能测试
+- 在浏览器中手动测试所有功能
+- 使用开发者工具检查网络请求和控制台日志
+- 验证错误场景的处理
 
-# 节点信息
-{{ .Instance.Node.IP }}
+### 2. 引用检查测试
+1. 测试全局变量引用检查
+2. 测试节点引用检查
+3. 测试服务引用检查
+4. 测试服务变量引用检查（包括 serviceName 为空的情况）
 
-# 服务变量
-{{ .Instance.Vars.client_port }}
-```
+### 3. 模板测试
+1. 测试全局变量正确使用
+2. 测试路径拼接正确性
+3. 测试用户/组配置
+4. 测试脚本幂等性
 
-### 条件判断
-```go
-{{ if .Instance.AutoID }}
-ID: {{ .Instance.AutoID }}
-{{ else }}
-ID: {{ .Vars.id }}
-{{ end }}
-```
-
-### 循环
-```go
-{{ range serviceNodes "zookeeper" }}
-{{ . }}:2181
-{{ end }}
-```
-
-### 函数调用
-```go
-{{ serviceEndpointsJoin "hdfs_namenode" "," }}
-```
-
-## 开发规范
-
-### 代码规范
-1. Go 代码遵循 Go 标准规范，使用 `gofmt` 格式化
-2. React/TypeScript 代码使用 ESLint 检查
-3. 配置文件使用 YAML 格式，缩进使用 2 空格
-
-### 提交规范
-- feat: 新功能
-- fix: 修复 bug
-- refactor: 重构
-- docs: 文档
-- test: 测试
-
-### 调试
-- 前端日志：浏览器控制台（console.log）
-- 后端日志：标准输出（fmt.Printf）
-- 服务日志：`/app/work/logs/bypass/app.log`、`/app/work/logs/bypass/console.log`
-
-## 常见问题
-
-### 1. 变量删除未弹出引用检查警告
-**原因**：在添加新服务配置时，`serviceName` 为空，导致后端无法正确匹配变量引用。
-
-**解决方案**：
-- 后端修复：在 `webCheckReferencesHandler` 中，当 `req.Service == ""` 时，检查所有 template 文件
-- 前端修复：在 `VariablesEditor` 中，当 `serviceName` 为空时，跳过引用检查或检查所有 template
-
-**代码位置**：
-- 后端：main.go 第 1025-1053 行
-- 前端：web/src/components/VariablesEditor.tsx 第 123-162 行
-
-### 2. 项目结构混乱
-**问题**：Go 后端代码误放入 web/src 目录。
-
-**解决方案**：
-- Go 后端代码应放在项目根目录（main.go）
-- 前端代码应放在 web/src 目录
-- 使用 `.coze` 文件定义构建和运行方式
-
-### 3. 缺少调试日志
-**解决方案**：
-- 在关键操作前后添加 console.log（前端）或 fmt.Printf（后端）
-- 记录请求参数、响应结果、错误信息
-
-## 构建和运行
+## 📚 构建和部署
 
 ### 开发环境
 ```bash
@@ -346,30 +518,24 @@ RUN cd web && pnpm install && pnpm build
 CMD ["./server-bin", "--web"]
 ```
 
-## 测试
+## 📖 参考文档
 
-### 手动测试
-1. 启动服务：`./server-bin --web`
-2. 访问 Web 界面：`http://localhost:5000`
-3. 测试删除功能：
-   - 全局配置：删除一个被引用的全局变量，应弹出警告
-   - 服务配置：删除一个被引用的服务变量，应弹出警告
-   - 节点配置：删除一个被引用的节点，应弹出警告
-   - 服务：删除一个被引用的服务，应弹出警告
+- [全局变量复用规范](docs/GLOBAL_VARS_GUIDE.md)
+- [模板修改记录](docs/TEMPLATE_MODIFICATIONS.md)
+- [使用指南](USAGE_GUIDE.md)
+- [本地部署指南](LOCAL_DEPLOYMENT.md)
+- [Windows 部署指南](WINDOWS_DEPLOYMENT.md)
 
-### 引用检查测试用例
-1. 测试全局变量引用检查
-2. 测试节点引用检查
-3. 测试服务引用检查
-4. 测试服务变量引用检查（包括 serviceName 为空的情况）
-
-## 版本历史
+## 🔄 版本历史
 
 ### v5（当前版本）
 - 实现四层分离结构（global + nodes + serviceTop + serverConfig）
 - 实现删除前的 template 引用检查
 - 修复服务配置页面变量删除的引用检查逻辑
 - 添加详细的调试日志
+- **新增**：前后端职责分离规范
+- **新增**：模板编写规范
+- **新增**：编码规范约束
 
 ### v2
 - 三层定义结构
@@ -378,9 +544,3 @@ CMD ["./server-bin", "--web"]
 ### v1
 - 初始版本
 - 命令行工具
-
-## 联系方式
-
-- 项目负责人：[待补充]
-- 文档维护：[待补充]
-- 问题反馈：[待补充]
