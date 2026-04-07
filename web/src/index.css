@@ -788,6 +788,233 @@ textarea::placeholder {
   white-space: pre-wrap;
 }
 
+.generate-file-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.72rem 0.9rem;
+  border-radius: 18px;
+  border: 1px solid rgba(219, 227, 238, 0.72);
+  background: rgba(255, 255, 255, 0.58);
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  cursor: pointer;
+}
+
+.generate-file-item:hover {
+  background: rgba(255, 255, 255, 0.84);
+  border-color: rgba(163, 181, 205, 0.72);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 24px rgba(15, 23, 42, 0.08);
+}
+
+.generate-file-item__meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.generate-file-item__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--gray-700);
+  font-size: 0.92rem;
+}
+
+.badge-file-shell {
+  color: #0f766e;
+  background: rgba(20, 184, 166, 0.14);
+  border-color: rgba(20, 184, 166, 0.2);
+}
+
+.badge-file-conf {
+  color: #4f46e5;
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(99, 102, 241, 0.2);
+}
+
+.badge-file-json {
+  color: #c2410c;
+  background: rgba(249, 115, 22, 0.14);
+  border-color: rgba(249, 115, 22, 0.2);
+}
+
+.badge-file-properties {
+  color: #0369a1;
+  background: rgba(14, 165, 233, 0.14);
+  border-color: rgba(14, 165, 233, 0.2);
+}
+
+.badge-file-yaml {
+  color: #166534;
+  background: rgba(34, 197, 94, 0.13);
+  border-color: rgba(34, 197, 94, 0.18);
+}
+
+.badge-file-md {
+  color: #7c2d12;
+  background: rgba(251, 146, 60, 0.13);
+  border-color: rgba(251, 146, 60, 0.18);
+}
+
+.badge-file-default {
+  color: var(--gray-600);
+  background: rgba(226, 232, 240, 0.9);
+  border-color: rgba(203, 213, 225, 0.9);
+}
+
+.preview-code-shell {
+  background: linear-gradient(180deg, rgba(225, 252, 246, 0.95) 0%, rgba(240, 249, 255, 0.94) 100%);
+  border: 1px solid rgba(45, 212, 191, 0.22);
+}
+
+.preview-code-conf {
+  background: linear-gradient(180deg, rgba(238, 242, 255, 0.95) 0%, rgba(248, 250, 252, 0.94) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.18);
+}
+
+.preview-code-json {
+  background: linear-gradient(180deg, rgba(255, 247, 237, 0.96) 0%, rgba(255, 251, 235, 0.95) 100%);
+  border: 1px solid rgba(249, 115, 22, 0.18);
+}
+
+.preview-code-properties {
+  background: linear-gradient(180deg, rgba(240, 249, 255, 0.96) 0%, rgba(248, 250, 252, 0.95) 100%);
+  border: 1px solid rgba(14, 165, 233, 0.18);
+}
+
+.preview-code-yaml {
+  background: linear-gradient(180deg, rgba(240, 253, 244, 0.96) 0%, rgba(248, 250, 252, 0.95) 100%);
+  border: 1px solid rgba(34, 197, 94, 0.18);
+}
+
+.preview-code-md {
+  background: linear-gradient(180deg, rgba(255, 247, 237, 0.94) 0%, rgba(255, 255, 255, 0.97) 100%);
+  border: 1px solid rgba(251, 146, 60, 0.16);
+}
+
+.preview-code-default {
+  border: 1px solid rgba(203, 213, 225, 0.72);
+}
+
+.generate-preview-editor {
+  height: min(68vh, 760px);
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  background: rgba(248, 250, 252, 0.98);
+}
+
+.generate-preview-editor .monaco-editor,
+.generate-preview-editor .monaco-editor .overflow-guard {
+  border-radius: 22px;
+}
+
+.generate-markdown-preview {
+  min-height: min(68vh, 760px);
+  padding: 1.5rem 1.65rem;
+  border-radius: 22px;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  overflow: auto;
+  line-height: 1.72;
+  color: var(--gray-800);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.generate-markdown-preview h1,
+.generate-markdown-preview h2,
+.generate-markdown-preview h3,
+.generate-markdown-preview h4,
+.generate-markdown-preview h5,
+.generate-markdown-preview h6 {
+  margin-top: 1.4em;
+  margin-bottom: 0.65em;
+  color: var(--gray-900);
+  line-height: 1.3;
+}
+
+.generate-markdown-preview h1:first-child,
+.generate-markdown-preview h2:first-child,
+.generate-markdown-preview h3:first-child {
+  margin-top: 0;
+}
+
+.generate-markdown-preview p,
+.generate-markdown-preview ul,
+.generate-markdown-preview ol,
+.generate-markdown-preview blockquote,
+.generate-markdown-preview pre,
+.generate-markdown-preview table {
+  margin: 0 0 1rem;
+}
+
+.generate-markdown-preview ul,
+.generate-markdown-preview ol {
+  padding-left: 1.4rem;
+}
+
+.generate-markdown-preview li + li {
+  margin-top: 0.35rem;
+}
+
+.generate-markdown-preview a {
+  color: #0f62fe;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.generate-markdown-preview code {
+  padding: 0.14rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.78);
+  font-size: 0.92em;
+  font-family: 'SFMono-Regular', 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+}
+
+.generate-markdown-preview pre {
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  background: rgba(241, 245, 249, 0.92);
+  overflow: auto;
+}
+
+.generate-markdown-preview pre code {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.generate-markdown-preview blockquote {
+  padding: 0.85rem 1rem;
+  border-left: 4px solid rgba(59, 130, 246, 0.42);
+  background: rgba(239, 246, 255, 0.9);
+  color: var(--gray-700);
+  border-radius: 0 16px 16px 0;
+}
+
+.generate-markdown-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.generate-markdown-preview th,
+.generate-markdown-preview td {
+  padding: 0.72rem 0.8rem;
+  border: 1px solid rgba(214, 223, 235, 0.82);
+  text-align: left;
+}
+
+.generate-markdown-preview th {
+  background: rgba(241, 245, 249, 0.95);
+  color: var(--gray-900);
+}
+
 .editor-container {
   overflow: hidden;
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
