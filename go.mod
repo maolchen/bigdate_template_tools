@@ -1,4 +1,4 @@
-module bigdata-deploy-generator
+module config-generator
 
 go 1.21
 

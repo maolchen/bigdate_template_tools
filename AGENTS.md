@@ -10,11 +10,45 @@
 - **Web 界面**：提供可视化配置界面，支持 CRUD 操作和实时预览
 - **引用检查**：删除前检查 template 引用，防止误删被引用的对象
 
+### 代码架构（v6+）
+本项目采用标准 Go 分层架构，将单体代码拆分为多个独立包，提升可维护性和可测试性：
+
+- **config 包**：配置数据结构和加载/保存逻辑
+  - `types.go`：定义所有配置相关的结构体（Global、Node、ServiceConfig 等）
+  - `config.go`：配置文件的加载和保存
+
+- **generator 包**：配置生成核心逻辑
+  - `instance.go`：构建服务实例列表，处理节点特化配置
+  - `template.go`：Go Template 渲染引擎，支持丰富的模板函数
+  - `output.go`：生成配置文件和安装脚本
+
+- **checker 包**：引用检查逻辑
+  - `checker.go`：检查配置对象是否被 template 引用
+
+- **server 包**：HTTP 服务器和 API
+  - `server.go`：服务器设置、中间件和启动逻辑
+  - `handlers.go`：所有 API 处理函数
+
+- **utils 包**：通用工具函数
+  - `utils.go`：ID 格式化、嵌套值获取、工作目录获取等
+
+- **main.go**：程序入口（约 100 行）
+  - 解析命令行参数
+  - 调用 CLI 模式或 Web 模式
+
+### 架构优势
+1. **职责清晰**：每个包专注于单一职责，便于理解和维护
+2. **易于测试**：模块化设计便于单元测试和集成测试
+3. **可扩展性**：新增功能只需在对应包中添加代码，不影响其他模块
+4. **代码复用**：工具函数和配置逻辑可在不同场景下复用
+
 ## 🏗️ 项目结构
 
 ```
 .
-├── main.go                      # Go 后端主入口（单体架构，约 1374 行）
+├── main.go                      # 主入口文件（约 100 行）
+├── go.mod                       # Go 模块依赖
+├── go.sum                       # Go 依赖锁定文件
 ├── config.yaml                  # 主配置文件
 ├── templates/                   # Go Template 模板目录
 │   ├── 服务名称/               # 每个服务一个目录
@@ -43,16 +77,26 @@
 │   │   └── main.tsx           # 应用入口
 │   ├── dist/                  # 构建输出（生产环境使用）
 │   └── package.json
-├── docs/                       # 项目文档
+├── config/                      # 配置管理包
+│   ├── types.go               # 配置结构体定义
+│   └── config.go              # 配置加载和保存
+├── generator/                   # 模板生成包
+│   ├── instance.go            # 服务实例构建
+│   ├── template.go            # 模板渲染
+│   └── output.go              # 输出生成
+├── checker/                     # 引用检查包
+│   └── checker.go             # Template 引用检查逻辑
+├── server/                      # HTTP 服务器包
+│   ├── server.go              # 服务器设置和启动
+│   └── handlers.go            # API 处理函数
+├── utils/                       # 工具函数包
+│   └── utils.go               # 通用工具函数
+├── docs/                        # 项目文档
 │   ├── GLOBAL_VARS_GUIDE.md    # 全局变量复用规范
-│   └── TEMPLATE_MODIFICATIONS.md # 模板修改记录
-├── .coze                       # 项目配置（构建和运行）
-├── go.mod                      # Go 模块依赖
-├── go.sum                      # Go 依赖锁定文件
-├── package.json                # 前端依赖管理
-├── tsconfig.json              # TypeScript 配置
-├── vite.config.ts             # Vite 配置
-└── AGENTS.md                  # 本文档
+│   ├── TEMPLATE_MODIFICATIONS.md # 模板修改记录
+│   └── REFERENCE_CHECK_VALIDATION.md # 引用检查验证报告
+├── .coze                        # 项目配置（构建和运行）
+└── AGENTS.md                    # 本文档
 ```
 
 ## 🔧 技术栈
@@ -604,7 +648,18 @@ CMD ["./server-bin", "--web"]
 
 ## 🔄 版本历史
 
-### v5.1（当前版本）
+### v6（当前版本）
+- **重构**：将单体 main.go（1381 行）拆分为标准分层架构
+  - config 包：配置结构定义和加载/保存
+  - generator 包：服务实例构建、模板渲染、输出生成
+  - checker 包：Template 引用检查逻辑
+  - server 包：HTTP 服务器和 API 处理
+  - utils 包：通用工具函数
+  - main.go：仅保留主入口（约 100 行）
+- **优化**：模块化设计，提升代码可维护性和可测试性
+- **验证**：所有功能测试通过，API 接口正常工作
+
+### v5.1
 - **新增**：Go 开发环境规范，明确版本要求和依赖管理
 - **修复**：main.go 语法错误（缺失闭合大括号）
 - **验证**：所有删除按钮的引用检查逻辑符合规范
