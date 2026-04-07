@@ -26,11 +26,15 @@
 │   │   ├── api/               # API 调用封装
 │   │   │   └── config.ts      # 配置相关 API 和类型定义
 │   │   ├── components/        # React 组件
-│   │   │   ├── VariablesEditor.tsx    # 变量编辑器组件
-│   │   │   ├── ServicesPage.tsx      # 服务配置页面
-│   │   │   ├── GlobalConfigPage.tsx  # 全局配置页面
-│   │   │   ├── NodesPage.tsx         # 节点配置页面
-│   │   │   └── ...                  # 其他页面组件
+│   │   │   ├── ExportPage.tsx      # 导出页面组件
+│   │   │   ├── GeneratePage.tsx    # 生成配置页面组件
+│   │   │   ├── GlobalConfigPage.tsx # 全局配置页面组件
+│   │   │   ├── NodesPage.tsx       # 节点配置页面组件
+│   │   │   ├── OverviewPage.tsx    # 概览页面组件
+│   │   │   ├── PreviewPage.tsx     # 预览页面组件
+│   │   │   ├── ServicesPage.tsx    # 服务配置页面组件
+│   │   │   ├── Sidebar.tsx          # 侧边栏导航组件
+│   │   │   └── VariablesEditor.tsx  # 变量编辑器组件
 │   │   ├── lib/               # 工具库
 │   │   │   └── global-fields.ts # 全局字段定义
 │   │   ├── types/             # TypeScript 类型定义
