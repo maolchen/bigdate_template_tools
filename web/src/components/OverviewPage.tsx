@@ -77,7 +77,7 @@ export function OverviewPage({ config, onReload }: OverviewPageProps) {
       </div>
       
       {/* 快速操作 */}
-      <div className="card mb-6" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+      <div className="card card-hero mb-6">
         <div className="card-body text-white">
           <div className="flex items-center justify-between">
             <div>
@@ -87,18 +87,16 @@ export function OverviewPage({ config, onReload }: OverviewPageProps) {
             <div className="flex gap-2">
               {onReload && (
                 <button 
-                  className="btn btn-secondary"
+                  className="btn btn-glass-light"
                   onClick={onReload}
-                  style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white' }}
                 >
                   <RefreshCw className="w-4 h-4" />
                   重新加载
                 </button>
               )}
               <button 
-                className="btn"
+                className="btn btn-hero-primary"
                 onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'generate' }))}
-                style={{ background: 'white', color: '#667eea' }}
               >
                 <Play className="w-4 h-4" />
                 生成配置
@@ -197,7 +195,7 @@ export function OverviewPage({ config, onReload }: OverviewPageProps) {
               通过
             </span>
           ) : (
-            <span className="badge badge-danger flex items-center gap-1" style={{background: 'rgba(239,68,68,0.1)', color: 'var(--danger)'}}>
+            <span className="badge badge-danger flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {invalidNodeRefs.length} 个问题
             </span>

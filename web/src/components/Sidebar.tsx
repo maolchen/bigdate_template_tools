@@ -29,11 +29,11 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+        <div className="brand-lockup flex items-center gap-3">
+          <div className="brand-mark w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <Settings className="w-5 h-5 text-white" />
           </div>
-          <div>
+          <div className="sidebar-brand-copy">
             <h1 className="text-lg font-semibold text-gray-800">配置生成器</h1>
             <p className="text-xs text-gray-500">大数据平台离线配置</p>
           </div>
@@ -50,8 +50,10 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
               className={`nav-item w-full text-left ${isActive ? 'active' : ''}`}
               onClick={() => onTabChange(item.id)}
             >
-              <Icon className="w-5 h-5" />
-              <span>{item.label}</span>
+              <div className="nav-item-main">
+                <Icon className="w-5 h-5" />
+                <span>{item.label}</span>
+              </div>
               {item.id === 'generate' && (
                 <span className="ml-auto badge badge-blue text-xs">核心</span>
               )}
@@ -60,7 +62,7 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         })}
       </nav>
       
-      <div className="p-4 border-t">
+      <div className="sidebar-footer p-4 border-t">
         <div className="text-xs text-gray-500">
           <p>版本: v1.0.0</p>
           <p className="mt-1">后端: Go + 前端: React</p>

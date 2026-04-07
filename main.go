@@ -100,7 +100,7 @@ func runCLIMode() {
 	fmt.Println("\n============================================")
 	fmt.Println("生成配置文件")
 	fmt.Println("============================================")
-	if err := generator.GenerateOutputs(cfg, instances, "output"); err != nil {
+	if _, err := generator.GenerateOutputs(cfg, instances, "output"); err != nil {
 		fmt.Printf("生成配置失败: %v\n", err)
 		os.Exit(1)
 	}

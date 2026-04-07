@@ -1,6 +1,31 @@
 // API 基础路径
 const API_BASE = '/api';
 
+function groupOutputFiles(files: string[]): OutputResult {
+  const grouped: Record<string, string[]> = {};
+
+  files.forEach((file) => {
+    const normalized = file.replace(/\\/g, '/');
+    const [node, ...rest] = normalized.split('/');
+    if (!node) {
+      return;
+    }
+
+    const nestedPath = rest.join('/');
+    if (!grouped[node]) {
+      grouped[node] = [];
+    }
+    grouped[node].push(nestedPath || node);
+  });
+
+  Object.values(grouped).forEach((entries) => entries.sort());
+
+  return {
+    files: grouped,
+    total: files.length,
+  };
+}
+
 // 获取配置
 export async function fetchConfig(): Promise<AppConfig> {
   const response = await fetch(`${API_BASE}/config`);
@@ -25,21 +50,52 @@ export async function generateConfig(): Promise<GenerateResult> {
     method: 'POST',
   });
   if (!response.ok) throw new Error('生成配置失败');
-  return response.json();
+  const data = await response.json();
+
+  return {
+    success: Boolean(data.success),
+    message: data.message ?? '配置生成完成',
+    results: data.results ?? {},
+    errors: Array.isArray(data.errors) ? data.errors : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings : [],
+    skippedServices: Array.isArray(data.skippedServices) ? data.skippedServices : [],
+    stats: {
+      nodes: data.stats?.nodes ?? 0,
+      services: data.stats?.services ?? 0,
+      generated: data.stats?.generated ?? data.files ?? 0,
+      skipped: data.stats?.skipped ?? 0,
+    },
+  };
 }
 
 // 获取生成的文件列表
 export async function fetchOutput(): Promise<OutputResult> {
   const response = await fetch(`${API_BASE}/output`);
   if (!response.ok) throw new Error('获取输出文件失败');
-  return response.json();
+  const data = await response.json();
+
+  if (Array.isArray(data)) {
+    return groupOutputFiles(data);
+  }
+
+  return {
+    files: data.files ?? {},
+    total: data.total ?? 0,
+  };
 }
 
 // 获取单个文件内容
 export async function fetchOutputFile(path: string): Promise<{ path: string; content: string }> {
   const response = await fetch(`${API_BASE}/output/file?path=${encodeURIComponent(path)}`);
   if (!response.ok) throw new Error('获取文件内容失败');
-  return response.json();
+
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+
+  const content = await response.text();
+  return { path, content };
 }
 
 // 下载生成的配置包
@@ -158,6 +214,11 @@ export interface GenerateResult {
   results: Record<string, string[]>;
   errors: string[];
   warnings: string[];
+  skippedServices: Array<{
+    nodeIp: string;
+    service: string;
+    reason: string;
+  }>;
   stats: {
     nodes: number;
     services: number;

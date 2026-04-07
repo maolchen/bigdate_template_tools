@@ -1,595 +1,572 @@
-# ============================================================
-# 全局配置
-# ============================================================
 global:
-  # 基础目录
-  install_base_dir: "/data/localization"
-  data_base_dir: "/data"
-  temp_dir: "/data/tmp_install_dir"
-  software_dir: "/data/softwares"
-  pkg_pro_dir: "/data/20251027-yuwq-cdtest"
-  
-  # JDK配置
-  jdk_version: "1.8.0_65"
-  jdk_path: "/data/jdk"
-  java_home: "/data/jdk/"
-  
-  # 系统用户
-  user: "bigdata"
-  group: "bigdata"
-  timezone: "Asia/Shanghai"
-
-# ============================================================
-# 节点池（支持一个IP对应多个节点别名）
-# ============================================================
+    data_base_dir: /data
+    group: deployuser1
+    install_base_dir: /data/localization
+    java_home: /data/jdk/
+    jdk_path: /data/jdk
+    pkg_pro_dir: /data/20251027-yuwq-cdtest
+    software_dir: /data/softwares
+    temp_dir: /data/tmp_install_dir
+    timezone: Asia/Shanghai
+    user: appuser
 nodes:
-  # ==================== Master节点 ====================
-  dw-master1:
-    ip: "192.168.10.10"
-    hostname: "dw-master1"
-  
-  dw-master2:
-    ip: "192.168.10.11"
-    hostname: "dw-master2"
-  
-  dw-master3:
-    ip: "192.168.10.12"
-    hostname: "dw-master3"
-  
-  # ==================== Worker节点 ====================
-  dw-worker1:
-    ip: "192.168.10.13"
-    hostname: "dw-worker1"
-  
-  dw-worker2:
-    ip: "192.168.10.14"
-    hostname: "dw-worker2"
-  
-  dw-worker3:
-    ip: "192.168.10.15"
-    hostname: "dw-worker3"
-  
-  # ==================== Kafka专用节点（复用worker机器）====================
-  realtime-kafka1:
-    ip: "192.168.10.13"
-    hostname: "realtime-kafka1"
-  
-  realtime-kafka2:
-    ip: "192.168.10.14"
-    hostname: "realtime-kafka2"
-  
-  realtime-kafka3:
-    ip: "192.168.10.15"
-    hostname: "realtime-kafka3"
-  
-  # ==================== ES专用节点 ====================
-  realtime-es1:
-    ip: "192.168.10.16"
-    hostname: "realtime-es1"
-  
-  realtime-es2:
-    ip: "192.168.10.17"
-    hostname: "realtime-es2"
-  
-  realtime-es3:
-    ip: "192.168.10.18"
-    hostname: "realtime-es3"
-  
-  # ==================== Redis节点 ====================
-  realtime-redis:
-    ip: "192.168.10.19"
-    hostname: "realtime-redis"
-  
-  # ==================== SSDB节点 ====================
-  etl-ssdb:
-    ip: "192.168.10.20"
-    hostname: "etl-ssdb"
-
-# ============================================================
-# 服务拓扑（服务部署位置）
-# ============================================================
+    dw-master1:
+        ip: 192.168.10.10
+        hostname: dw-master1
+    dw-master2:
+        ip: 192.168.10.11
+        hostname: dw-master2
+    dw-master3:
+        ip: 192.168.10.12
+        hostname: dw-master3
+    dw-worker1:
+        ip: 192.168.10.13
+        hostname: dw-worker1
+    dw-worker2:
+        ip: 192.168.10.14
+        hostname: dw-worker2
+    dw-worker3:
+        ip: 192.168.10.15
+        hostname: dw-worker3
+    etl-ssdb:
+        ip: 192.168.10.20
+        hostname: etl-ssdb
+    realtime-es1:
+        ip: 192.168.10.16
+        hostname: realtime-es1
+    realtime-es2:
+        ip: 192.168.10.17
+        hostname: realtime-es2
+    realtime-es3:
+        ip: 192.168.10.18
+        hostname: realtime-es3
+    realtime-kafka1:
+        ip: 192.168.10.13
+        hostname: realtime-kafka1
+    realtime-kafka2:
+        ip: 192.168.10.14
+        hostname: realtime-kafka2
+    realtime-kafka3:
+        ip: 192.168.10.15
+        hostname: realtime-kafka3
+    realtime-redis:
+        ip: 192.168.10.19
+        hostname: realtime-redis
 serviceTop:
-  # ==================== 第一步：服务器初始化（所有节点）====================
-  server_init:
-    nodes: ["*"]
-  
-  # ==================== 第二步：安装DNS服务（所有节点）====================
-  dnsmasq:
-    nodes: ["*"]
-  
-  # ==================== 第三步：安装NTP服务 ====================
-  ntp_master:
-    nodes: [dw-master1]
-  
-  ntp_slave:
-    nodes: [dw-master2, dw-master3, dw-worker1, dw-worker2, dw-worker3,
-            realtime-kafka1, realtime-kafka2, realtime-kafka3,
-            realtime-es1, realtime-es2, realtime-es3]
-  
-  # ==================== 第四步：安装全局工具（所有节点）====================
-  install_jdk:
-    nodes: ["*"]
-  
-  # ==================== 第五步：安装Python3（所有节点）====================
-  python3:
-    nodes: ["*"]
-  
-  # ==================== 第六步：安装Scala（大数据节点）====================
-  scala:
-    nodes: [dw-master1, dw-master2, dw-master3,
-            dw-worker1, dw-worker2, dw-worker3,
-            realtime-kafka1, realtime-kafka2, realtime-kafka3]
-  
-  # ==================== 第六步：基础服务 ====================
-  docker:
-    nodes: [dw-master3, dw-worker1]
-  
-  # ==================== 第七步：MySQL数据库 ====================
-  mysql:
-    nodes: [dw-master3]
-  
-  # ==================== Redis缓存 ====================
-  redis:
-    nodes: [realtime-redis]
-  
-  # ==================== SSDB存储 ====================
-  ssdb:
-    nodes: [etl-ssdb]
-  
-  zookeeper:
-    nodes: [dw-master1, dw-master2, dw-master3]
-    id_auto_derive: true
-  
-  kafka:
-    nodes: [realtime-kafka1, realtime-kafka2, realtime-kafka3]
-    id_auto_derive: true
-  
-  # ==================== 第四步：Hadoop 3 生态 ====================
-  # 所有Hadoop节点（包括NameNode、JournalNode、DataNode、ResourceManager、NodeManager）
-  hadoop3:
-    nodes: [dw-master1, dw-master2, dw-master3, dw-worker1, dw-worker2, dw-worker3]
-  
-  spark_master:
-    nodes: [dw-master1]
-  
-  spark_worker:
-    nodes: [dw-worker1, dw-worker2, dw-worker3]
-  
-  flink_jobmanager:
-    nodes: [dw-master1]
-  
-  flink_taskmanager:
-    nodes: [dw-worker1, dw-worker2, dw-worker3]
-  
-  # ==================== Doris 数仓 ====================
-  doris/fe:
-    nodes: [dw-master1]
-  
-  doris/be:
-    nodes: [dw-master1, dw-worker1, dw-worker2, dw-worker3]
-  
-  # ==================== 第五步：数据存储 ====================
-  elasticsearch:
-    nodes: [realtime-es1, realtime-es2, realtime-es3]
-  
-  # ==================== 第六步：调度系统 ====================
-  dolphinscheduler_master:
-    nodes: [dw-master1]
-  
-  dolphinscheduler_worker:
-    nodes: [dw-worker1, dw-worker2, dw-worker3]
-  
-  dolphinscheduler_api:
-    nodes: [dw-master1]
-
-# ============================================================
-# 服务配置（完全配置化，无硬编码）
-# ============================================================
+    docker:
+        nodes:
+            - dw-master3
+            - dw-worker1
+        id_auto_derive: false
+    dolphinscheduler_api:
+        nodes:
+            - dw-master1
+        id_auto_derive: false
+    dolphinscheduler_master:
+        nodes:
+            - dw-master1
+        id_auto_derive: false
+    dolphinscheduler_worker:
+        nodes:
+            - dw-worker1
+            - dw-worker2
+            - dw-worker3
+        id_auto_derive: false
+    doris/be:
+        nodes:
+            - dw-master1
+            - dw-worker1
+            - dw-worker2
+            - dw-worker3
+        id_auto_derive: false
+    doris/fe:
+        nodes:
+            - dw-master1
+        id_auto_derive: false
+    elasticsearch:
+        nodes:
+            - realtime-es1
+            - realtime-es2
+            - realtime-es3
+        id_auto_derive: false
+    flink_jobmanager:
+        nodes:
+            - dw-master1
+        id_auto_derive: false
+    flink_taskmanager:
+        nodes:
+            - dw-worker1
+            - dw-worker2
+            - dw-worker3
+        id_auto_derive: false
+    hadoop3:
+        nodes:
+            - dw-master1
+            - dw-master2
+            - dw-master3
+            - dw-worker1
+            - dw-worker2
+            - dw-worker3
+        id_auto_derive: false
+    install_jdk:
+        nodes:
+            - '*'
+        id_auto_derive: false
+    kafka:
+        nodes:
+            - realtime-kafka1
+            - realtime-kafka2
+            - realtime-kafka3
+        id_auto_derive: true
+    mysql:
+        nodes:
+            - dw-master3
+        id_auto_derive: false
+    ntp_master:
+        nodes:
+            - dw-master1
+        id_auto_derive: false
+    ntp_slave:
+        nodes:
+            - dw-master2
+            - dw-master3
+            - dw-worker1
+            - dw-worker2
+            - dw-worker3
+            - realtime-kafka1
+            - realtime-kafka2
+            - realtime-kafka3
+            - realtime-es1
+            - realtime-es2
+            - realtime-es3
+        id_auto_derive: false
+    python3:
+        nodes:
+            - '*'
+        id_auto_derive: false
+    redis:
+        nodes:
+            - realtime-redis
+        id_auto_derive: false
+    scala:
+        nodes:
+            - dw-master1
+            - dw-master2
+            - dw-master3
+            - dw-worker1
+            - dw-worker2
+            - dw-worker3
+            - realtime-kafka1
+            - realtime-kafka2
+            - realtime-kafka3
+        id_auto_derive: false
+    server_init:
+        nodes:
+            - '*'
+        id_auto_derive: false
+    spark_master:
+        nodes:
+            - dw-master1
+        id_auto_derive: false
+    spark_worker:
+        nodes:
+            - dw-worker1
+            - dw-worker2
+            - dw-worker3
+        id_auto_derive: false
+    ssdb:
+        nodes:
+            - etl-ssdb
+        id_auto_derive: false
+    zookeeper:
+        nodes:
+            - dw-master1
+            - dw-master2
+            - dw-master3
+        id_auto_derive: true
 serverConfig:
-  # ==================== 全局服务 ====================
-  server_init:
-    type: "global"
-    description: "服务器初始化（所有节点）"
-    vars:
-      # 内核模块列表
-      kernelModules:
-        - ip_vs
-        - ip_vs_rr
-        - ip_vs_wrr
-        - ip_vs_sh
-        - nf_conntrack
-        - br_netfilter
-      # sysctl内核参数
-      sysctlSettings:
-        net.ipv4.ip_forward: 1
-        net.core.somaxconn: 65536
-        net.ipv4.tcp_max_syn_backlog: 8192
-        vm.swappiness: 0
-        vm.panic_on_oom: 0
-        vm.max_map_count: 2000000
-        vm.dirty_background_ratio: 5
-        fs.file-max: 6553560
-      # 文件描述符限制
-      limitsSettings:
-        '* soft nofile': '102400'
-        '* hard nofile': '102400'
-        '* soft nproc': '102400'
-        '* hard nproc': '102400'
-        '* soft memlock': 'unlimited'
-        '* hard memlock': 'unlimited'
-        'root soft nproc': 'unlimited'
-        'root hard nproc': 'unlimited'
-  
-  install_jdk:
-    type: "global"
-    description: "安装JDK（所有节点）"
-    vars:
-      package_subdir: "realtime-new-doris/realtime/kafka"
-      pkg_name: "jdk-8u202-linux-x64.tar.gz"
-  
-  # ==================== Python3 ====================
-  python3:
-    type: "global"
-    description: "安装Python3（所有节点）"
-    vars:
-      version: "3.6.8"
-      version_setuptools: "40.0.0"
-      version_pip: "18.0"
-      package_subdir: "realtime-new-doris/realtime/python3"
-      pkg_name: "Python-3.6.8.tar.xz"
-  
-  # ==================== Scala ====================
-  scala:
-    description: "安装Scala（大数据节点）"
-    vars:
-      version: "2.11.6"
-      install_dir: "/data/scala"
-      package_subdir: "realtime-new-doris/realtime/kafka"
-  
-  # ==================== DNS服务 ====================
-  dnsmasq:
-    type: "global"
-    description: "安装DNS服务（所有节点）"
-    vars:
-      conf_dir: "/etc/dnsmasq.d"
-  
-  # ==================== NTP服务 ====================
-  ntp_master:
-    description: "NTP主服务器"
-    vars:
-      stratum: 10
-  
-  ntp_slave:
-    description: "NTP从服务器"
-  
-  # ==================== 基础服务 ====================
-  docker:
-    vars:
-      version: "26.1.3"
-      bin_path: "/usr/local/bin"
-      package_subdir: "realtime-new-doris/realtime/web_all/docker"
-  
-  # ==================== MySQL数据库 ====================
-  mysql:
-    description: "MySQL数据库（Docker部署）"
-    vars:
-      # 容器配置
-      container_name: "zanalytics_mysql_v33"
-      mysql_image: "mysql:5.7.33"
-      container_port: 3306
-      
-      # MySQL连接配置
-      mysql_host: "realtime-db"
-      mysql_port: 3306
-      mysql_user: "web"
-      mysql_password: "zanalytics"
-      mysql_root_password: "zanalytics"
-      
-      # 数据库配置
-      mysql_database: "sdkv"
-      databases:
-        - "sdkv"
-        - "audit_log"
-        - "cep"
-      
-      # 目录配置（相对路径，将与global.install_base_dir拼接）
-      mysql_data_subdir: "mysql/data"
-      mysql_config_subdir: "mysql"
-      init_subdir: "mysql/init"
-      
-      # 安装包配置
-      package_subdir: "realtime-new-doris/realtime/web_all/mysql"
-      image_name: "mysql-5.7.33.tar"
-      
-      # SQL脚本目录
-      sql_tools_subdir: "tools"
-  
-  # ==================== Redis缓存 ====================
-  redis:
-    description: "Redis缓存服务（编译安装，多实例）"
-    vars:
-      version: "6.2.14"
-      install_dir: "/usr/local/redis"
-      package_subdir: "realtime-new-doris/realtime/web_all/app/redis_26480"
-      
-      # 多实例配置（data_subdir 为相对路径，与 global.data_base_dir 拼接）
-      instances:
-        - port: 26480
-          data_subdir: "redis_26480"
-          pid_file: "redis_26480.pid"
-          logfile: "redis_26480.log"
-        - port: 26380
-          data_subdir: "redis_26380"
-          pid_file: "redis_26380.pid"
-          logfile: "redis_26380.log"
-      
-      # Redis通用配置
-      bind: "0.0.0.0"
-      daemonize: "yes"
-      timeout: 0
-      tcp_keepalive: 300
-      loglevel: "notice"
-      databases: 16
-      maxmemory: "4gb"
-      maxmemory_policy: "allkeys-lru"
-      appendonly: "yes"
-      appendfsync: "everysec"
-  
-  # ==================== SSDB存储 ====================
-  ssdb:
-    description: "SSDB高性能存储（编译安装，多实例）"
-    vars:
-      version: "ssdb_master"
-      # SSDB编译安装目录固定为 /usr/local/ssdb，不能修改
-      install_dir: "/usr/local/ssdb"
-      package_subdir: "realtime-new-doris/realtime/web_all/etl-ssdb"
-      
-      # 多实例配置（data_subdir 为相对路径，与 global.data_base_dir 拼接）
-      instances:
-        - port: 8892
-          data_subdir: "data2"
-          config_file: "ssdb_8892.conf"
-        - port: 8893
-          data_subdir: "data3"
-          config_file: "ssdb_8893.conf"
-        - port: 8894
-          data_subdir: "data4"
-          config_file: "ssdb_8894.conf"
-        - port: 8895
-          data_subdir: "data5"
-          config_file: "ssdb_8895.conf"
-        - port: 8897
-          data_subdir: "data7"
-          config_file: "ssdb_8897.conf"
-        - port: 8898
-          data_subdir: "data8"
-          config_file: "ssdb_8898.conf"
-      
-      # SSDB通用配置
-      bind: "0.0.0.0"
-      work_rps: 1000
-      work_threads: 8
-      cache_size: 1024
-      block_size: 32
-      compaction_speed: 1000
-      write_buffer_size: 64
-      compression: "no"
-  
-  zookeeper:
-    id_field: "myid"
-    id_format: "index+1"
-    vars:
-      version: "3.8.3"
-      client_port: 2181
-      server_port: 2888
-      election_port: 3888
-      tick_time: 2000
-      init_limit: 10
-      sync_limit: 5
-  
-  kafka:
-    id_field: "broker_id"
-    id_format: "index+1"
-    vars:
-      # 版本配置（支持 0.11.0.2 和 3.3.2）
-      version: "2.11-0.11.0.2"
-      scala_version: "2.11"
-      
-      # 安装配置（install_subdir 为相对路径，与 global.install_base_dir 拼接）
-      install_subdir: "kafka"
-      package_subdir: "realtime-new-doris/realtime/kafka"
-      
-      # Zookeeper配置（data_subdir 为相对路径，与 global.data_base_dir 拼接）
-      zookeeper:
-        data_subdir: "zk-kafka-data"
-        client_port: 2182
-        peer_port: 2889
-        election_port: 3889
-      
-      # Kafka Server配置（log_subdir 为相对路径，与 global.data_base_dir 拼接）
-      server:
-        port: 9092
-        log_subdir: "kafka-data"
-        log_retention_hours: 168
-        num_partitions: 5
-        default_replication_factor: 2
-        delete_topic_enable: true
-        num_network_threads: 3
-        num_io_threads: 8
-        socket_send_buffer_bytes: 102400
-        socket_receive_buffer_bytes: 102400
-        socket_request_max_bytes: 104857600
-        log_segment_bytes: 1073741824
-        log_retention_check_interval_ms: 300000
-        zookeeper_connection_timeout_ms: 6000
-        group_initial_rebalance_delay_ms: 0
-        offsets_topic_replication_factor: 1
-        transaction_state_log_replication_factor: 1
-        transaction_state_log_min_isr: 1
-      
-      # Consumer配置
-      consumer:
-        group_id: "test-consumer-group"
-        zookeeper_connection_timeout_ms: 6000
-      
-      # Producer配置
-      producer:
-        acks: "all"
-        retries: 3
-        batch_size: 16384
-        buffer_memory: 33554432
-      
-      # Topic初始化列表
-      topics:
-        - name: "sdklua_online"
-          partitions: 5
-          replication_factor: 2
-        - name: "debug"
-          partitions: 5
-          replication_factor: 2
-        - name: "pay_statisv2"
-          partitions: 5
-          replication_factor: 2
-        - name: "pay_zg_total"
-          partitions: 5
-          replication_factor: 2
-        - name: "pay_zg_total_random"
-          partitions: 5
-          replication_factor: 2
-        - name: "tag-evaluate-new"
-          partitions: 1
-          replication_factor: 1
-        - name: "file-task"
-          partitions: 1
-          replication_factor: 1
-        - name: "group-user-load"
-          partitions: 1
-          replication_factor: 1
-  
-  # ==================== Hadoop 3 生态 ====================
-  hadoop3:
-    description: "Hadoop 3 生态（HDFS HA + YARN HA）"
-    vars:
-      version: "3.3.6"
-      scala_version: "2.12"
-      
-      # 安装配置
-      install_subdir: "hadoop"
-      package_subdir: "realtime-new-doris/realtime/hadoop3"
-      pkg_name: "hadoop-3.3.6.tar.gz"
-      
-      # HDFS HA配置
-      nameservice: "zhugeio"
-      namenode_rpc_port: 8020
-      namenode_http_port: 50070
-      
-      # 数据目录
-      namenode_data_subdir: "dfs/nn"
-      tmp_data_subdir: "dfs/tmp"
-      datanode_data_subdir: "dfs/dn"
-      journalnode_data_subdir: "dfs/jn"
-      
-      # 端口配置
-      journalnode_port: 8485
-      datanode_data_port: 9866
-      datanode_http_port: 9864
-      
-      # JVM配置
-      namenode_heapsize: "4096m"
-      
-      # HDFS块大小
-      blocksize: "268435456"
-      
-      # YARN配置
-      yarn_cluster_id: "zhugeio2"
-      resourcemanager_port: 8032
-      resourcemanager_web_port: 8089
-      resourcemanager_scheduler_port: 8030
-      resourcemanager_resource_port: 8031
-      scheduler_minimum_allocation_mb: 32
-      scheduler_maximum_allocation_vcores: 8
-      nodemanager_resource_memory_mb: 12288
-      vmem_pmem_ratio: 5
-      
-      # YARN数据目录
-      nodemanager_local_subdir: "hadoop3/hadoop-yarn/cache"
-      nodemanager_log_subdir: "hadoop3/hadoop-yarn/containers"
-      remote_app_log_dir: "hdfs://zhugeio/var/log/hadoop-yarn/apps"
-  
-  spark_master:
-    vars:
-      version: "3.5.0"
-      hadoop_version: "3"
-      master_port: 7077
-      webui_port: 8080
-  
-  spark_worker:
-    vars:
-      version: "3.5.0"
-      webui_port: 8081
-      cores: 4
-      memory: "4g"
-  
-  flink_jobmanager:
-    vars:
-      version: "1.18.0"
-      scala_version: "2.12"
-      rpc_port: 6123
-      web_port: 8081
-  
-  flink_taskmanager:
-    vars:
-      version: "1.18.0"
-      task_slots: 4
-      memory: "2g"
-  
-  # ==================== Doris 数仓 ====================
-  doris/fe:
-    vars:
-      version: "2.0.3"
-      http_port: 8030
-      rpc_port: 9020
-      query_port: 9030
-      edit_log_port: 9010
-      install_subdir: "apache-doris/fe"
-      data_subdir: "apache-doris/fe/doris-meta"
-      priority_networks: "192.168.10.0/24"
-  
-  doris/be:
-    vars:
-      version: "2.0.3"
-      be_port: 9060
-      webserver_port: 8040
-      heartbeat_service_port: 9050
-      brpc_port: 8060
-      install_subdir: "apache-doris/be"
-      data_subdir: "apache-doris/be/storage"
-  
-  # ==================== 数据存储 ====================
-  elasticsearch:
-    vars:
-      version: "8.11.1"
-      cluster_name: "bigdata-cluster"
-      http_port: 9200
-      transport_port: 9300
-  
-  # ==================== 调度系统 ====================
-  dolphinscheduler_master:
-    vars:
-      version: "3.1.9"
-      master_port: 5678
-  
-  dolphinscheduler_worker:
-    vars:
-      version: "3.1.9"
-      worker_port: 1234
-  
-  dolphinscheduler_api:
-    vars:
-      version: "3.1.9"
-      api_port: 12345
-
-# ============================================================
-# 节点特化配置（可选）
-# ============================================================
+    docker:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            bin_path: /usr/local/bin
+            package_subdir: realtime-new-doris/realtime/web_all/docker
+    dolphinscheduler_api:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            api_port: 12345
+            version: 3.1.9
+    dolphinscheduler_master:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            master_port: 5678
+            version: 3.1.9
+    dolphinscheduler_worker:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            version: 3.1.9
+            worker_port: 1234
+    doris/be:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            be_port: 9060
+            brpc_port: 8060
+            data_subdir: apache-doris/be/storage
+            heartbeat_service_port: 9050
+            install_subdir: apache-doris/be
+            version: 2.0.3
+            webserver_port: 8040
+    doris/fe:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            data_subdir: apache-doris/fe/doris-meta
+            edit_log_port: 9010
+            http_port: 8030
+            install_subdir: apache-doris/fe
+            priority_networks: 192.168.10.0/24
+            query_port: 9030
+            rpc_port: 9020
+            version: 2.0.3
+    elasticsearch:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            cluster_name: bigdata-cluster
+            http_port: 9200
+            transport_port: 9300
+            version: 8.11.1
+    flink_jobmanager:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            rpc_port: 6123
+            scala_version: "2.12"
+            version: 1.18.0
+            web_port: 8081
+    flink_taskmanager:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            memory: 2g
+            task_slots: 4
+            version: 1.18.0
+    hadoop3:
+        type: ""
+        description: Hadoop 3 生态（HDFS HA + YARN HA）
+        id_field: ""
+        id_format: ""
+        vars:
+            blocksize: "268435456"
+            datanode_data_port: 9866
+            datanode_data_subdir: dfs/dn
+            datanode_http_port: 9864
+            install_subdir: hadoop
+            journalnode_data_subdir: dfs/jn
+            journalnode_port: 8485
+            namenode_data_subdir: dfs/nn
+            namenode_heapsize: 4096m
+            namenode_http_port: 50070
+            namenode_rpc_port: 8020
+            nameservice: zhugeio
+            nodemanager_local_subdir: hadoop3/hadoop-yarn/cache
+            nodemanager_log_subdir: hadoop3/hadoop-yarn/containers
+            nodemanager_resource_memory_mb: 12288
+            package_subdir: realtime-new-doris/realtime/hadoop3
+            pkg_name: hadoop-3.3.6.tar.gz
+            remote_app_log_dir: hdfs://zhugeio/var/log/hadoop-yarn/apps
+            resourcemanager_port: 8032
+            resourcemanager_resource_port: 8031
+            resourcemanager_scheduler_port: 8030
+            resourcemanager_web_port: 8089
+            scala_version: "2.12"
+            scheduler_maximum_allocation_vcores: 8
+            scheduler_minimum_allocation_mb: 32
+            tmp_data_subdir: dfs/tmp
+            version: 3.3.6
+            vmem_pmem_ratio: 5
+            yarn_cluster_id: zhugeio2
+    install_jdk:
+        type: global
+        description: 安装JDK（所有节点）
+        id_field: ""
+        id_format: ""
+        vars:
+            package_subdir: realtime-new-doris/realtime/kafka
+            pkg_name: jdk-8u202-linux-x64.tar.gz
+    kafka:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            consumer:
+                group_id: test-consumer-group
+                zookeeper_connection_timeout_ms: 6000
+            install_subdir: kafka
+            package_subdir: realtime-new-doris/realtime/kafka
+            producer:
+                acks: all
+                batch_size: 16384
+                buffer_memory: 3.3554432e+07
+                retries: 3
+            scala_version: "2.11"
+            server:
+                default_replication_factor: 2
+                delete_topic_enable: true
+                group_initial_rebalance_delay_ms: 0
+                log_retention_check_interval_ms: 300000
+                log_retention_hours: 168
+                log_segment_bytes: 1.073741824e+09
+                log_subdir: kafka-data
+                num_io_threads: 8
+                num_network_threads: 3
+                num_partitions: 5
+                offsets_topic_replication_factor: 1
+                port: 9092
+                socket_receive_buffer_bytes: 102400
+                socket_request_max_bytes: 1.048576e+08
+                socket_send_buffer_bytes: 102400
+                transaction_state_log_min_isr: 1
+                transaction_state_log_replication_factor: 1
+                zookeeper_connection_timeout_ms: 6000
+            topics:
+                - name: sdklua_online
+                  partitions: 5
+                  replication_factor: 2
+                - name: debug
+                  partitions: 5
+                  replication_factor: 2
+                - name: pay_statisv2
+                  partitions: 5
+                  replication_factor: 2
+                - name: pay_zg_total
+                  partitions: 5
+                  replication_factor: 2
+                - name: pay_zg_total_random
+                  partitions: 5
+                  replication_factor: 2
+                - name: tag-evaluate-new
+                  partitions: 1
+                  replication_factor: 1
+                - name: file-task
+                  partitions: 1
+                  replication_factor: 1
+                - name: group-user-load
+                  partitions: 1
+                  replication_factor: 1
+            version: 2.11-0.11.0.2
+            zookeeper:
+                client_port: 2182
+                data_subdir: zk-kafka-data
+                election_port: 3889
+                peer_port: 2889
+    mysql:
+        type: ""
+        description: MySQL数据库（Docker部署）
+        id_field: ""
+        id_format: ""
+        vars:
+            container_name: zanalytics_mysql_v33
+            container_port: 3306
+            databases:
+                - sdkv
+                - audit_log
+                - cep
+            image_name: mysql-5.7.33.tar
+            init_subdir: mysql/init
+            mysql_config_subdir: mysql
+            mysql_data_subdir: mysql/data
+            mysql_database: sdkv
+            mysql_host: realtime-db
+            mysql_image: mysql:5.7.33
+            mysql_password: zanalytics
+            mysql_port: 3306
+            mysql_root_password: zanalytics
+            mysql_user: web
+            package_subdir: realtime-new-doris/realtime/web_all/mysql
+            sql_tools_subdir: tools
+    ntp_master:
+        type: ""
+        description: NTP主服务器
+        id_field: ""
+        id_format: ""
+        vars:
+            stratum: 10
+    ntp_slave:
+        type: ""
+        description: NTP从服务器
+        id_field: ""
+        id_format: ""
+        vars: {}
+    python3:
+        type: global
+        description: 安装Python3（所有节点）
+        id_field: ""
+        id_format: ""
+        vars:
+            package_subdir: realtime-new-doris/realtime/python3
+            pkg_name: Python-3.6.8.tar.xz
+            version: 3.6.8
+            version_pip: "18.0"
+            version_setuptools: 40.0.0
+    redis:
+        type: ""
+        description: Redis缓存服务（编译安装，多实例）
+        id_field: ""
+        id_format: ""
+        vars:
+            appendfsync: everysec
+            appendonly: "yes"
+            bind: 0.0.0.0
+            daemonize: "yes"
+            databases: 16
+            install_dir: /usr/local/redis
+            instances:
+                - data_subdir: redis_26480
+                  logfile: redis_26480.log
+                  pid_file: redis_26480.pid
+                  port: 26480
+                - data_subdir: redis_26380
+                  logfile: redis_26380.log
+                  pid_file: redis_26380.pid
+                  port: 26380
+            loglevel: notice
+            maxmemory: 4gb
+            maxmemory_policy: allkeys-lru
+            package_subdir: realtime-new-doris/realtime/web_all/app/redis_26480
+            tcp_keepalive: 300
+            timeout: 0
+            version: 6.2.14
+    scala:
+        type: ""
+        description: 安装Scala（大数据节点）
+        id_field: ""
+        id_format: ""
+        vars:
+            install_dir: /data/scala
+            package_subdir: realtime-new-doris/realtime/kafka
+            version: 2.11.6
+    server_init:
+        type: global
+        description: 服务器初始化（所有节点）
+        id_field: ""
+        id_format: ""
+        vars:
+            kernelModules:
+                - ip_vs
+                - ip_vs_rr
+                - ip_vs_wrr
+                - ip_vs_sh
+                - nf_conntrack
+                - br_netfilter
+            limitsSettings:
+                '* hard memlock': unlimited
+                '* hard nofile': "102400"
+                '* hard nproc': "102400"
+                '* soft memlock': unlimited
+                '* soft nofile': "102400"
+                '* soft nproc': "102400"
+                root hard nproc: unlimited
+                root soft nproc: unlimited
+            sysctlSettings:
+                fs.file-max: 6.55356e+06
+                net.core.somaxconn: 65536
+                net.ipv4.ip_forward: 1
+                net.ipv4.tcp_max_syn_backlog: 8192
+                vm.dirty_background_ratio: 5
+                vm.max_map_count: 2e+06
+                vm.panic_on_oom: 0
+                vm.swappiness: 0
+    spark_master:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            hadoop_version: "3"
+            master_port: 7077
+            version: 3.5.0
+            webui_port: 8080
+    spark_worker:
+        type: ""
+        description: ""
+        id_field: ""
+        id_format: ""
+        vars:
+            cores: 4
+            memory: 4g
+            version: 3.5.0
+            webui_port: 8081
+    ssdb:
+        type: ""
+        description: SSDB高性能存储（编译安装，多实例）
+        id_field: ""
+        id_format: ""
+        vars:
+            bind: 0.0.0.0
+            block_size: 32
+            cache_size: 1024
+            compaction_speed: 1000
+            compression: "no"
+            install_dir: /usr/local/ssdb
+            instances:
+                - config_file: ssdb_8892.conf
+                  data_subdir: data2
+                  port: 8892
+                - config_file: ssdb_8893.conf
+                  data_subdir: data3
+                  port: 8893
+                - config_file: ssdb_8894.conf
+                  data_subdir: data4
+                  port: 8894
+                - config_file: ssdb_8895.conf
+                  data_subdir: data5
+                  port: 8895
+                - config_file: ssdb_8897.conf
+                  data_subdir: data7
+                  port: 8897
+                - config_file: ssdb_8898.conf
+                  data_subdir: data8
+                  port: 8898
+            package_subdir: realtime-new-doris/realtime/web_all/etl-ssdb
+            version: ssdb_master
+            work_rps: 1000
+            work_threads: 8
+            write_buffer_size: 64
+    zookeeper:
+        type: ""
+        description: ""
+        id_field: myid
+        id_format: index+1
+        vars:
+            client_port: 2181
+            election_port: 3888
+            init_limit: 10
+            server_port: 2888
+            sync_limit: 5
+            tick_time: 2000
+            version: 3.8.3
 nodeOverrides: {}

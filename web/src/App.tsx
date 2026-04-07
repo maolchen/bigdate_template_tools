@@ -7,6 +7,7 @@ import { ServicesPage } from './components/ServicesPage';
 import { PreviewPage } from './components/PreviewPage';
 import { ExportPage } from './components/ExportPage';
 import { GeneratePage } from './components/GeneratePage';
+import './App.css';
 import { Save, RefreshCw, AlertCircle, Check } from 'lucide-react';
 import type { EditorTab } from './types/config';
 import type { AppConfig } from './api/config';
@@ -53,8 +54,14 @@ function App() {
   
   const handleReload = async () => {
     try {
+      setError(null);
       const result = await reloadConfig();
-      setConfig(result.config);
+      if (result.config) {
+        setConfig(result.config);
+      } else {
+        await loadConfig();
+        return;
+      }
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus(null), 2000);
     } catch (err) {
@@ -121,14 +128,14 @@ function App() {
   }
   
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="app-shell min-h-screen bg-gray-50">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
       
       <main className="main-content">
-        {/* 顶部栏 */}
         <header className="header">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold text-gray-800">
+          <div className="header-title-group">
+            <span className="header-kicker">Config Studio</span>
+            <h1 className="page-title text-lg font-semibold text-gray-800">
               {activeTab === 'overview' && '概览'}
               {activeTab === 'global' && '全局配置'}
               {activeTab === 'nodes' && '节点管理'}
@@ -139,9 +146,9 @@ function App() {
             </h1>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="header-actions flex items-center gap-4">
             {saveStatus && (
-              <div className={`flex items-center gap-1 text-sm ${
+              <div className={`status-chip flex items-center gap-1 text-sm ${
                 saveStatus === 'saved' ? 'text-success' : 
                 saveStatus === 'error' ? 'text-danger' : 'text-gray-400'
               }`}>
@@ -164,13 +171,12 @@ function App() {
               </div>
             )}
             
-            <button className="btn btn-sm btn-secondary" onClick={handleReload} title="从配置文件重新加载">
+            <button className="btn btn-sm btn-secondary header-refresh" onClick={handleReload} title="从配置文件重新加载">
               <RefreshCw className="w-4 h-4" />
             </button>
           </div>
         </header>
         
-        {/* 页面内容 */}
         <div className="page-content">
           {renderContent()}
         </div>

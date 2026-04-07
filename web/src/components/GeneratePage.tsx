@@ -123,6 +123,8 @@ export function GeneratePage() {
             </span>
           </div>
           <div className="card-body">
+            <p className="text-sm text-gray-600 mb-4">{result.message}</p>
+
             <div className="flex gap-4 mb-4">
               <div className="flex-1 text-center p-3 bg-gray-50 rounded-lg">
                 <p className="text-2xl font-bold text-gray-800">{result.stats.nodes}</p>
@@ -164,6 +166,20 @@ export function GeneratePage() {
                     <li key={idx} className="flex items-start gap-2">
                       <span>•</span>
                       <span>{warn}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {result.skippedServices.length > 0 && (
+              <div className="mt-4">
+                <h4 className="font-medium text-warning mb-2">跳过的服务：</h4>
+                <ul className="text-sm text-gray-700 space-y-1">
+                  {result.skippedServices.map((item, idx) => (
+                    <li key={`${item.nodeIp}-${item.service}-${idx}`} className="flex items-start gap-2">
+                      <span>•</span>
+                      <span>{item.nodeIp} / {item.service} / {item.reason}</span>
                     </li>
                   ))}
                 </ul>
@@ -221,11 +237,22 @@ export function GeneratePage() {
           </div>
         </div>
       )}
+
+      {result && output && output.total === 0 && (
+        <div className="card">
+          <div className="card-body">
+            <div className="flex items-center gap-2 text-gray-600">
+              <AlertCircle className="w-5 h-5 text-warning" />
+              <span>本次生成没有产生可展示的输出文件。</span>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* 文件内容预览 */}
       {selectedFile && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedFile(null)}>
-          <div className="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay modal-preview-overlay" onClick={() => setSelectedFile(null)}>
+          <div className="modal modal-preview" onClick={e => e.stopPropagation()}>
             <div className="px-4 py-3 border-b flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FileCode className="w-5 h-5 text-primary" />
@@ -233,8 +260,8 @@ export function GeneratePage() {
               </div>
               <button className="text-gray-400 hover:text-gray-600" onClick={() => setSelectedFile(null)}>×</button>
             </div>
-            <div className="flex-1 overflow-auto p-4">
-              <pre className="text-sm font-mono bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">{selectedFile.content}</pre>
+            <div className="modal-body modal-preview-body">
+              <pre className="preview-code">{selectedFile.content}</pre>
             </div>
           </div>
         </div>
