@@ -129,13 +129,13 @@ export function VariablesEditor({ vars, onChange, readonly = false, serviceName,
     // 检查是否被template引用
     console.log('[VariablesEditor] 检查template引用...');
     try {
-      // 对于服务配置，检查服务引用；对于全局配置，检查全局引用
+      // 对于服务配置，检查具体变量引用；对于全局配置，检查全局引用
       let checkResult;
       if (isGlobal) {
         checkResult = await checkReferences({ type: 'global', key: item.key });
       } else if (serviceName) {
-        // 检查这个服务是否被引用
-        checkResult = await checkReferences({ type: 'service', key: serviceName, service: serviceName });
+        // 检查具体变量是否被引用
+        checkResult = await checkReferences({ type: 'vars', key: item.key, service: serviceName });
       }
 
       console.log('[VariablesEditor] template引用检查结果:', checkResult);
@@ -144,7 +144,7 @@ export function VariablesEditor({ vars, onChange, readonly = false, serviceName,
         const templateList = checkResult.references.map(ref =>
           `- ${ref.path} (${ref.service})`
         ).join('\n');
-        alert(`无法删除变量 "${item.key}"，因为该服务被以下template引用：\n\n${templateList}\n\n请先修改这些template，删除相关引用后再尝试删除。`);
+        alert(`无法删除变量 "${item.key}"，因为该变量被以下template引用：\n\n${templateList}\n\n请先修改这些template，删除相关引用后再尝试删除。`);
         return;
       }
     } catch (err) {

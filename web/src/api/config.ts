@@ -101,7 +101,7 @@ export async function fetchGlobalDescriptions(): Promise<Record<string, string>>
 
 // 检查引用
 export async function checkReferences(params: {
-  type: 'global' | 'node' | 'service';
+  type: 'global' | 'node' | 'service' | 'vars';
   key: string;
   service?: string;
 }): Promise<{ hasReferences: boolean; references: Array<{ path: string; service: string; details: string[] }> }> {
