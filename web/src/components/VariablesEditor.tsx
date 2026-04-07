@@ -138,9 +138,9 @@ export function VariablesEditor({ vars, onChange, readonly = false, serviceName,
         console.log('[VariablesEditor] 检查服务变量引用:', item.key, 'serviceName:', serviceName);
         checkResult = await checkReferences({ type: 'vars', key: item.key, service: serviceName });
       } else {
-        console.warn('[VariablesEditor] serviceName为空，跳过引用检查，允许删除');
-        // 如果serviceName为空，直接允许删除
-        checkResult = { hasReferences: false };
+        // serviceName 为空，仍然调用接口检查所有 template 文件
+        console.log('[VariablesEditor] serviceName为空，检查所有template文件中的变量引用:', item.key);
+        checkResult = await checkReferences({ type: 'vars', key: item.key, service: '' });
       }
 
       console.log('[VariablesEditor] template引用检查结果:', checkResult);
