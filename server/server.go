@@ -1,13 +1,14 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"config-generator/config"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Server Web 服务器
@@ -35,7 +36,7 @@ func (s *Server) loadConfig() error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, &s.cfg)
+	return yaml.Unmarshal(data, &s.cfg)
 }
 
 // corsMiddleware CORS 中间件
@@ -77,7 +78,7 @@ func (s *Server) Start(port string) error {
 	// 创建路由
 	mux := http.NewServeMux()
 
-	// API 路由
+	// API 路由（必须先注册，否则会被静态文件路由拦截）
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/generate", s.handleGenerate)
 	mux.HandleFunc("/api/output", s.handleGetOutput)
@@ -89,7 +90,7 @@ func (s *Server) Start(port string) error {
 	mux.HandleFunc("/api/descriptions/", s.handleDescriptions)
 	mux.HandleFunc("/api/check-references", s.handleCheckReferences)
 
-	// 静态文件服务（前端）
+	// 静态文件服务（前端）- 必须放在最后
 	if info, err := os.Stat(s.webDir); err == nil && info.IsDir() {
 		fs := http.FileServer(http.Dir(s.webDir))
 		mux.Handle("/", fs)
