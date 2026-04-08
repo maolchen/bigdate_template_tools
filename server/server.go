@@ -13,22 +13,32 @@ import (
 
 // Server Web 服务器
 type Server struct {
-	configPath   string
-	outputDir    string
-	templatesDir string
-	webDir       string
-	descsDir     string
-	cfg          *config.Config
+	configPath     string
+	outputDir      string
+	templatesDir   string
+	webDir         string
+	descsDir       string
+	aiDir          string
+	aiSessionsDir  string
+	aiUploadsDir   string
+	aiSettingsPath string
+	aiRulesPath    string
+	cfg            *config.Config
 }
 
 // NewServer 创建新的服务器实例
 func NewServer(workDir string) *Server {
 	return &Server{
-		configPath:   filepath.Join(workDir, "config.yaml"),
-		outputDir:    filepath.Join(workDir, "output"),
-		templatesDir: filepath.Join(workDir, "templates"),
-		webDir:       filepath.Join(workDir, "web", "dist"),
-		descsDir:     filepath.Join(workDir, "data", "descriptions"),
+		configPath:     filepath.Join(workDir, "config.yaml"),
+		outputDir:      filepath.Join(workDir, "output"),
+		templatesDir:   filepath.Join(workDir, "templates"),
+		webDir:         filepath.Join(workDir, "web", "dist"),
+		descsDir:       filepath.Join(workDir, "data", "descriptions"),
+		aiDir:          filepath.Join(workDir, "data", "ai"),
+		aiSessionsDir:  filepath.Join(workDir, "data", "ai", "sessions"),
+		aiUploadsDir:   filepath.Join(workDir, "data", "ai", "uploads"),
+		aiSettingsPath: filepath.Join(workDir, "data", "ai", "settings.json"),
+		aiRulesPath:    filepath.Join(workDir, "data", "ai", "template_rules.md"),
 	}
 }
 
@@ -86,6 +96,11 @@ func (s *Server) Start(port string) error {
 	mux.HandleFunc("/api/descriptions/global", s.handleGlobalDescriptions)
 	mux.HandleFunc("/api/descriptions/", s.handleDescriptions)
 	mux.HandleFunc("/api/check-references", s.handleCheckReferences)
+	mux.HandleFunc("/api/ai/settings", s.handleAISettings)
+	mux.HandleFunc("/api/ai/settings/test", s.handleAISettingsTest)
+	mux.HandleFunc("/api/ai/rules", s.handleAIRules)
+	mux.HandleFunc("/api/ai/template/session", s.handleAITemplateSessionCollection)
+	mux.HandleFunc("/api/ai/template/session/", s.handleAITemplateSessionDetail)
 
 	if info, err := os.Stat(s.webDir); err == nil && info.IsDir() {
 		fs := http.FileServer(http.Dir(s.webDir))
@@ -109,6 +124,7 @@ func (s *Server) Start(port string) error {
 	fmt.Printf("模板目录: %s\n", s.templatesDir)
 	fmt.Printf("输出目录: %s\n", s.outputDir)
 	fmt.Printf("描述目录: %s\n", s.descsDir)
+	fmt.Printf("AI 工作目录: %s\n", s.aiDir)
 	fmt.Printf("端口: %s\n", port)
 	fmt.Printf("API: http://localhost:%s/api/config\n", port)
 	fmt.Printf("Web: http://localhost:%s/\n", port)

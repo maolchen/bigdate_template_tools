@@ -54,6 +54,7 @@ config-simple.yaml
 # 运行日志
 run.log
 *.test
+data/ai/
 
 # Editor / IDE
 .vscode/

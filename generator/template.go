@@ -10,16 +10,9 @@ import (
 	"config-generator/utils"
 )
 
-// RenderTemplate 渲染模板
-func RenderTemplate(tmplPath string, ctx config.Context, cfg *config.Config) (string, error) {
-	// 读取模板文件
-	tmplContent, err := os.ReadFile(tmplPath)
-	if err != nil {
-		return "", fmt.Errorf("读取模板失败: %w", err)
-	}
-
-	// 创建模板，添加通用模板函数（不包含任何特定服务逻辑）
-	tmpl, err := template.New("config").Funcs(template.FuncMap{
+// BuildTemplateFuncMap 构建模板函数映射，供渲染和静态校验复用
+func BuildTemplateFuncMap(ctx config.Context, cfg *config.Config) template.FuncMap {
+	return template.FuncMap{
 		// =============== 基础函数 ===============
 		"toUpper": strings.ToUpper,
 		"toLower": strings.ToLower,
@@ -47,7 +40,6 @@ func RenderTemplate(tmplPath string, ctx config.Context, cfg *config.Config) (st
 		},
 
 		// =============== 服务节点相关函数 ===============
-		// 获取同一服务的所有节点实例
 		"serviceNodes": func(serviceName string) []config.ServiceInstance {
 			var result []config.ServiceInstance
 			for _, inst := range ctx.AllInstances {
@@ -58,14 +50,10 @@ func RenderTemplate(tmplPath string, ctx config.Context, cfg *config.Config) (st
 			return result
 		},
 
-		// 获取服务的端点列表（IP:Port格式）
-		// serviceName: 服务名
-		// portField: 端口字段名（支持嵌套，如 "zookeeper.client_port"）
 		"serviceEndpoints": func(serviceName, portField string) []string {
 			var endpoints []string
 			for _, inst := range ctx.AllInstances {
 				if inst.ServiceName == serviceName {
-					// 获取端口值（支持嵌套字段）
 					port := utils.GetNestedPort(inst.Vars, portField)
 					if port > 0 {
 						endpoints = append(endpoints, fmt.Sprintf("%s:%d", inst.Node.IP, port))
@@ -75,12 +63,10 @@ func RenderTemplate(tmplPath string, ctx config.Context, cfg *config.Config) (st
 			return endpoints
 		},
 
-		// 获取服务的端点连接串（用逗号连接）
 		"serviceEndpointsJoin": func(serviceName, portField string) string {
 			endpoints := make([]string, 0)
 			for _, inst := range ctx.AllInstances {
 				if inst.ServiceName == serviceName {
-					// 获取端口值（支持嵌套字段）
 					port := utils.GetNestedPort(inst.Vars, portField)
 					if port > 0 {
 						endpoints = append(endpoints, fmt.Sprintf("%s:%d", inst.Node.IP, port))
@@ -90,7 +76,6 @@ func RenderTemplate(tmplPath string, ctx config.Context, cfg *config.Config) (st
 			return strings.Join(endpoints, ",")
 		},
 
-		// 获取服务的所有IP列表
 		"serviceIPs": func(serviceName string) []string {
 			var ips []string
 			for _, inst := range ctx.AllInstances {
@@ -101,7 +86,6 @@ func RenderTemplate(tmplPath string, ctx config.Context, cfg *config.Config) (st
 			return ips
 		},
 
-		// 获取服务的所有主机名列表
 		"serviceHostnames": func(serviceName string) []string {
 			var hostnames []string
 			for _, inst := range ctx.AllInstances {
@@ -112,7 +96,6 @@ func RenderTemplate(tmplPath string, ctx config.Context, cfg *config.Config) (st
 			return hostnames
 		},
 
-		// 获取服务的所有节点别名列表
 		"getServiceNodes": func(serviceName string) []string {
 			var nodeNames []string
 			seen := make(map[string]bool)
@@ -125,7 +108,6 @@ func RenderTemplate(tmplPath string, ctx config.Context, cfg *config.Config) (st
 			return nodeNames
 		},
 
-		// 获取服务配置变量
 		"serviceVars": func(serviceName string) map[string]interface{} {
 			if svc, ok := cfg.ServerConfig[serviceName]; ok {
 				return svc.Vars
@@ -133,7 +115,6 @@ func RenderTemplate(tmplPath string, ctx config.Context, cfg *config.Config) (st
 			return make(map[string]interface{})
 		},
 
-		// 获取服务的特定变量值
 		"serviceVar": func(serviceName, varName string) interface{} {
 			if svc, ok := cfg.ServerConfig[serviceName]; ok {
 				if val, exists := svc.Vars[varName]; exists {
@@ -144,19 +125,34 @@ func RenderTemplate(tmplPath string, ctx config.Context, cfg *config.Config) (st
 		},
 
 		// =============== 配置访问函数 ===============
-		// 获取服务配置
 		"serviceConfig": func(serviceName string) config.ServiceConfig {
 			return cfg.ServerConfig[serviceName]
 		},
 
-		// 获取节点信息
 		"nodeInfo": func(nodeName string) *config.Node {
 			if node, ok := cfg.Nodes[nodeName]; ok {
 				return &node
 			}
 			return nil
 		},
-	}).Parse(string(tmplContent))
+	}
+}
+
+// ParseTemplateContent 仅解析模板内容，用于静态校验
+func ParseTemplateContent(name, content string, ctx config.Context, cfg *config.Config) (*template.Template, error) {
+	return template.New(name).Funcs(BuildTemplateFuncMap(ctx, cfg)).Parse(content)
+}
+
+// RenderTemplate 渲染模板
+func RenderTemplate(tmplPath string, ctx config.Context, cfg *config.Config) (string, error) {
+	// 读取模板文件
+	tmplContent, err := os.ReadFile(tmplPath)
+	if err != nil {
+		return "", fmt.Errorf("读取模板失败: %w", err)
+	}
+
+	// 创建模板，添加通用模板函数（不包含任何特定服务逻辑）
+	tmpl, err := ParseTemplateContent("config", string(tmplContent), ctx, cfg)
 	if err != nil {
 		return "", fmt.Errorf("解析模板失败: %w", err)
 	}

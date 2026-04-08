@@ -3,6 +3,7 @@ import {
   Globe, 
   Server, 
   Layers, 
+  Sparkles,
   FileCode, 
   Download,
   Settings,
@@ -20,6 +21,7 @@ const navItems: { id: EditorTab; label: string; icon: React.ElementType }[] = [
   { id: 'global', label: '全局配置', icon: Globe },
   { id: 'nodes', label: '节点管理', icon: Server },
   { id: 'services', label: '服务配置', icon: Layers },
+  { id: 'ai', label: 'AI 模板', icon: Sparkles },
   { id: 'generate', label: '生成配置', icon: Play },
   { id: 'preview', label: 'YAML预览', icon: FileCode },
   { id: 'export', label: '导出配置', icon: Download },
@@ -54,7 +56,7 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
                 <Icon className="w-5 h-5" />
                 <span>{item.label}</span>
               </div>
-              {item.id === 'generate' && (
+              {(item.id === 'generate' || item.id === 'ai') && (
                 <span className="ml-auto badge badge-blue text-xs">核心</span>
               )}
             </button>

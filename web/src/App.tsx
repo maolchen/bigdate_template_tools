@@ -4,6 +4,7 @@ import { OverviewPage } from './components/OverviewPage';
 import { GlobalConfigPage } from './components/GlobalConfigPage';
 import { NodesPage } from './components/NodesPage';
 import { ServicesPage } from './components/ServicesPage';
+import { AITemplatePage } from './components/AITemplatePage';
 import { PreviewPage } from './components/PreviewPage';
 import { ExportPage } from './components/ExportPage';
 import { GeneratePage } from './components/GeneratePage';
@@ -23,6 +24,20 @@ function App() {
   // 加载配置
   useEffect(() => {
     loadConfig();
+  }, []);
+
+  useEffect(() => {
+    const handleNavigate = (event: Event) => {
+      const customEvent = event as CustomEvent<EditorTab>;
+      if (customEvent.detail) {
+        setActiveTab(customEvent.detail);
+      }
+    };
+
+    window.addEventListener('navigate', handleNavigate as EventListener);
+    return () => {
+      window.removeEventListener('navigate', handleNavigate as EventListener);
+    };
   }, []);
   
   const loadConfig = async () => {
@@ -87,6 +102,8 @@ function App() {
         return <NodesPage config={config} onChange={handleConfigChange} />;
       case 'services':
         return <ServicesPage config={config} onChange={handleConfigChange} />;
+      case 'ai':
+        return <AITemplatePage />;
       case 'preview':
         return <PreviewPage config={config} />;
       case 'generate':
@@ -140,6 +157,7 @@ function App() {
               {activeTab === 'global' && '全局配置'}
               {activeTab === 'nodes' && '节点管理'}
               {activeTab === 'services' && '服务配置'}
+              {activeTab === 'ai' && 'AI 模板'}
               {activeTab === 'preview' && 'YAML 预览'}
               {activeTab === 'generate' && '生成配置'}
               {activeTab === 'export' && '导出配置'}
