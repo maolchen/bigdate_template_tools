@@ -41,6 +41,12 @@
 .sidebar {
   width: 290px;
   padding: 16px 18px 18px;
+  transition: width 180ms ease, padding 180ms ease;
+}
+
+.sidebar.collapsed {
+  width: 110px;
+  padding-inline: 14px;
 }
 
 .sidebar-header,
@@ -59,6 +65,13 @@
   margin-bottom: 14px;
 }
 
+.sidebar-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .brand-lockup {
   align-items: center;
 }
@@ -71,6 +84,25 @@
   box-shadow: 0 16px 34px rgba(31, 100, 244, 0.28);
 }
 
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 204, 222, 0.72);
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--gray-600);
+  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.sidebar-toggle:hover {
+  color: var(--gray-900);
+  background: rgba(255, 255, 255, 0.94);
+  transform: translateY(-1px);
+}
+
 .sidebar-brand-copy h1 {
   letter-spacing: -0.03em;
 }
@@ -79,6 +111,40 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.sidebar.collapsed .sidebar-brand-copy,
+.sidebar.collapsed .nav-item-label,
+.sidebar.collapsed .nav-item-badge {
+  display: none;
+}
+
+.sidebar.collapsed .brand-lockup {
+  gap: 0;
+}
+
+.sidebar.collapsed .sidebar-header {
+  padding-inline: 12px;
+}
+
+.sidebar.collapsed .sidebar-header-top {
+  flex-direction: column;
+  align-items: center;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  min-height: 58px;
+  padding-inline: 0.75rem;
+}
+
+.sidebar.collapsed .nav-item-main {
+  justify-content: center;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  padding-inline: 0.75rem;
+  text-align: center;
 }
 
 .sidebar-footer {
@@ -90,6 +156,7 @@
   flex: 1;
   min-width: 0;
   padding: 16px 20px 20px 0;
+  transition: padding 180ms ease;
 }
 
 .header {
@@ -302,6 +369,26 @@
 
   .main-content {
     padding: 16px;
+  }
+
+  .sidebar.collapsed {
+    width: 100%;
+    padding: 16px 16px 0;
+  }
+
+  .sidebar.collapsed .sidebar-brand-copy,
+  .sidebar.collapsed .nav-item-label,
+  .sidebar.collapsed .nav-item-badge {
+    display: initial;
+  }
+
+  .sidebar.collapsed .sidebar-header-top {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .sidebar.collapsed .nav-item {
+    justify-content: flex-start;
   }
 }
 

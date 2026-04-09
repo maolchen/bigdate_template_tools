@@ -25,12 +25,14 @@ type GenerationSummary struct {
 
 // GenerateOutputs 生成所有配置文件和脚本
 // 输出结构：output/<IP>/<服务名>/<配置文件>
-func GenerateOutputs(cfg *config.Config, instances []config.ServiceInstance, outputDir string) (*GenerationSummary, error) {
+func GenerateOutputs(cfg *config.Config, instances []config.ServiceInstance, outputDir string, templatesDir string) (*GenerationSummary, error) {
 	summary := &GenerationSummary{
 		Results:         make(map[string][]string),
 		SkippedServices: make([]SkippedService, 0),
 		Warnings:        make([]string, 0),
 	}
+
+	fmt.Printf("[Generate] outputDir=%s templatesDir=%s instances=%d\n", outputDir, templatesDir, len(instances))
 
 	// 创建输出目录
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -56,7 +58,7 @@ func GenerateOutputs(cfg *config.Config, instances []config.ServiceInstance, out
 			serviceName := inst.ServiceName
 
 			// 检查模板目录是否存在
-			tmplDir := filepath.Join("templates", serviceName)
+			tmplDir := filepath.Join(templatesDir, serviceName)
 			if _, err := os.Stat(tmplDir); os.IsNotExist(err) {
 				warning := fmt.Sprintf("节点 %s 的服务 %s 没有模板目录，已跳过", nodeIP, serviceName)
 				fmt.Printf("提示: %s\n", warning)

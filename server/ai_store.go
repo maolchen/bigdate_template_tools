@@ -38,6 +38,10 @@ func nowRFC3339() string {
 	return time.Now().Format(time.RFC3339)
 }
 
+func defaultAISessionTitle() string {
+	return "新会话"
+}
+
 func defaultAISettings() aiSettingsFile {
 	return aiSettingsFile{
 		BaseURL: "https://api.openai.com/v1",
@@ -63,6 +67,7 @@ func generateID(prefix string) (string, error) {
 	return prefix + hex.EncodeToString(bytes), nil
 }
 
+// ensureAIDirs creates all AI-related data directories required by settings, sessions and uploads.
 func (s *Server) ensureAIDirs() error {
 	if err := os.MkdirAll(s.aiDir, 0755); err != nil {
 		return err
@@ -73,9 +78,16 @@ func (s *Server) ensureAIDirs() error {
 	if err := os.MkdirAll(s.aiUploadsDir, 0755); err != nil {
 		return err
 	}
+	if err := os.MkdirAll(s.aiSkillsDir, 0755); err != nil {
+		return err
+	}
+	if err := s.ensureDefaultAISkillFiles(); err != nil {
+		return err
+	}
 	return nil
 }
 
+// loadAISettingsFile loads persisted AI endpoint settings and fills defaults for missing fields.
 func (s *Server) loadAISettingsFile() (aiSettingsFile, error) {
 	settings := defaultAISettings()
 	data, err := os.ReadFile(s.aiSettingsPath)
@@ -100,6 +112,7 @@ func (s *Server) loadAISettingsFile() (aiSettingsFile, error) {
 	return settings, nil
 }
 
+// saveAISettingsFile persists AI endpoint settings to disk.
 func (s *Server) saveAISettingsFile(settings aiSettingsFile) error {
 	if err := s.ensureAIDirs(); err != nil {
 		return err
@@ -111,6 +124,7 @@ func (s *Server) saveAISettingsFile(settings aiSettingsFile) error {
 	return os.WriteFile(s.aiSettingsPath, data, 0644)
 }
 
+// getAIMasterKey derives a stable AES key from CONFIG_GENERATOR_AI_MASTER_KEY.
 func (s *Server) getAIMasterKey() ([]byte, error) {
 	raw := strings.TrimSpace(os.Getenv(aiMasterKeyEnv))
 	if raw == "" {
@@ -162,6 +176,7 @@ func decryptWithKey(key []byte, ciphertext string) (string, error) {
 	return string(plaintext), nil
 }
 
+// getAISettingsResponse returns masked settings for UI consumption without exposing plain API keys.
 func (s *Server) getAISettingsResponse() (aiSettingsResponse, error) {
 	settings, err := s.loadAISettingsFile()
 	if err != nil {
@@ -193,6 +208,7 @@ func (s *Server) getAISettingsResponse() (aiSettingsResponse, error) {
 	return resp, nil
 }
 
+// updateAISettings updates endpoint/model values and rotates encrypted API key when provided.
 func (s *Server) updateAISettings(req aiSettingsUpdateRequest) (aiSettingsResponse, error) {
 	settings, err := s.loadAISettingsFile()
 	if err != nil {
@@ -238,6 +254,7 @@ func (s *Server) updateAISettings(req aiSettingsUpdateRequest) (aiSettingsRespon
 	return s.getAISettingsResponse()
 }
 
+// getAIAPIKey decrypts and returns the current API key plus resolved settings.
 func (s *Server) getAIAPIKey() (string, aiSettingsFile, error) {
 	settings, err := s.loadAISettingsFile()
 	if err != nil {
@@ -283,6 +300,15 @@ func (s *Server) uploadDir(sessionID string) string {
 	return filepath.Join(s.aiUploadsDir, sessionID)
 }
 
+func (s *Server) attachmentStoredPath(sessionID string, attachment aiSessionAttachment) string {
+	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(attachment.Name)))
+	filename := attachment.ID
+	if ext != "" {
+		filename += ext
+	}
+	return filepath.Join(s.uploadDir(sessionID), filename)
+}
+
 func (s *Server) populateAttachmentURLs(session *aiSession) {
 	for idx := range session.Attachments {
 		session.Attachments[idx].DownloadURL = fmt.Sprintf(
@@ -293,6 +319,7 @@ func (s *Server) populateAttachmentURLs(session *aiSession) {
 	}
 }
 
+// loadAISession loads a single persisted session and normalizes optional fields for backward compatibility.
 func (s *Server) loadAISession(sessionID string) (*aiSession, error) {
 	data, err := os.ReadFile(s.sessionPath(sessionID))
 	if err != nil {
@@ -303,15 +330,36 @@ func (s *Server) loadAISession(sessionID string) (*aiSession, error) {
 		return nil, err
 	}
 	session.ConfigPatch = normalizeAIConfigPatch(session.ConfigPatch)
+	session.PromptTrace = normalizeAIPromptTrace(session.PromptTrace)
+	session.SelectedSkillIDs = normalizeSelectedSkillIDs(session.SelectedSkillIDs)
+	session.SelectedModel = strings.TrimSpace(session.SelectedModel)
+	if strings.TrimSpace(session.Title) == "" {
+		session.Title = deriveAISessionTitle(&session)
+	}
+	for idx := range session.Attachments {
+		if strings.TrimSpace(session.Attachments[idx].StoredPath) == "" {
+			session.Attachments[idx].StoredPath = s.attachmentStoredPath(session.ID, session.Attachments[idx])
+		}
+	}
+	for idx := range session.Messages {
+		session.Messages[idx].PromptTrace = normalizeAIPromptTrace(session.Messages[idx].PromptTrace)
+	}
 	s.populateAttachmentURLs(&session)
 	return &session, nil
 }
 
+// saveAISession persists one AI session atomically with normalized metadata.
 func (s *Server) saveAISession(session *aiSession) error {
 	if err := s.ensureAIDirs(); err != nil {
 		return err
 	}
+	session.Title = strings.TrimSpace(session.Title)
+	if session.Title == "" {
+		session.Title = deriveAISessionTitle(session)
+	}
 	session.UpdatedAt = nowRFC3339()
+	session.SelectedSkillIDs = normalizeSelectedSkillIDs(session.SelectedSkillIDs)
+	session.SelectedModel = strings.TrimSpace(session.SelectedModel)
 	sort.SliceStable(session.Attachments, func(i, j int) bool {
 		return session.Attachments[i].CreatedAt < session.Attachments[j].CreatedAt
 	})
@@ -322,21 +370,30 @@ func (s *Server) saveAISession(session *aiSession) error {
 	return os.WriteFile(s.sessionPath(session.ID), data, 0644)
 }
 
+// createAISession allocates a new empty conversation workspace with current default model and timestamps.
 func (s *Server) createAISession() (*aiSession, error) {
 	sessionID, err := generateID("session_")
 	if err != nil {
 		return nil, err
 	}
+	settings, err := s.loadAISettingsFile()
+	if err != nil {
+		return nil, err
+	}
 	session := &aiSession{
-		ID:             sessionID,
-		Messages:       []aiSessionMessage{},
-		DraftFiles:     []aiDraftFile{},
-		PlannedActions: []aiPlannedAction{},
-		ConfigPatch:    emptyAIConfigPatch(),
-		ConfigIssues:   []aiConfigIssue{},
-		Attachments:    []aiSessionAttachment{},
-		CreatedAt:      nowRFC3339(),
-		UpdatedAt:      nowRFC3339(),
+		ID:               sessionID,
+		Title:            defaultAISessionTitle(),
+		Messages:         []aiSessionMessage{},
+		DraftFiles:       []aiDraftFile{},
+		PlannedActions:   []aiPlannedAction{},
+		ConfigPatch:      emptyAIConfigPatch(),
+		ConfigIssues:     []aiConfigIssue{},
+		Attachments:      []aiSessionAttachment{},
+		PromptTrace:      emptyAIPromptTrace(),
+		SelectedSkillIDs: []string{},
+		SelectedModel:    strings.TrimSpace(settings.Model),
+		CreatedAt:        nowRFC3339(),
+		UpdatedAt:        nowRFC3339(),
 	}
 	if err := s.saveAISession(session); err != nil {
 		return nil, err
@@ -345,6 +402,112 @@ func (s *Server) createAISession() (*aiSession, error) {
 	return session, nil
 }
 
+func deriveAISessionTitle(session *aiSession) string {
+	if session == nil {
+		return defaultAISessionTitle()
+	}
+	if title := strings.TrimSpace(session.Title); title != "" {
+		if title != defaultAISessionTitle() {
+			return title
+		}
+	}
+	for _, message := range session.Messages {
+		if strings.TrimSpace(message.Role) != "user" {
+			continue
+		}
+		if title := summarizeSessionTitle(message.Content); title != "" {
+			return title
+		}
+	}
+	return defaultAISessionTitle()
+}
+
+func summarizeSessionTitle(raw string) string {
+	title := strings.TrimSpace(raw)
+	if title == "" {
+		return ""
+	}
+	title = strings.Join(strings.Fields(title), " ")
+	runes := []rune(title)
+	if len(runes) > 32 {
+		title = string(runes[:32]) + "..."
+	}
+	return title
+}
+
+func summarizeAISession(session *aiSession) aiSessionSummary {
+	return aiSessionSummary{
+		ID:           session.ID,
+		Title:        deriveAISessionTitle(session),
+		CreatedAt:    session.CreatedAt,
+		UpdatedAt:    session.UpdatedAt,
+		MessageCount: len(session.Messages),
+		DraftCount:   len(session.DraftFiles),
+	}
+}
+
+func (s *Server) listAISessions() ([]aiSessionSummary, error) {
+	if err := s.ensureAIDirs(); err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(s.aiSessionsDir)
+	if err != nil {
+		return nil, err
+	}
+
+	sessions := make([]aiSessionSummary, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(s.aiSessionsDir, entry.Name()))
+		if readErr != nil {
+			return nil, readErr
+		}
+		var session aiSession
+		if err := json.Unmarshal(data, &session); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, summarizeAISession(&session))
+	}
+
+	sort.SliceStable(sessions, func(i, j int) bool {
+		if sessions[i].UpdatedAt == sessions[j].UpdatedAt {
+			return sessions[i].CreatedAt > sessions[j].CreatedAt
+		}
+		return sessions[i].UpdatedAt > sessions[j].UpdatedAt
+	})
+	return sessions, nil
+}
+
+func (s *Server) updateAISessionTitle(session *aiSession, title string) error {
+	session.Title = strings.TrimSpace(title)
+	if session.Title == "" {
+		session.Title = deriveAISessionTitle(session)
+	}
+	return s.saveAISession(session)
+}
+
+// deleteAISession removes the session record and its upload directory.
+func (s *Server) deleteAISession(sessionID string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return errors.New("session id 不能为空")
+	}
+
+	sessionFile := s.sessionPath(sessionID)
+	if err := os.Remove(sessionFile); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	uploadDir := s.uploadDir(sessionID)
+	if err := os.RemoveAll(uploadDir); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// normalizeTemplatePath validates that a target path stays inside templates/ and ends with .tmpl.
 func (s *Server) normalizeTemplatePath(input string) (string, string, error) {
 	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(input)))
 	clean = strings.TrimPrefix(clean, "./")
@@ -362,6 +525,7 @@ func (s *Server) normalizeTemplatePath(input string) (string, string, error) {
 	return clean, fullPath, nil
 }
 
+// validateDraftTemplate parses draft content with the same template function map used by generation.
 func (s *Server) validateDraftTemplate(content string) error {
 	emptyCfg := &config.Config{
 		Global:       config.Global{},
@@ -373,11 +537,34 @@ func (s *Server) validateDraftTemplate(content string) error {
 	return err
 }
 
+// validatePlannedActions normalizes model-produced actions into the supported mkdir/write_file set.
 func validatePlannedActions(actions []aiPlannedAction) ([]aiPlannedAction, error) {
 	validated := make([]aiPlannedAction, 0, len(actions))
 	for _, action := range actions {
-		action.Type = strings.TrimSpace(action.Type)
-		action.Path = filepath.ToSlash(filepath.Clean(strings.TrimSpace(action.Path)))
+		rawType := strings.ToLower(strings.TrimSpace(action.Type))
+		rawPath := strings.TrimSpace(action.Path)
+		action.Path = filepath.ToSlash(filepath.Clean(rawPath))
+		switch rawType {
+		case "mkdir", "create_dir", "create_directory", "directory", "dir", "ensure_dir", "ensure_directory", "make_dir", "make_directory", "create_folder", "ensure_folder", "folder":
+			action.Type = "mkdir"
+		case "write_file", "create_file", "file", "write", "save", "save_file", "ensure_file", "template", "template_file", "create_template", "write_template", "save_template", "generate_template", "render_template", "create_script", "write_script":
+			action.Type = "write_file"
+		case "create":
+			if strings.HasSuffix(action.Path, ".tmpl") || filepath.Ext(action.Path) != "" {
+				action.Type = "write_file"
+			} else {
+				action.Type = "mkdir"
+			}
+		default:
+			switch {
+			case strings.Contains(rawType, "template"), strings.Contains(rawType, "file"), strings.Contains(rawType, "script"), strings.Contains(rawType, "render"):
+				action.Type = "write_file"
+			case strings.Contains(rawType, "dir"), strings.Contains(rawType, "folder"), strings.Contains(rawType, "directory"):
+				action.Type = "mkdir"
+			default:
+				action.Type = rawType
+			}
+		}
 		if action.Type != "mkdir" && action.Type != "write_file" {
 			return nil, fmt.Errorf("不支持的计划动作类型: %s", action.Type)
 		}
@@ -453,6 +640,7 @@ func (s *Server) countPendingKinds(session *aiSession) (int, int) {
 	return total, images
 }
 
+// saveUploadedAttachment validates limits/types, stores attachment binaries and appends pending metadata to session.
 func (s *Server) saveUploadedAttachment(session *aiSession, originalName, contentType string, data []byte) (*aiSessionAttachment, error) {
 	totalPending, imagePending := s.countPendingKinds(session)
 	if totalPending >= aiMaxAttachments {
@@ -519,6 +707,36 @@ func (s *Server) findAttachment(session *aiSession, attachmentID string) (*aiSes
 	return nil, os.ErrNotExist
 }
 
+func (s *Server) deletePendingAttachment(session *aiSession, attachmentID string) error {
+	filtered := make([]aiSessionAttachment, 0, len(session.Attachments))
+	removed := false
+	var target aiSessionAttachment
+
+	for _, attachment := range session.Attachments {
+		if attachment.ID != attachmentID {
+			filtered = append(filtered, attachment)
+			continue
+		}
+		if !attachment.Pending {
+			return errors.New("仅支持取消当前待发送的附件")
+		}
+		removed = true
+		target = attachment
+	}
+
+	if !removed {
+		return os.ErrNotExist
+	}
+
+	session.Attachments = filtered
+	if storedPath := strings.TrimSpace(target.StoredPath); storedPath != "" {
+		if err := os.Remove(storedPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
 func consumePendingAttachments(session *aiSession) []string {
 	ids := make([]string, 0)
 	for idx := range session.Attachments {
@@ -543,6 +761,7 @@ func (s *Server) buildMessageAttachmentPreview(session *aiSession, attachmentIDs
 	return previews
 }
 
+// saveDraftFiles validates and writes reviewed drafts into templates/, creating parent directories as needed.
 func (s *Server) saveDraftFiles(files []aiDraftFile) ([]string, []string, error) {
 	savedFiles := make([]string, 0, len(files))
 	createdDirSet := make(map[string]struct{})
@@ -581,6 +800,87 @@ func (s *Server) saveDraftFiles(files []aiDraftFile) ([]string, []string, error)
 	return savedFiles, createdDirs, nil
 }
 
+// deleteDraftFiles removes drafts from session state and optionally deletes persisted template files.
+func (s *Server) deleteDraftFiles(session *aiSession, paths []string, removeFromDisk bool) ([]string, []string, error) {
+	if len(paths) == 0 {
+		return nil, nil, errors.New("paths 不能为空")
+	}
+
+	targets := make(map[string]struct{}, len(paths))
+	for _, rawPath := range paths {
+		normalizedPath, fullPath, err := s.normalizeTemplatePath(rawPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		targets[normalizedPath] = struct{}{}
+		if removeFromDisk {
+			if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
+				return nil, nil, err
+			}
+			s.cleanupEmptyTemplateDirs(filepath.Dir(fullPath))
+		}
+	}
+
+	deletedDrafts := make([]string, 0, len(targets))
+	for path := range targets {
+		deletedDrafts = append(deletedDrafts, path)
+	}
+	sort.Strings(deletedDrafts)
+
+	filterDrafts := func(drafts []aiDraftFile) []aiDraftFile {
+		result := make([]aiDraftFile, 0, len(drafts))
+		for _, draft := range drafts {
+			if _, ok := targets[draft.Path]; ok {
+				continue
+			}
+			result = append(result, draft)
+		}
+		return result
+	}
+
+	filterActions := func(actions []aiPlannedAction) []aiPlannedAction {
+		result := make([]aiPlannedAction, 0, len(actions))
+		for _, action := range actions {
+			if _, ok := targets[action.Path]; ok {
+				continue
+			}
+			result = append(result, action)
+		}
+		return result
+	}
+
+	session.DraftFiles = filterDrafts(session.DraftFiles)
+	session.PlannedActions = filterActions(session.PlannedActions)
+	for idx := range session.Messages {
+		session.Messages[idx].DraftFiles = filterDrafts(session.Messages[idx].DraftFiles)
+		session.Messages[idx].PlannedActions = filterActions(session.Messages[idx].PlannedActions)
+	}
+
+	deletedTemplates := []string{}
+	if removeFromDisk {
+		deletedTemplates = append(deletedTemplates, deletedDrafts...)
+	}
+	if err := s.saveAISession(session); err != nil {
+		return nil, nil, err
+	}
+	return deletedDrafts, deletedTemplates, nil
+}
+
+func (s *Server) cleanupEmptyTemplateDirs(dir string) {
+	root := filepath.Clean(s.templatesDir)
+	current := filepath.Clean(dir)
+	for current != root && strings.HasPrefix(current, root) {
+		entries, err := os.ReadDir(current)
+		if err != nil || len(entries) > 0 {
+			return
+		}
+		if err := os.Remove(current); err != nil {
+			return
+		}
+		current = filepath.Dir(current)
+	}
+}
+
 func templateRulesSummary() string {
 	return strings.TrimSpace(`
 你正在为一个基于 Go Template 的大数据平台离线交付系统生成 templates/*.tmpl 文件。
@@ -601,7 +901,7 @@ func templateRulesSummary() string {
 - .AllInstances
 
 常用模板函数：
-- toUpper, toLower, trim, replace, default
+- toUpper, toLower, trim, replace, join, split, default
 - add, sub, mul, div
 - serviceNodes, serviceEndpoints, serviceEndpointsJoin
 - serviceIPs, serviceHostnames, getServiceNodes

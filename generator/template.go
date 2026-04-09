@@ -3,6 +3,7 @@ package generator
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"text/template"
 
@@ -12,12 +13,45 @@ import (
 
 // BuildTemplateFuncMap 构建模板函数映射，供渲染和静态校验复用
 func BuildTemplateFuncMap(ctx config.Context, cfg *config.Config) template.FuncMap {
+	joinValues := func(values interface{}, sep string) string {
+		if values == nil {
+			return ""
+		}
+		if text, ok := values.(string); ok {
+			return text
+		}
+		rv := reflect.ValueOf(values)
+		if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+			return fmt.Sprint(values)
+		}
+		parts := make([]string, 0, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			parts = append(parts, fmt.Sprint(rv.Index(i).Interface()))
+		}
+		return strings.Join(parts, sep)
+	}
+
+	join := func(args ...interface{}) string {
+		if len(args) != 2 {
+			return ""
+		}
+		if sep, ok := args[0].(string); ok {
+			return joinValues(args[1], sep)
+		}
+		if sep, ok := args[1].(string); ok {
+			return joinValues(args[0], sep)
+		}
+		return joinValues(args[0], "")
+	}
+
 	return template.FuncMap{
 		// =============== 基础函数 ===============
 		"toUpper": strings.ToUpper,
 		"toLower": strings.ToLower,
 		"trim":    strings.TrimSpace,
 		"replace": strings.ReplaceAll,
+		"join":    join,
+		"split":   strings.Split,
 		"default": func(def, val interface{}) interface{} {
 			if val == nil || val == "" {
 				return def

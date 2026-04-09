@@ -88,7 +88,7 @@ serviceTop:
             - realtime-es1
             - realtime-es2
             - realtime-es3
-        id_auto_derive: false
+        id_auto_derive: true
     flink_jobmanager:
         nodes:
             - dw-master1
@@ -246,14 +246,30 @@ serverConfig:
             version: 2.0.3
     elasticsearch:
         type: ""
-        description: ""
+        description: Elasticsearch 分布式搜索和数据分析引擎
         id_field: ""
         id_format: ""
         vars:
-            cluster_name: bigdata-cluster
-            http_port: 9200
-            transport_port: 9300
-            version: 8.11.1
+            backup_subdir: elasticsearch/backup
+            cluster_name: elasticsearch-cluster
+            data_subdir: elasticsearch/data
+            default_password: elasticsearch
+            heap_size: ""
+            http_port: "9200"
+            install_subdir: elasticsearch
+            jvm_heap_size: 4g
+            log_subdir: elasticsearch/logs
+            logrotate_max_size: 100M
+            logrotate_retain_days: "14"
+            node_data: "true"
+            node_ingest: "true"
+            node_master: "true"
+            node_roles: ""
+            package_subdir: elasticsearch
+            package_url: https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-7.16.3-linux-x86_64.tar.gz
+            rack_id: ""
+            transport_port: "9300"
+            version: 7.16.3
     flink_jobmanager:
         type: ""
         description: ""

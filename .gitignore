@@ -1,5 +1,5 @@
 node_modules
-dist
+web/dist
 .DS_Store
 *.swp
 .git/*
@@ -38,6 +38,7 @@ yarn.lock
 
 # Go tooling
 bin/
+.gocache/
 # Go 编译输出（二进制文件）
 *.exe
 *.exe~
@@ -54,7 +55,7 @@ config-simple.yaml
 # 运行日志
 run.log
 *.test
-data/ai/
+data/ai/settings.json
 
 # Editor / IDE
 .vscode/
@@ -104,3 +105,4 @@ logs/
 *.pptx
 *.xlsx
 *.csv
+*.bak

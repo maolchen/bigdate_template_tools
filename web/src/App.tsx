@@ -17,6 +17,10 @@ import { fetchConfig, saveConfig, reloadConfig } from './api/config';
 function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [activeTab, setActiveTab] = useState<EditorTab>('overview');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const stored = window.localStorage.getItem('config-generator:sidebar-collapsed');
+    return stored === '1';
+  });
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error' | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +43,10 @@ function App() {
       window.removeEventListener('navigate', handleNavigate as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem('config-generator:sidebar-collapsed', sidebarCollapsed ? '1' : '0');
+  }, [sidebarCollapsed]);
   
   const loadConfig = async () => {
     try {
@@ -145,8 +153,13 @@ function App() {
   }
   
   return (
-    <div className="app-shell min-h-screen bg-gray-50">
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+    <div className={`app-shell min-h-screen bg-gray-50 ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((previous) => !previous)}
+      />
       
       <main className="main-content">
         <header className="header">

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -35,6 +36,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 
 		s.cfg = &newConfig
+		fmt.Printf("[Config] save requested: nodes=%d services=%d\n", len(s.cfg.Nodes), len(s.cfg.ServiceTop))
 
 		data, err := yaml.Marshal(s.cfg)
 		if err != nil {
@@ -66,13 +68,16 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Printf("[Generate] start nodes=%d services=%d output=%s templates=%s\n", len(s.cfg.Nodes), len(s.cfg.ServiceTop), s.outputDir, s.templatesDir)
 	instances := generator.BuildServiceInstances(s.cfg)
 
-	summary, err := generator.GenerateOutputs(s.cfg, instances, s.outputDir)
+	summary, err := generator.GenerateOutputs(s.cfg, instances, s.outputDir, s.templatesDir)
 	if err != nil {
+		fmt.Printf("[Generate] failed: %v\n", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	fmt.Printf("[Generate] done generated=%d skipped=%d warnings=%d\n", summary.Generated, len(summary.SkippedServices), len(summary.Warnings))
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":         true,
@@ -231,9 +236,11 @@ func (s *Server) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.loadConfig(); err != nil {
+		fmt.Printf("[Config] reload failed: %v\n", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	fmt.Printf("[Config] reload ok: nodes=%d services=%d\n", len(s.cfg.Nodes), len(s.cfg.ServiceTop))
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
@@ -343,12 +350,15 @@ func (s *Server) handleCheckReferences(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	fmt.Printf("[CheckReferences] type=%s key=%s service=%s\n", req.Type, req.Key, req.Service)
 
 	result, err := checker.CheckReferences(req, s.templatesDir)
 	if err != nil {
+		fmt.Printf("[CheckReferences] failed: %v\n", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	fmt.Printf("[CheckReferences] done hasReferences=%v refs=%d\n", result.HasReferences, len(result.References))
 
 	json.NewEncoder(w).Encode(result)
 }

@@ -84,6 +84,8 @@ coze dev
 | `/api/output/download` | GET | 下载配置包 (zip) |
 | `/api/config/reload` | POST | 从文件重新加载配置 |
 
+AI 模板工作台（流式对话、附件上传、会话管理、Skill 管理）请参考 [docs/AI_WORKBENCH.md](docs/AI_WORKBENCH.md)。
+
 ### 3. 配置模板（Templates）
 
 **路径**: `templates/`

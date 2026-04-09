@@ -10,6 +10,7 @@
 - ✅ **模板引擎** - 基于 Go Template，支持复杂逻辑
 - ✅ **多节点管理** - 支持节点复用和服务拓扑配置
 - ✅ **配置导出** - 支持单个文件下载和批量打包下载
+- ✅ **AI 模板工作台** - 支持对话生成模板、流式回复、历史会话、Skill 管理
 
 ## 快速开始
 
@@ -79,6 +80,14 @@ project/
 ### 模板管理
 - `GET /api/templates` - 获取模板列表
 
+### AI 模板工作台
+- `GET /api/ai/settings` / `PUT /api/ai/settings` - AI 接口设置
+- `POST /api/ai/settings/test` - 测试连接
+- `GET /api/ai/template/session` / `POST /api/ai/template/session` - 历史会话与新建会话
+- `POST /api/ai/template/session/:id/message?stream=1` - 流式对话生成模板草稿
+- `POST /api/ai/template/session/:id/upload` - 上传附件（文本/图片）
+- `POST /api/ai/template/session/:id/save` - 审核后落盘到 `templates/`
+
 ## 开发
 
 ### 构建前端
@@ -124,6 +133,7 @@ bash clean.sh
 - `nodeOverrides` - 节点特化配置（可选）
 
 详细配置说明请参考 [USAGE_GUIDE.md](USAGE_GUIDE.md)。
+AI 工作台说明请参考 [docs/AI_WORKBENCH.md](docs/AI_WORKBENCH.md)。
 
 ## 模板开发
 

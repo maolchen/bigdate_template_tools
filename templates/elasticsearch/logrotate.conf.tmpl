@@ -1,0 +1,105 @@
+# =============================================================================
+# Elasticsearch 日志轮转配置模板
+# 服务：elasticsearch
+# 版本：{{ .Instance.Vars.version }}
+# 节点：{{ .Instance.NodeAlias }}
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 日志轮转配置
+# -----------------------------------------------------------------------------
+{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}/*.log {
+    # 轮转频率
+    daily
+    
+    # 保留最近 14 个日志文件
+    rotate 14
+    
+    # 当日志文件大小超过此值时触发轮转（可选，与 daily 同时生效）
+    maxsize 100M
+    
+    # 最小文件大小，小于此值不轮转
+    minsize 10M
+    
+    # 压缩旧日志
+    compress
+    
+    # 延迟压缩（下一轮转周期再压缩）
+    delaycompress
+    
+    # 如果日志文件不存在，不报错
+    missingok
+    
+    # 如果日志文件为空，不轮转
+    notifempty
+    
+    # 创建新日志文件的权限和所有者
+    create 0640 {{ .Global.user }} {{ .Global.group }}
+    
+    # 使用日期作为轮转文件后缀
+    dateext
+    dateformat -%Y%m%d
+    
+    # 共享脚本模式（多个日志文件共享 postrotate）
+    sharedscripts
+    
+    # 轮转后执行脚本
+    postrotate
+        # 通知 elasticsearch 重新打开日志文件
+        # 方式 1：使用 systemd（推荐）
+        if [ -x /usr/bin/systemctl ]; then
+            /usr/bin/systemctl reload elasticsearch > /dev/null 2>&1 || true
+        fi
+        
+        # 方式 2：发送 HUP 信号（备选）
+        # if [ -f {{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}/elasticsearch.pid ]; then
+        #     kill -HUP $(cat {{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}/elasticsearch.pid) 2>/dev/null || true
+        # fi
+    endscript
+}
+
+# -----------------------------------------------------------------------------
+# GC 日志轮转配置（如果启用）
+# -----------------------------------------------------------------------------
+{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}/gc.log* {
+    daily
+    rotate 7
+    maxsize 50M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 {{ .Global.user }} {{ .Global.group }}
+    dateext
+    dateformat -%Y%m%d
+    sharedscripts
+    
+    postrotate
+        if [ -x /usr/bin/systemctl ]; then
+            /usr/bin/systemctl reload elasticsearch > /dev/null 2>&1 || true
+        fi
+    endscript
+}
+
+# -----------------------------------------------------------------------------
+# 慢查询日志轮转配置（如果启用）
+# -----------------------------------------------------------------------------
+{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}/*_slow.log {
+    daily
+    rotate 30
+    maxsize 200M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 {{ .Global.user }} {{ .Global.group }}
+    dateext
+    dateformat -%Y%m%d
+    sharedscripts
+    
+    postrotate
+        if [ -x /usr/bin/systemctl ]; then
+            /usr/bin/systemctl reload elasticsearch > /dev/null 2>&1 || true
+        fi
+    endscript
+}

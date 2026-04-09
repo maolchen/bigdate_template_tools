@@ -10,47 +10,13 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 )
-
-type openAIChatRequest struct {
-	Model          string              `json:"model"`
-	Messages       []openAIChatMessage `json:"messages"`
-	ResponseFormat map[string]string   `json:"response_format,omitempty"`
-	Temperature    float64             `json:"temperature,omitempty"`
-	MaxTokens      int                 `json:"max_tokens,omitempty"`
-}
-
-type openAIChatMessage struct {
-	Role    string              `json:"role"`
-	Content []openAIMessagePart `json:"content,omitempty"`
-}
-
-type openAIMessagePart struct {
-	Type     string                `json:"type"`
-	Text     string                `json:"text,omitempty"`
-	ImageURL *openAIImageURLHolder `json:"image_url,omitempty"`
-}
-
-type openAIImageURLHolder struct {
-	URL string `json:"url"`
-}
-
-type openAIChatResponse struct {
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
-	Error *struct {
-		Message string `json:"message"`
-		Type    string `json:"type"`
-	} `json:"error,omitempty"`
-}
 
 func newTextMessage(role, content string) openAIChatMessage {
 	return openAIChatMessage{
@@ -69,6 +35,7 @@ func normalizeBaseURL(baseURL string) string {
 	return strings.TrimRight(trimmed, "/")
 }
 
+// testAISettingsConnection validates endpoint/model/key by sending a minimal JSON-mode request.
 func (s *Server) testAISettingsConnection(override *aiSettingsUpdateRequest) (map[string]interface{}, error) {
 	var (
 		apiKey   string
@@ -112,6 +79,7 @@ func (s *Server) testAISettingsConnection(override *aiSettingsUpdateRequest) (ma
 	if strings.TrimSpace(settings.BaseURL) == "" || strings.TrimSpace(settings.Model) == "" {
 		return nil, errors.New("请完整填写 Base URL 和 Model")
 	}
+	fmt.Printf("[AI] test connection baseUrl=%s model=%s\n", settings.BaseURL, settings.Model)
 
 	reqBody := openAIChatRequest{
 		Model: settings.Model,
@@ -124,8 +92,9 @@ func (s *Server) testAISettingsConnection(override *aiSettingsUpdateRequest) (ma
 		MaxTokens:      64,
 	}
 
-	_, err = doOpenAIChatCompletion(normalizeBaseURL(settings.BaseURL), apiKey, reqBody)
+	_, err = s.aiClient.ChatCompletion(normalizeBaseURL(settings.BaseURL), apiKey, reqBody)
 	if err != nil {
+		fmt.Printf("[AI] test connection failed: %v\n", err)
 		return nil, err
 	}
 
@@ -136,6 +105,8 @@ func (s *Server) testAISettingsConnection(override *aiSettingsUpdateRequest) (ma
 }
 
 func doOpenAIChatCompletion(baseURL, apiKey string, reqBody openAIChatRequest) (string, error) {
+	fmt.Printf("[AI] request baseUrl=%s model=%s messages=%d maxTokens=%d\n",
+		redactBaseURL(baseURL), reqBody.Model, len(reqBody.Messages), reqBody.MaxTokens)
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", err
@@ -159,6 +130,7 @@ func doOpenAIChatCompletion(baseURL, apiKey string, reqBody openAIChatRequest) (
 	if err != nil {
 		return "", err
 	}
+	fmt.Printf("[AI] response http=%d bytes=%d\n", resp.StatusCode, len(body))
 
 	var parsed openAIChatResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
@@ -178,10 +150,15 @@ func doOpenAIChatCompletion(baseURL, apiKey string, reqBody openAIChatRequest) (
 	if len(parsed.Choices) == 0 {
 		return "", errors.New("AI 接口未返回有效结果")
 	}
+	if reason := strings.TrimSpace(parsed.Choices[0].FinishReason); reason == "length" || reason == "max_tokens" {
+		fmt.Printf("[AI] response truncated finish_reason=%s\n", reason)
+		return "", errors.New("AI 输出被截断，请减少一次生成内容，或提高模型输出上限后重试")
+	}
 
 	return parsed.Choices[0].Message.Content, nil
 }
 
+// parseAIModelResponse attempts multiple JSON recovery strategies for model outputs.
 func parseAIModelResponse(raw string) (*aiModelResponse, error) {
 	clean := strings.TrimSpace(raw)
 	if clean == "" {
@@ -189,39 +166,360 @@ func parseAIModelResponse(raw string) (*aiModelResponse, error) {
 	}
 
 	var result aiModelResponse
-	if err := json.Unmarshal([]byte(clean), &result); err == nil {
-		return &result, nil
-	}
-
-	start := strings.Index(clean, "{")
-	end := strings.LastIndex(clean, "}")
-	if start >= 0 && end > start {
-		if err := json.Unmarshal([]byte(clean[start:end+1]), &result); err == nil {
+	candidates := buildAIJSONCandidates(clean)
+	for _, candidate := range candidates {
+		if err := json.Unmarshal([]byte(candidate), &result); err == nil {
 			return &result, nil
 		}
 	}
 
-	return nil, errors.New("AI 返回内容不是合法 JSON")
+	snippet := clean
+	if len([]rune(snippet)) > 240 {
+		snippet = string([]rune(snippet)[:240]) + "..."
+	}
+	return nil, fmt.Errorf("AI 返回内容不是合法 JSON，原始片段: %s", snippet)
 }
 
+func buildAIJSONCandidates(raw string) []string {
+	candidates := make([]string, 0, 8)
+	seen := make(map[string]struct{}, 8)
+	appendCandidate := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		candidates = append(candidates, value)
+	}
+
+	appendCandidate(raw)
+	appendCandidate(stripMarkdownCodeFence(raw))
+	appendCandidate(extractFirstJSONObject(raw))
+	appendCandidate(extractFirstJSONObject(stripMarkdownCodeFence(raw)))
+	appendCandidate(repairJSONLikeContent(raw))
+	appendCandidate(repairJSONLikeContent(stripMarkdownCodeFence(raw)))
+	appendCandidate(repairJSONLikeContent(extractFirstJSONObject(raw)))
+	appendCandidate(repairJSONLikeContent(extractFirstJSONObject(stripMarkdownCodeFence(raw))))
+	return candidates
+}
+
+func stripMarkdownCodeFence(raw string) string {
+	clean := strings.TrimSpace(raw)
+	if !strings.HasPrefix(clean, "```") {
+		return clean
+	}
+
+	lines := strings.Split(clean, "\n")
+	if len(lines) < 2 {
+		return clean
+	}
+	if !strings.HasPrefix(strings.TrimSpace(lines[0]), "```") {
+		return clean
+	}
+
+	endIndex := -1
+	for idx := len(lines) - 1; idx >= 1; idx-- {
+		if strings.TrimSpace(lines[idx]) == "```" {
+			endIndex = idx
+			break
+		}
+	}
+	if endIndex == -1 {
+		return clean
+	}
+	return strings.TrimSpace(strings.Join(lines[1:endIndex], "\n"))
+}
+
+func extractFirstJSONObject(raw string) string {
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return ""
+	}
+
+	start := -1
+	depth := 0
+	inString := false
+	escaped := false
+	for idx, r := range clean {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if r == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		if r == '{' {
+			if depth == 0 {
+				start = idx
+			}
+			depth++
+			continue
+		}
+		if r == '}' {
+			if depth == 0 {
+				continue
+			}
+			depth--
+			if depth == 0 && start >= 0 {
+				return strings.TrimSpace(clean[start : idx+1])
+			}
+		}
+	}
+	return ""
+}
+
+func repairJSONLikeContent(raw string) string {
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return ""
+	}
+
+	var builder strings.Builder
+	builder.Grow(len(clean) + 64)
+
+	inString := false
+	escaped := false
+
+	for idx := 0; idx < len(clean); idx++ {
+		ch := clean[idx]
+		if !inString {
+			builder.WriteByte(ch)
+			if ch == '"' {
+				inString = true
+			}
+			continue
+		}
+
+		if escaped {
+			builder.WriteByte(ch)
+			escaped = false
+			continue
+		}
+
+		switch ch {
+		case '\\':
+			if isValidJSONEscape(clean, idx) {
+				builder.WriteByte(ch)
+				escaped = true
+			} else {
+				builder.WriteString(`\\`)
+			}
+		case '"':
+			if isLikelyStringTerminator(clean, idx) {
+				builder.WriteByte(ch)
+				inString = false
+			} else {
+				builder.WriteString(`\"`)
+			}
+		case '\n':
+			builder.WriteString(`\n`)
+		case '\r':
+			builder.WriteString(`\r`)
+		case '\t':
+			builder.WriteString(`\t`)
+		default:
+			builder.WriteByte(ch)
+		}
+	}
+
+	return stripTrailingCommasOutsideStrings(builder.String())
+}
+
+func isValidJSONEscape(raw string, idx int) bool {
+	if idx+1 >= len(raw) {
+		return false
+	}
+	switch raw[idx+1] {
+	case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
+		return true
+	case 'u':
+		if idx+5 >= len(raw) {
+			return false
+		}
+		for pos := idx + 2; pos <= idx+5; pos++ {
+			if !isHex(raw[pos]) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func isHex(ch byte) bool {
+	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
+}
+
+func isLikelyStringTerminator(raw string, idx int) bool {
+	for pos := idx + 1; pos < len(raw); pos++ {
+		switch raw[pos] {
+		case ' ', '\n', '\r', '\t':
+			continue
+		case ':', ',', '}', ']':
+			return true
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func stripTrailingCommasOutsideStrings(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return raw
+	}
+
+	var builder strings.Builder
+	builder.Grow(len(raw))
+
+	inString := false
+	escaped := false
+
+	for idx := 0; idx < len(raw); idx++ {
+		ch := raw[idx]
+		if inString {
+			builder.WriteByte(ch)
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		if ch == '"' {
+			inString = true
+			builder.WriteByte(ch)
+			continue
+		}
+		if ch == ',' {
+			next := idx + 1
+			for next < len(raw) && (raw[next] == ' ' || raw[next] == '\n' || raw[next] == '\r' || raw[next] == '\t') {
+				next++
+			}
+			if next < len(raw) && (raw[next] == '}' || raw[next] == ']') {
+				continue
+			}
+		}
+		builder.WriteByte(ch)
+	}
+
+	return builder.String()
+}
+
+func resolveSelectedDrafts(session *aiSession, selectedDraftPaths []string) []aiDraftFile {
+	selectedDrafts := make([]aiDraftFile, 0)
+	if len(selectedDraftPaths) == 0 {
+		return append(selectedDrafts, session.DraftFiles...)
+	}
+
+	selected := make(map[string]struct{}, len(selectedDraftPaths))
+	for _, path := range selectedDraftPaths {
+		selected[path] = struct{}{}
+	}
+	for _, draft := range session.DraftFiles {
+		if _, ok := selected[draft.Path]; ok {
+			selectedDrafts = append(selectedDrafts, draft)
+		}
+	}
+	return selectedDrafts
+}
+
+func buildPromptPreviewSummary(trace aiPromptTrace, selectedDrafts []aiDraftFile, attachments []aiPromptPreviewAttachment) string {
+	parts := make([]string, 0, 4)
+	if len(trace.SkillRefs) > 0 {
+		parts = append(parts, fmt.Sprintf("%d 条规则", len(trace.SkillRefs)))
+	}
+	if len(trace.ExampleRefs) > 0 {
+		parts = append(parts, fmt.Sprintf("%d 个示例", len(trace.ExampleRefs)))
+	}
+	if len(selectedDrafts) > 0 {
+		parts = append(parts, fmt.Sprintf("%d 个草稿", len(selectedDrafts)))
+	}
+	if len(attachments) > 0 {
+		parts = append(parts, fmt.Sprintf("%d 个附件", len(attachments)))
+	}
+	if len(parts) == 0 {
+		return "当前没有命中额外上下文"
+	}
+	return "本次发送将带上 " + strings.Join(parts, "、")
+}
+
+func resolveAIModel(requestModel, sessionModel, settingsModel string) string {
+	if model := strings.TrimSpace(requestModel); model != "" {
+		return model
+	}
+	if model := strings.TrimSpace(sessionModel); model != "" {
+		return model
+	}
+	if model := strings.TrimSpace(settingsModel); model != "" {
+		return model
+	}
+	return strings.TrimSpace(defaultAISettings().Model)
+}
+
+// buildAIPromptPreview returns a trace of which skills/examples/attachments will be sent in the next request.
+func (s *Server) buildAIPromptPreview(session *aiSession, req aiSessionMessageRequest, attachmentIDs []string) (aiPromptPreviewResponse, error) {
+	selectedDrafts := resolveSelectedDrafts(session, req.SelectedDraftPaths)
+	_, promptTrace, err := s.buildAIPromptBundle(session, req, selectedDrafts, attachmentIDs)
+	if err != nil {
+		return aiPromptPreviewResponse{}, err
+	}
+
+	attachments := make([]aiPromptPreviewAttachment, 0, len(attachmentIDs))
+	for _, attachmentID := range attachmentIDs {
+		attachment, err := s.findAttachment(session, attachmentID)
+		if err != nil {
+			continue
+		}
+		attachments = append(attachments, aiPromptPreviewAttachment{
+			ID:   attachment.ID,
+			Name: attachment.Name,
+			Kind: attachment.Kind,
+		})
+	}
+
+	selectedDraftPaths := make([]string, 0, len(selectedDrafts))
+	for _, draft := range selectedDrafts {
+		selectedDraftPaths = append(selectedDraftPaths, draft.Path)
+	}
+
+	return aiPromptPreviewResponse{
+		Summary:            buildPromptPreviewSummary(promptTrace, selectedDrafts, attachments),
+		PromptTrace:        promptTrace,
+		SelectedDraftPaths: selectedDraftPaths,
+		SelectedSkillIDs:   append([]string(nil), req.SelectedSkillIDs...),
+		Attachments:        attachments,
+		HasSessionRules:    strings.TrimSpace(req.SessionRules) != "",
+	}, nil
+}
+
+// buildAIChatRequest composes one OpenAI-compatible request with system rules, history, drafts and attachments.
 func (s *Server) buildAIChatRequest(session *aiSession, req aiSessionMessageRequest, attachmentIDs []string) (openAIChatRequest, error) {
-	rules, err := s.loadAIRules()
+	selectedDrafts := resolveSelectedDrafts(session, req.SelectedDraftPaths)
+
+	systemPrompt, promptTrace, err := s.buildAIPromptBundle(session, req, selectedDrafts, attachmentIDs)
 	if err != nil {
 		return openAIChatRequest{}, err
 	}
-
-	systemPrompt := templateRulesSummary()
-	if strings.TrimSpace(rules) != "" {
-		systemPrompt += "\n\n全局模板规范补充：\n" + strings.TrimSpace(rules)
-	}
-	if strings.TrimSpace(req.SessionRules) != "" {
-		systemPrompt += "\n\n当前会话补充规则：\n" + strings.TrimSpace(req.SessionRules)
-	}
-
-	if configContext := buildConfigPromptContext(s.cfg); strings.TrimSpace(configContext) != "" {
-		systemPrompt += "\n\n当前配置上下文：\n" + configContext
-	}
-	systemPrompt += "\n\n输出要求补充：请尽量返回 configPatch，用于同步 serviceTop 和 serverConfig.vars；如果信息不足，请在 followUpQuestions 里明确提出。"
 
 	messages := []openAIChatMessage{newTextMessage("system", systemPrompt)}
 
@@ -240,22 +538,10 @@ func (s *Server) buildAIChatRequest(session *aiSession, req aiSessionMessageRequ
 			}
 			builder += "\n\n涉及草稿文件：" + strings.Join(paths, ", ")
 		}
+		if promptTraceSummary := formatPromptTraceSummary(message.PromptTrace); strings.TrimSpace(promptTraceSummary) != "" {
+			builder += "\n\n历史规则来源：\n" + promptTraceSummary
+		}
 		messages = append(messages, newTextMessage(message.Role, builder))
-	}
-
-	selectedDrafts := make([]aiDraftFile, 0)
-	if len(req.SelectedDraftPaths) == 0 {
-		selectedDrafts = append(selectedDrafts, session.DraftFiles...)
-	} else {
-		selected := make(map[string]struct{}, len(req.SelectedDraftPaths))
-		for _, path := range req.SelectedDraftPaths {
-			selected[path] = struct{}{}
-		}
-		for _, draft := range session.DraftFiles {
-			if _, ok := selected[draft.Path]; ok {
-				selectedDrafts = append(selectedDrafts, draft)
-			}
-		}
 	}
 
 	var userParts []openAIMessagePart
@@ -325,17 +611,23 @@ func (s *Server) buildAIChatRequest(session *aiSession, req aiSessionMessageRequ
 		Content: userParts,
 	})
 
-	_, settings, err := s.getAIAPIKey()
+	settings, err := s.loadAISettingsFile()
 	if err != nil {
 		return openAIChatRequest{}, err
 	}
+	resolvedModel := resolveAIModel(req.Model, session.SelectedModel, settings.Model)
+	if resolvedModel == "" {
+		return openAIChatRequest{}, errors.New("妯″瀷涓嶈兘涓虹┖")
+	}
 
+	session.PromptTrace = promptTrace
+	session.SelectedModel = resolvedModel
 	return openAIChatRequest{
-		Model:          settings.Model,
+		Model:          resolvedModel,
 		Messages:       messages,
 		ResponseFormat: map[string]string{"type": "json_object"},
 		Temperature:    0.2,
-		MaxTokens:      3200,
+		MaxTokens:      8192,
 	}, nil
 }
 
@@ -364,6 +656,7 @@ func mergeDraftFiles(existing []aiDraftFile, updates []aiDraftFile) []aiDraftFil
 	return result
 }
 
+// handleAISettings manages AI endpoint settings retrieval and updates.
 func (s *Server) handleAISettings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -399,6 +692,7 @@ func (s *Server) handleAISettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleAISettingsTest performs connectivity verification for current or temporary settings.
 func (s *Server) handleAISettingsTest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -420,9 +714,40 @@ func (s *Server) handleAISettingsTest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	fmt.Printf("[AI] test connection ok\n")
 	json.NewEncoder(w).Encode(result)
 }
 
+// handleAIModels returns the provider-visible model list from the configured OpenAI-compatible endpoint.
+func (s *Server) handleAIModels(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	apiKey, settings, err := s.getAIAPIKey()
+	if err != nil {
+		status := http.StatusBadRequest
+		if !errors.Is(err, errAIMasterKeyMissing) && !errors.Is(err, errAISettingsMissing) {
+			status = http.StatusInternalServerError
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	fmt.Printf("[AI] list models baseUrl=%s\n", settings.BaseURL)
+	models, err := listCompatibleAIModels(settings.BaseURL, apiKey)
+	if err != nil {
+		fmt.Printf("[AI] list models failed: %v\n", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	fmt.Printf("[AI] list models ok count=%d\n", len(models))
+	json.NewEncoder(w).Encode(models)
+}
+
+// handleAIRules manages the global rules document used in every AI prompt.
 func (s *Server) handleAIRules(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -457,22 +782,213 @@ func (s *Server) handleAIRules(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleAITemplateSessionCollection(w http.ResponseWriter, r *http.Request) {
+// handleAIPromptCatalog returns skill/example catalogs used by the Skill management UI.
+func (s *Server) handleAIPromptCatalog(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	session, err := s.createAISession()
+	skills, err := s.listAISkillCatalog()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(session)
+	examples, err := s.buildExampleIndex()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(aiPromptCatalogResponse{
+		Skills:   skills,
+		Examples: examples,
+	})
 }
 
+// handleAISkillFile updates one skill markdown file by absolute relative path.
+func (s *Server) handleAISkillFile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		path := strings.TrimSpace(r.URL.Query().Get("path"))
+		if path == "" {
+			http.Error(w, "Missing skill path", http.StatusBadRequest)
+			return
+		}
+		item, err := s.loadAISkillCatalogItem(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "Skill not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(item)
+	case http.MethodPut:
+		var req aiSkillFileUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		item, err := s.saveAISkillContent(req.Path, req.Content)
+		if err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "Skill not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(item)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAICustomSkillsCollection lists and creates custom skills under data/ai/skills.
+func (s *Server) handleAICustomSkillsCollection(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		skills, err := s.listCustomAISkills()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(skills)
+	case http.MethodPost:
+		var req aiCustomSkillUpsertRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if _, err := s.loadCustomSkill(req.ID); err == nil {
+			http.Error(w, "同名自定义 skill 已存在，请改用更新操作", http.StatusConflict)
+			return
+		} else if err != nil && !os.IsNotExist(err) && !strings.Contains(err.Error(), "no such file") {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		skill, err := s.saveCustomSkill(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(skill)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAICustomSkillsDetail fetches, updates, or deletes one custom skill by id.
+func (s *Server) handleAICustomSkillsDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	skillID := strings.TrimPrefix(r.URL.Path, "/api/ai/skills/")
+	skillID = strings.TrimSpace(strings.Trim(skillID, "/"))
+	if skillID == "" {
+		http.Error(w, "Invalid skill path", http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		skill, err := s.loadCustomSkill(skillID)
+		if err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "Skill not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(skill)
+	case http.MethodPut:
+		var req aiCustomSkillUpsertRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if _, err := s.loadCustomSkill(skillID); err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "Skill not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		req.ID = skillID
+		skill, err := s.saveCustomSkill(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(skill)
+	case http.MethodDelete:
+		if err := s.deleteCustomSkill(skillID); err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "Skill not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"message": "自定义 skill 已删除",
+		})
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAITemplateSessionCollection handles create/list/delete operations at session collection level.
+func (s *Server) handleAITemplateSessionCollection(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		sessions, err := s.listAISessions()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(sessions)
+	case http.MethodPost:
+		session, err := s.createAISession()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(session)
+	case http.MethodDelete:
+		var payload struct {
+			ID string `json:"id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		sessionID := strings.TrimSpace(r.URL.Query().Get("id"))
+		if sessionID == "" {
+			sessionID = strings.TrimSpace(payload.ID)
+		}
+		if sessionID == "" {
+			http.Error(w, "session id 不能为空", http.StatusBadRequest)
+			return
+		}
+		if err := s.deleteAISession(sessionID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(aiSessionDeleteResponse{DeletedSessionID: sessionID})
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAITemplateSessionDetail routes session sub-resources such as message/upload/save/meta.
 func (s *Server) handleAITemplateSessionDetail(w http.ResponseWriter, r *http.Request) {
 	sessionPath := strings.TrimPrefix(r.URL.Path, "/api/ai/template/session/")
 	sessionPath = strings.Trim(sessionPath, "/")
@@ -494,18 +1010,34 @@ func (s *Server) handleAITemplateSessionDetail(w http.ResponseWriter, r *http.Re
 	}
 
 	if len(parts) == 1 {
-		if r.Method != http.MethodGet {
+		switch r.Method {
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(session)
+			return
+		case http.MethodDelete:
+			if err := s.deleteAISession(sessionID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(aiSessionDeleteResponse{DeletedSessionID: sessionID})
+			return
+		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(session)
-		return
 	}
 
 	switch parts[1] {
 	case "message":
 		s.handleAISessionMessage(w, r, session)
+	case "meta":
+		s.handleAISessionMeta(w, r, session)
+	case "preview":
+		s.handleAISessionPreview(w, r, session)
+	case "drafts":
+		s.handleAISessionDrafts(w, r, session)
 	case "upload":
 		s.handleAISessionUpload(w, r, session)
 	case "save":
@@ -521,7 +1053,65 @@ func (s *Server) handleAITemplateSessionDetail(w http.ResponseWriter, r *http.Re
 	}
 }
 
-func (s *Server) handleAISessionMessage(w http.ResponseWriter, r *http.Request, session *aiSession) {
+// handleAISessionMeta updates editable metadata like session title.
+func (s *Server) handleAISessionMeta(w http.ResponseWriter, r *http.Request, session *aiSession) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req aiSessionMetaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.updateAISessionTitle(session, req.Title); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	updated, err := s.loadAISession(session.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(updated)
+}
+
+// handleAISessionDrafts deletes selected drafts from session state and optionally from disk.
+func (s *Server) handleAISessionDrafts(w http.ResponseWriter, r *http.Request, session *aiSession) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req aiSessionDeleteDraftRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	deletedDrafts, deletedTemplates, err := s.deleteDraftFiles(session, req.Paths, req.RemoveFromDisk)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	updated, err := s.loadAISession(session.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{
+		"deletedDrafts":    deletedDrafts,
+		"deletedTemplates": deletedTemplates,
+		"session":          updated,
+	})
+}
+
+// handleAISessionPreview returns preflight prompt-trace details before an actual model call.
+func (s *Server) handleAISessionPreview(w http.ResponseWriter, r *http.Request, session *aiSession) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -534,7 +1124,64 @@ func (s *Server) handleAISessionMessage(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	if req.SelectedSkillIDs == nil {
+		req.SelectedSkillIDs = append([]string(nil), session.SelectedSkillIDs...)
+	}
+	req.SelectedSkillIDs = normalizeSelectedSkillIDs(req.SelectedSkillIDs)
+	fmt.Printf("[AI] preview session=%s messageLen=%d draftPaths=%d skills=%d\n",
+		session.ID, len(strings.TrimSpace(req.Message)), len(req.SelectedDraftPaths), len(req.SelectedSkillIDs))
+
+	attachmentIDs := make([]string, 0)
+	for _, attachment := range session.Attachments {
+		if attachment.Pending {
+			attachmentIDs = append(attachmentIDs, attachment.ID)
+		}
+	}
+
+	preview, err := s.buildAIPromptPreview(session, req, attachmentIDs)
+	if err != nil {
+		fmt.Printf("[AI] preview failed session=%s err=%v\n", session.ID, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fmt.Printf("[AI] preview ok session=%s skills=%d examples=%d attachments=%d\n",
+		session.ID, len(preview.PromptTrace.SkillRefs), len(preview.PromptTrace.ExampleRefs), len(preview.Attachments))
+	json.NewEncoder(w).Encode(preview)
+}
+
+// handleAISessionMessage dispatches one conversation turn, optionally via SSE stream mode.
+func (s *Server) handleAISessionMessage(w http.ResponseWriter, r *http.Request, session *aiSession) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req aiSessionMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if r.URL.Query().Get("stream") == "1" || strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/event-stream") {
+		s.handleAISessionMessageStream(w, r, session, req)
+		return
+	}
+	result, status, err := s.runAISessionMessage(session, req, nil)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	json.NewEncoder(w).Encode(result.Session)
+	return
+
+	if req.SelectedSkillIDs == nil {
+		req.SelectedSkillIDs = append([]string(nil), session.SelectedSkillIDs...)
+	}
+	req.SelectedSkillIDs = normalizeSelectedSkillIDs(req.SelectedSkillIDs)
+
 	attachmentIDs := consumePendingAttachments(session)
+	fmt.Printf("[AI] message session=%s messageLen=%d pendingAttachments=%d draftPaths=%d skills=%d\n",
+		session.ID, len(strings.TrimSpace(req.Message)), len(attachmentIDs), len(req.SelectedDraftPaths), len(req.SelectedSkillIDs))
 	chatReq, err := s.buildAIChatRequest(session, req, attachmentIDs)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -551,7 +1198,7 @@ func (s *Server) handleAISessionMessage(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	rawResponse, err := doOpenAIChatCompletion(normalizeBaseURL(settings.BaseURL), apiKey, chatReq)
+	rawResponse, err := s.aiClient.ChatCompletion(normalizeBaseURL(settings.BaseURL), apiKey, chatReq)
 	if err != nil {
 		if len(attachmentIDs) > 0 {
 			for _, attachmentID := range attachmentIDs {
@@ -571,11 +1218,13 @@ func (s *Server) handleAISessionMessage(w http.ResponseWriter, r *http.Request, 
 
 	modelResponse, err := parseAIModelResponse(rawResponse)
 	if err != nil {
+		fmt.Printf("[AI] response parse failed session=%s err=%v\n", session.ID, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 
 	if modelResponse.PlannedActions, err = validatePlannedActions(modelResponse.PlannedActions); err != nil {
+		fmt.Printf("[AI] planned actions invalid session=%s err=%v\n", session.ID, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -606,6 +1255,9 @@ func (s *Server) handleAISessionMessage(w http.ResponseWriter, r *http.Request, 
 			modelResponse.Warnings = mergeStringLists(modelResponse.Warnings, []string{issue.Message})
 		}
 	}
+	fmt.Printf("[AI] response session=%s drafts=%d actions=%d warnings=%d followUps=%d configIssues=%d\n",
+		session.ID, len(modelResponse.DraftFiles), len(modelResponse.PlannedActions), len(modelResponse.Warnings),
+		len(modelResponse.FollowUpQuestions), len(configIssues))
 
 	messageID, err := generateID("msg_")
 	if err != nil {
@@ -636,15 +1288,18 @@ func (s *Server) handleAISessionMessage(w http.ResponseWriter, r *http.Request, 
 		PlannedActions:    modelResponse.PlannedActions,
 		ConfigPatch:       modelResponse.ConfigPatch,
 		ConfigIssues:      configIssues,
+		PromptTrace:       session.PromptTrace,
 	})
 
 	session.SessionRules = req.SessionRules
+	session.SelectedSkillIDs = req.SelectedSkillIDs
 	session.DraftFiles = mergeDraftFiles(session.DraftFiles, modelResponse.DraftFiles)
 	session.PlannedActions = modelResponse.PlannedActions
 	session.ConfigPatch = mergeAIConfigPatches(session.ConfigPatch, modelResponse.ConfigPatch)
 	session.ConfigIssues = mergeAIConfigIssues(session.ConfigIssues, configIssues)
 
 	if err := s.saveAISession(session); err != nil {
+		fmt.Printf("[AI] save session failed session=%s err=%v\n", session.ID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -657,6 +1312,19 @@ func readUploadedPart(file multipart.File) ([]byte, error) {
 	return io.ReadAll(file)
 }
 
+func redactBaseURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Host == "" {
+		return trimmed
+	}
+	return parsed.Scheme + "://" + parsed.Host
+}
+
+// handleAISessionUpload stores one text/image attachment as pending context for the next message.
 func (s *Server) handleAISessionUpload(w http.ResponseWriter, r *http.Request, session *aiSession) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -691,6 +1359,7 @@ func (s *Server) handleAISessionUpload(w http.ResponseWriter, r *http.Request, s
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	fmt.Printf("[AI] upload session=%s name=%s kind=%s size=%d\n", session.ID, attachment.Name, attachment.Kind, attachment.Size)
 
 	if err := s.saveAISession(session); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -700,6 +1369,7 @@ func (s *Server) handleAISessionUpload(w http.ResponseWriter, r *http.Request, s
 	json.NewEncoder(w).Encode(attachment)
 }
 
+// handleAISessionSave persists reviewed draft templates and optionally applies config patch suggestions.
 func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, session *aiSession) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -716,9 +1386,11 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 		http.Error(w, "files 不能为空", http.StatusBadRequest)
 		return
 	}
+	fmt.Printf("[AI] save session=%s files=%d applyConfigPatch=%v\n", session.ID, len(req.Files), req.ApplyConfigPatch)
 
 	savedFiles, createdDirs, err := s.saveDraftFiles(req.Files)
 	if err != nil {
+		fmt.Printf("[AI] save failed session=%s err=%v\n", session.ID, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -738,9 +1410,12 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 				}
 			}
 			if err := s.saveAISession(session); err != nil {
+				fmt.Printf("[AI] save session failed session=%s err=%v\n", session.ID, err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			fmt.Printf("[AI] save session=%s done files=%d configApplied=false blockingIssues=%d\n",
+				session.ID, len(savedFiles), len(selectedConfigIssues))
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"savedFiles":      savedFiles,
 				"createdDirs":     createdDirs,
@@ -754,6 +1429,7 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 
 		appliedServices = applyConfigPatchToConfig(s.cfg, selectedPatch)
 		if err := config.SaveConfig(s.configPath, s.cfg); err != nil {
+			fmt.Printf("[AI] save config failed session=%s err=%v\n", session.ID, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -769,9 +1445,12 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 		}
 	}
 	if err := s.saveAISession(session); err != nil {
+		fmt.Printf("[AI] save session failed session=%s err=%v\n", session.ID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	fmt.Printf("[AI] save session=%s done files=%d configApplied=%v appliedServices=%d\n",
+		session.ID, len(savedFiles), configApplied, len(appliedServices))
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"savedFiles":      savedFiles,
@@ -783,16 +1462,32 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 }
 
 func (s *Server) handleAISessionAttachment(w http.ResponseWriter, r *http.Request, session *aiSession, attachmentID string) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		attachment, err := s.findAttachment(session, attachmentID)
+		if err != nil {
+			http.Error(w, "Attachment not found", http.StatusNotFound)
+			return
+		}
+		http.ServeFile(w, r, attachment.StoredPath)
+	case http.MethodDelete:
+		if err := s.deletePendingAttachment(session, attachmentID); err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "Attachment not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := s.saveAISession(session); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"deletedAttachmentId": attachmentID,
+			"session":             session,
+		})
+	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
-
-	attachment, err := s.findAttachment(session, attachmentID)
-	if err != nil {
-		http.Error(w, "Attachment not found", http.StatusNotFound)
-		return
-	}
-
-	http.ServeFile(w, r, attachment.StoredPath)
 }

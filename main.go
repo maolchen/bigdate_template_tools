@@ -11,6 +11,7 @@ import (
 	"config-generator/utils"
 )
 
+// main chooses CLI mode or Web mode based on flags.
 func main() {
 	// 解析命令行参数
 	webMode := flag.Bool("web", false, "启动 Web 服务模式")
@@ -100,7 +101,7 @@ func runCLIMode() {
 	fmt.Println("\n============================================")
 	fmt.Println("生成配置文件")
 	fmt.Println("============================================")
-	if _, err := generator.GenerateOutputs(cfg, instances, "output"); err != nil {
+	if _, err := generator.GenerateOutputs(cfg, instances, "output", "templates"); err != nil {
 		fmt.Printf("生成配置失败: %v\n", err)
 		os.Exit(1)
 	}

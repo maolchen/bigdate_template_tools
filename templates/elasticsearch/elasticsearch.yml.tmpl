@@ -1,0 +1,65 @@
+# =============================================================================
+# Elasticsearch 配置文件模板
+# 服务：elasticsearch
+# 版本：{{ .Instance.Vars.version }}
+# 节点：{{ .Instance.NodeAlias }}
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 集群配置
+# -----------------------------------------------------------------------------
+cluster.name: {{ .Instance.Vars.cluster_name }}
+node.name: {{ .Instance.NodeAlias }}
+
+# -----------------------------------------------------------------------------
+# 路径配置（使用全局变量拼接）
+# -----------------------------------------------------------------------------
+path.data: {{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}
+path.logs: {{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}
+path.repo: ["{{ .Global.data_base_dir }}/{{ .Instance.Vars.backup_subdir }}"]
+
+# -----------------------------------------------------------------------------
+# 网络配置
+# -----------------------------------------------------------------------------
+network.host: {{ .Instance.Node.IP }}
+http.port: {{ .Instance.Vars.http_port }}
+transport.port: {{ .Instance.Vars.transport_port }}
+
+# -----------------------------------------------------------------------------
+# 集群发现配置（3 节点）
+# 使用模板函数动态生成节点列表，避免硬编码
+# -----------------------------------------------------------------------------
+discovery.seed_hosts:
+{{- $endpoints := serviceEndpoints "elasticsearch" }}
+{{- range $endpoints }}
+  - {{ . }}
+{{- end }}
+
+cluster.initial_master_nodes:
+{{- $hostnames := serviceHostnames "elasticsearch" }}
+{{- range $hostnames }}
+  - {{ . }}
+{{- end }}
+
+# -----------------------------------------------------------------------------
+# 安全配置（开启认证）
+# -----------------------------------------------------------------------------
+xpack.security.enabled: true
+xpack.security.enrollment.enabled: false
+
+# SSL/TLS 配置（可选，生产环境建议开启）
+# xpack.security.http.ssl.enabled: true
+# xpack.security.transport.ssl.enabled: true
+
+# -----------------------------------------------------------------------------
+# 内存与性能配置
+# -----------------------------------------------------------------------------
+bootstrap.memory_lock: true
+
+# 分片分配感知（可选，按机架/区域）
+# node.attr.rack_id: {{ .Instance.Vars.rack_id }}
+
+# -----------------------------------------------------------------------------
+# 其他配置
+# -----------------------------------------------------------------------------
+action.destructive_requires_name: true

@@ -1,0 +1,233 @@
+#!/bin/bash
+# =============================================================================
+# Elasticsearch 安装脚本模板
+# 服务：elasticsearch
+# 版本：{{ .Instance.Vars.version }}
+# 节点：{{ .Instance.NodeAlias }}
+# =============================================================================
+
+set -e
+
+# -----------------------------------------------------------------------------
+# 变量定义区
+# -----------------------------------------------------------------------------
+ES_VERSION="{{ .Instance.Vars.version }}"
+ES_PACKAGE_NAME="elasticsearch-${ES_VERSION}-linux-x86_64.tar.gz"
+ES_PACKAGE_URL="{{ .Instance.Vars.package_url }}"
+ES_INSTALL_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
+ES_DATA_DIR="{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}"
+ES_LOG_DIR="{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}"
+ES_USER="{{ .Global.user }}"
+ES_GROUP="{{ .Global.group }}"
+JAVA_HOME="{{ .Global.java_home }}"
+
+# -----------------------------------------------------------------------------
+# 日志函数
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $*"
+}
+
+log_warn() {
+    echo "[WARN] $(date '+%Y-%m-%d %H:%M:%S') - $*"
+}
+
+log_error() {
+    echo "[ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $*" >&2
+}
+
+log_success() {
+    echo "[SUCCESS] $(date '+%Y-%m-%d %H:%M:%S') - $*"
+}
+
+# -----------------------------------------------------------------------------
+# Root 权限包装函数
+# -----------------------------------------------------------------------------
+run_as_root() {
+    if [ "$(whoami)" != "root" ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# 前置检查
+# -----------------------------------------------------------------------------
+check_prerequisites() {
+    log_info "检查前置条件..."
+    
+    # 检查 Java 环境
+    if [ ! -d "${JAVA_HOME}" ]; then
+        log_error "JAVA_HOME 不存在：${JAVA_HOME}"
+        exit 1
+    fi
+    
+    # 检查当前用户
+    if [ "$(whoami)" = "root" ] && [ "${ES_USER}" != "root" ]; then
+        log_warn "当前以 root 运行，但服务将使用用户：${ES_USER}"
+    fi
+    
+    log_success "前置检查通过"
+}
+
+# -----------------------------------------------------------------------------
+# 创建目录结构（幂等）
+# -----------------------------------------------------------------------------
+setup_directories() {
+    log_info "创建目录结构..."
+    
+    # 创建安装目录
+    mkdir -p "${ES_INSTALL_DIR}"
+    
+    # 创建数据目录
+    mkdir -p "${ES_DATA_DIR}"
+    
+    # 创建日志目录
+    mkdir -p "${ES_LOG_DIR}"
+    
+    # 设置权限
+    run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_INSTALL_DIR}"
+    run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_DATA_DIR}"
+    run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_LOG_DIR}"
+    
+    log_success "目录结构创建完成"
+}
+
+# -----------------------------------------------------------------------------
+# 下载并解压 Elasticsearch（幂等）
+# -----------------------------------------------------------------------------
+install_binary() {
+    log_info "安装 Elasticsearch ${ES_VERSION}..."
+    
+    local package_dir="{{ .Global.software_dir }}/{{ .Instance.Vars.package_subdir }}"
+    local package_path="${package_dir}/${ES_PACKAGE_NAME}"
+    
+    # 创建软件包目录
+    mkdir -p "${package_dir}"
+    
+    # 如果安装包不存在则下载
+    if [ ! -f "${package_path}" ]; then
+        log_info "下载 Elasticsearch 安装包..."
+        curl -L -o "${package_path}" "${ES_PACKAGE_URL}" || {
+            log_error "下载失败：${ES_PACKAGE_URL}"
+            exit 1
+        }
+    else
+        log_info "安装包已存在，跳过下载"
+    fi
+    
+    # 解压到临时目录
+    local temp_extract_dir="{{ .Global.temp_dir }}/es_install_$$"
+    mkdir -p "${temp_extract_dir}"
+    tar -xzf "${package_path}" -C "${temp_extract_dir}"
+    
+    # 移动文件到安装目录（幂等：先备份后覆盖）
+    if [ -d "${ES_INSTALL_DIR}/bin" ]; then
+        log_warn "安装目录已存在，备份后覆盖..."
+        local backup_dir="${ES_INSTALL_DIR}.backup.$(date +%Y%m%d%H%M%S)"
+        mv "${ES_INSTALL_DIR}" "${backup_dir}"
+        log_info "备份至：${backup_dir}"
+    fi
+    
+    # 移动解压后的内容
+    mv "${temp_extract_dir}/elasticsearch-${ES_VERSION}"/* "${ES_INSTALL_DIR}/"
+    rm -rf "${temp_extract_dir}"
+    
+    # 设置权限
+    run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_INSTALL_DIR}"
+    
+    log_success "Elasticsearch 二进制安装完成"
+}
+
+# -----------------------------------------------------------------------------
+# 配置系统参数（需要 root）
+# -----------------------------------------------------------------------------
+configure_system() {
+    log_info "配置系统参数..."
+    
+    # 设置 vm.max_map_count
+    run_as_root sysctl -w vm.max_map_count=262144 || {
+        log_warn "设置 vm.max_map_count 失败，请手动配置"
+    }
+    
+    # 持久化配置（如果不存在则添加）
+    if ! grep -q "vm.max_map_count=262144" /etc/sysctl.conf 2>/dev/null; then
+        run_as_root sh -c 'echo "vm.max_map_count=262144" >> /etc/sysctl.conf'
+        log_info "已添加 vm.max_map_count 到 /etc/sysctl.conf"
+    fi
+    
+    # 设置文件描述符限制（通过 systemd 配置更可靠）
+    log_info "系统参数配置完成（部分配置需重启生效）"
+}
+
+# -----------------------------------------------------------------------------
+# 初始化密码（仅主节点执行）
+# -----------------------------------------------------------------------------
+init_security() {
+    log_info "初始化安全配置..."
+    
+    local es_cli="${ES_INSTALL_DIR}/bin/elasticsearch-setup-passwords"
+    
+    if [ -x "${es_cli}" ]; then
+        # 检查是否已初始化
+        if [ -f "${ES_DATA_DIR}/.password_init_done" ]; then
+            log_info "密码已初始化，跳过"
+            return 0
+        fi
+        
+        log_info "设置默认密码..."
+        # 注意：生产环境应使用更安全的密码管理方式
+        echo "y" | "${es_cli}" auto -u \
+            -p "{{ .Instance.Vars.default_password }}" \
+            || log_warn "密码初始化失败，请手动执行 elasticsearch-setup-passwords"
+        
+        touch "${ES_DATA_DIR}/.password_init_done"
+        log_success "安全配置初始化完成"
+    else
+        log_warn "未找到密码初始化工具，跳过"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# 注册 systemd 服务
+# -----------------------------------------------------------------------------
+register_service() {
+    log_info "注册 systemd 服务..."
+    
+    local service_template="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/templates/elasticsearch.service.tmpl"
+    local service_file="/etc/systemd/system/elasticsearch.service"
+    
+    # 如果模板存在则渲染（实际由部署工具处理）
+    if [ -f "${service_template}" ]; then
+        log_info "服务模板存在：${service_template}"
+    fi
+    
+    log_success "服务注册完成（需部署工具渲染 systemd 模板）"
+}
+
+# -----------------------------------------------------------------------------
+# 主流程
+# -----------------------------------------------------------------------------
+main() {
+    log_info "========== Elasticsearch 安装开始 =========="
+    log_info "版本：${ES_VERSION}"
+    log_info "安装目录：${ES_INSTALL_DIR}"
+    log_info "数据目录：${ES_DATA_DIR}"
+    log_info "节点：{{ .Instance.NodeAlias }}"
+    
+    check_prerequisites
+    setup_directories
+    install_binary
+    configure_system
+    init_security
+    register_service
+    
+    log_success "========== Elasticsearch 安装完成 =========="
+    log_info "请执行以下操作："
+    log_info "1. 检查配置文件：${ES_INSTALL_DIR}/config/elasticsearch.yml"
+    log_info "2. 启动服务：systemctl start elasticsearch"
+    log_info "3. 查看状态：systemctl status elasticsearch"
+}
+
+main "$@"
