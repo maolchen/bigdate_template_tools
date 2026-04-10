@@ -543,6 +543,10 @@ func validatePlannedActions(actions []aiPlannedAction) ([]aiPlannedAction, error
 	for _, action := range actions {
 		rawType := strings.ToLower(strings.TrimSpace(action.Type))
 		rawPath := strings.TrimSpace(action.Path)
+		if isNoopPlannedActionType(rawType) {
+			// Control/meta actions are not filesystem mutations; ignore instead of failing.
+			continue
+		}
 		action.Path = filepath.ToSlash(filepath.Clean(rawPath))
 		switch rawType {
 		case "mkdir", "create_dir", "create_directory", "directory", "dir", "ensure_dir", "ensure_directory", "make_dir", "make_directory", "create_folder", "ensure_folder", "folder":
@@ -562,6 +566,10 @@ func validatePlannedActions(actions []aiPlannedAction) ([]aiPlannedAction, error
 			case strings.Contains(rawType, "dir"), strings.Contains(rawType, "folder"), strings.Contains(rawType, "directory"):
 				action.Type = "mkdir"
 			default:
+				if action.Path == "." || action.Path == "" {
+					// Unknown control-like action without path target: ignore.
+					continue
+				}
 				action.Type = rawType
 			}
 		}
@@ -574,6 +582,15 @@ func validatePlannedActions(actions []aiPlannedAction) ([]aiPlannedAction, error
 		validated = append(validated, action)
 	}
 	return validated, nil
+}
+
+func isNoopPlannedActionType(rawType string) bool {
+	switch rawType {
+	case "", "noop", "none", "n/a", "ignore", "skip", "ack", "confirm", "confirm_draft", "review", "approval", "approve", "finalize", "complete", "finish":
+		return true
+	default:
+		return false
+	}
 }
 
 func detectAttachmentKind(contentType string) (string, bool) {

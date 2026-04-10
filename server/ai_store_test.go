@@ -357,6 +357,23 @@ func TestValidatePlannedActionsAliases(t *testing.T) {
 	}
 }
 
+func TestValidatePlannedActionsIgnoresControlActions(t *testing.T) {
+	actions, err := validatePlannedActions([]aiPlannedAction{
+		{Type: "confirm_draft", Path: "", Reason: "等待人工确认"},
+		{Type: "review", Path: ".", Reason: "仅表示流程状态"},
+		{Type: "write_file", Path: "templates/elasticsearch/install.sh.tmpl"},
+	})
+	if err != nil {
+		t.Fatalf("validatePlannedActions returned error: %v", err)
+	}
+	if len(actions) != 1 {
+		t.Fatalf("expected only one actionable item after filtering control actions, got %d", len(actions))
+	}
+	if actions[0].Type != "write_file" {
+		t.Fatalf("expected remaining action to be write_file, got %s", actions[0].Type)
+	}
+}
+
 func TestParseAIModelResponseSupportsCodeFence(t *testing.T) {
 	raw := "```json\n{\"assistantMessage\":\"ok\",\"draftFiles\":[],\"plannedActions\":[],\"warnings\":[],\"followUpQuestions\":[],\"configPatch\":{\"serviceTop\":{},\"serverConfig\":{}}}\n```"
 	result, err := parseAIModelResponse(raw)
