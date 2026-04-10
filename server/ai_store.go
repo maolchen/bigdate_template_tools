@@ -495,6 +495,7 @@ func (s *Server) deleteAISession(sessionID string) error {
 		return errors.New("session id 不能为空")
 	}
 
+	defer s.deleteAISessionLock(sessionID)
 	sessionFile := s.sessionPath(sessionID)
 	if err := os.Remove(sessionFile); err != nil && !os.IsNotExist(err) {
 		return err

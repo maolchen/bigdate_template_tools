@@ -873,6 +873,7 @@ export function AITemplatePage() {
   const messageListEndRef = useRef<HTMLDivElement | null>(null);
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const resizeSessionRef = useRef<{ startX: number; startRatio: number; width: number } | null>(null);
+  const sendingGuardRef = useRef(false);
   const shouldAutoScrollRef = useRef(true);
   const previousMessageCountRef = useRef(0);
 
@@ -1100,6 +1101,7 @@ export function AITemplatePage() {
 
   async function handleSendMessage() {
     if (!session) return;
+    if (sendingGuardRef.current) return;
     if (uploading) return;
     if (!message.trim() && pendingAttachments.length === 0) return;
     const outgoingMessage = message;
@@ -1110,11 +1112,13 @@ export function AITemplatePage() {
     const optimisticUserContent = outgoingMessage.trim() || `发送了 ${pendingAttachments.length} 个附件材料`;
     const pendingAttachmentIds = pendingAttachments.map((attachment) => attachment.id);
     try {
+      sendingGuardRef.current = true;
       setSending(true);
       setInflightAttachmentIds(pendingAttachmentIds);
       setPageError(null);
       shouldAutoScrollRef.current = true;
-      setOptimisticMessages([
+      setOptimisticMessages((previous) => [
+        ...previous,
         {
           id: optimisticUserId,
           role: 'user',
@@ -1188,7 +1192,9 @@ export function AITemplatePage() {
         },
         ...previous.filter((item) => item.id !== updated.id),
       ]);
-      setOptimisticMessages([]);
+      setOptimisticMessages((previous) => previous.filter((item) => (
+        item.id !== optimisticUserId && item.id !== optimisticAssistantId
+      )));
       if (updated.draftFiles.length > 0 && !selectedDraftPath) {
         setSelectedDraftPath(updated.draftFiles[0].path);
       }
@@ -1201,6 +1207,7 @@ export function AITemplatePage() {
           : item
       )));
     } finally {
+      sendingGuardRef.current = false;
       setSending(false);
       setInflightAttachmentIds([]);
     }

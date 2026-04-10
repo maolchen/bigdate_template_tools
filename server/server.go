@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"config-generator/config"
@@ -28,6 +29,7 @@ type Server struct {
 	aiSettingsPath string
 	aiRulesPath    string
 	aiClient       AIClient
+	aiSessionLocks sync.Map
 	cfg            *config.Config
 }
 

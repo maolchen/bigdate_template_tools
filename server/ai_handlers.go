@@ -1162,11 +1162,26 @@ func (s *Server) handleAISessionMessage(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if r.URL.Query().Get("stream") == "1" || strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/event-stream") {
-		s.handleAISessionMessageStream(w, r, session, req)
+
+	sessionLock := s.getAISessionLock(session.ID)
+	sessionLock.Lock()
+	defer sessionLock.Unlock()
+
+	latestSession, err := s.loadAISession(session.ID)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "Session not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	result, status, err := s.runAISessionMessage(session, req, nil)
+
+	if r.URL.Query().Get("stream") == "1" || strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/event-stream") {
+		s.handleAISessionMessageStream(w, r, latestSession, req)
+		return
+	}
+	result, status, err := s.runAISessionMessage(latestSession, req, nil)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
