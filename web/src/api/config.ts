@@ -1,5 +1,4 @@
-// API 基础路径
-const API_BASE = '/api';
+﻿const API_BASE = '/api';
 
 function groupOutputFiles(files: string[]): OutputResult {
   const grouped: Record<string, string[]> = {};
@@ -26,30 +25,27 @@ function groupOutputFiles(files: string[]): OutputResult {
   };
 }
 
-// 获取配置
 export async function fetchConfig(): Promise<AppConfig> {
   const response = await fetch(`${API_BASE}/config`);
-  if (!response.ok) throw new Error('获取配置失败');
+  if (!response.ok) throw new Error(await response.text() || '获取配置失败');
   return response.json();
 }
 
-// 保存配置
 export async function saveConfig(config: AppConfig): Promise<{ success: boolean; message: string }> {
   const response = await fetch(`${API_BASE}/config`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
-  if (!response.ok) throw new Error('保存配置失败');
+  if (!response.ok) throw new Error(await response.text() || '保存配置失败');
   return response.json();
 }
 
-// 生成配置
 export async function generateConfig(): Promise<GenerateResult> {
   const response = await fetch(`${API_BASE}/generate`, {
     method: 'POST',
   });
-  if (!response.ok) throw new Error('生成配置失败');
+  if (!response.ok) throw new Error(await response.text() || '生成配置失败');
   const data = await response.json();
 
   return {
@@ -68,10 +64,9 @@ export async function generateConfig(): Promise<GenerateResult> {
   };
 }
 
-// 获取生成的文件列表
 export async function fetchOutput(): Promise<OutputResult> {
   const response = await fetch(`${API_BASE}/output`);
-  if (!response.ok) throw new Error('获取输出文件失败');
+  if (!response.ok) throw new Error(await response.text() || '获取输出文件失败');
   const data = await response.json();
 
   if (Array.isArray(data)) {
@@ -84,10 +79,9 @@ export async function fetchOutput(): Promise<OutputResult> {
   };
 }
 
-// 获取单个文件内容
 export async function fetchOutputFile(path: string): Promise<{ path: string; content: string }> {
   const response = await fetch(`${API_BASE}/output/file?path=${encodeURIComponent(path)}`);
-  if (!response.ok) throw new Error('获取文件内容失败');
+  if (!response.ok) throw new Error(await response.text() || '获取文件内容失败');
 
   const contentType = response.headers.get('content-type') ?? '';
   if (contentType.includes('application/json')) {
@@ -98,64 +92,56 @@ export async function fetchOutputFile(path: string): Promise<{ path: string; con
   return { path, content };
 }
 
-// 下载生成的配置包
 export function downloadOutput(): void {
   window.open(`${API_BASE}/output/download`, '_blank');
 }
 
-// 重新加载配置文件
 export async function reloadConfig(): Promise<{ success: boolean; message: string; config: AppConfig }> {
   const response = await fetch(`${API_BASE}/config/reload`, {
     method: 'POST',
   });
-  if (!response.ok) throw new Error('重新加载配置失败');
+  if (!response.ok) throw new Error(await response.text() || '重新加载配置失败');
   return response.json();
 }
 
-// 获取模板列表
 export async function fetchTemplates(): Promise<TemplatesResult> {
   const response = await fetch(`${API_BASE}/templates`);
-  if (!response.ok) throw new Error('获取模板列表失败');
+  if (!response.ok) throw new Error(await response.text() || '获取模板列表失败');
   return response.json();
 }
 
-// 保存配置项说明
 export async function saveDescriptions(serviceName: string, descriptions: Record<string, string>): Promise<{ success: boolean; message: string }> {
   const response = await fetch(`${API_BASE}/descriptions/${encodeURIComponent(serviceName)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(descriptions),
   });
-  if (!response.ok) throw new Error('保存说明失败');
+  if (!response.ok) throw new Error(await response.text() || '保存说明失败');
   return response.json();
 }
 
-// 获取配置项说明
 export async function fetchDescriptions(serviceName: string): Promise<Record<string, string>> {
   const response = await fetch(`${API_BASE}/descriptions/${encodeURIComponent(serviceName)}`);
-  if (!response.ok) throw new Error('获取说明失败');
+  if (!response.ok) throw new Error(await response.text() || '获取说明失败');
   return response.json();
 }
 
-// 保存全局配置说明
 export async function saveGlobalDescriptions(descriptions: Record<string, string>): Promise<{ success: boolean; message: string }> {
   const response = await fetch(`${API_BASE}/descriptions/global`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(descriptions),
   });
-  if (!response.ok) throw new Error('保存说明失败');
+  if (!response.ok) throw new Error(await response.text() || '保存说明失败');
   return response.json();
 }
 
-// 获取全局配置说明
 export async function fetchGlobalDescriptions(): Promise<Record<string, string>> {
   const response = await fetch(`${API_BASE}/descriptions/global`);
-  if (!response.ok) throw new Error('获取说明失败');
+  if (!response.ok) throw new Error(await response.text() || '获取说明失败');
   return response.json();
 }
 
-// 检查引用
 export async function checkReferences(params: {
   type: 'global' | 'node' | 'service' | 'vars';
   key: string;
@@ -166,11 +152,62 @@ export async function checkReferences(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!response.ok) throw new Error('检查引用失败');
+  if (!response.ok) throw new Error(await response.text() || '检查引用失败');
   return response.json();
 }
 
-// 类型定义
+export interface ConfigTemplateEntry {
+  id: string;
+  fileName: string;
+  remark: string;
+  nodeSummary: string;
+  updatedAt: string;
+  isActive: boolean;
+}
+
+export async function fetchConfigTemplates(): Promise<ConfigTemplateEntry[]> {
+  const response = await fetch(`${API_BASE}/config-templates`);
+  if (!response.ok) throw new Error(await response.text() || '获取配置模板失败');
+  return response.json();
+}
+
+export async function createConfigTemplate(id: string, remark: string): Promise<ConfigTemplateEntry[]> {
+  const response = await fetch(`${API_BASE}/config-templates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, remark }),
+  });
+  if (!response.ok) throw new Error(await response.text() || '保存配置模板失败');
+  const data = await response.json();
+  return Array.isArray(data.templates) ? data.templates : [];
+}
+
+export async function switchConfigTemplate(id: string): Promise<{
+  success: boolean;
+  activeTemplateId: string;
+  sync: {
+    addedServices: string[];
+    serviceTopAdded: number;
+    serverConfigAdded: number;
+  };
+  config: AppConfig;
+}> {
+  const response = await fetch(`${API_BASE}/config-templates/${encodeURIComponent(id)}/switch`, {
+    method: 'POST',
+  });
+  if (!response.ok) throw new Error(await response.text() || '切换配置模板失败');
+  return response.json();
+}
+
+export async function deleteConfigTemplate(id: string): Promise<ConfigTemplateEntry[]> {
+  const response = await fetch(`${API_BASE}/config-templates/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error(await response.text() || '删除配置模板失败');
+  const data = await response.json();
+  return Array.isArray(data.templates) ? data.templates : [];
+}
+
 export interface AppConfig {
   global: GlobalConfig;
   nodes: Record<string, NodeInfo>;

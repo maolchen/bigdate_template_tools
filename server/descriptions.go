@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+
+	"config-generator/config"
 )
 
 func (s *Server) getDescriptionPath(serviceName string) string {
@@ -53,23 +55,23 @@ func (s *Server) writeDescriptionFile(serviceName string, descriptions map[strin
 	return os.WriteFile(s.getDescriptionPath(serviceName), data, 0644)
 }
 
-func (s *Server) filterDescriptions(serviceName string, descriptions map[string]string) map[string]string {
+func (s *Server) filterDescriptions(serviceName string, descriptions map[string]string, cfg *config.Config) map[string]string {
 	filtered := make(map[string]string)
 
-	if s.cfg == nil {
+	if cfg == nil {
 		return filtered
 	}
 
 	if serviceName == "global" {
 		for key, value := range descriptions {
-			if _, ok := s.cfg.Global[key]; ok && strings.TrimSpace(value) != "" {
+			if _, ok := cfg.Global[key]; ok && strings.TrimSpace(value) != "" {
 				filtered[key] = value
 			}
 		}
 		return filtered
 	}
 
-	service, ok := s.cfg.ServerConfig[serviceName]
+	service, ok := cfg.ServerConfig[serviceName]
 	if !ok {
 		return filtered
 	}
@@ -92,13 +94,13 @@ func (s *Server) filterDescriptions(serviceName string, descriptions map[string]
 	return filtered
 }
 
-func (s *Server) getFilteredDescriptions(serviceName string) (map[string]string, error) {
+func (s *Server) getFilteredDescriptions(serviceName string, cfg *config.Config) (map[string]string, error) {
 	descriptions, err := s.loadDescriptionFile(serviceName)
 	if err != nil {
 		return nil, err
 	}
 
-	filtered := s.filterDescriptions(serviceName, descriptions)
+	filtered := s.filterDescriptions(serviceName, descriptions, cfg)
 	if !reflect.DeepEqual(descriptions, filtered) {
 		if err := s.writeDescriptionFile(serviceName, filtered); err != nil {
 			return nil, err
@@ -108,7 +110,7 @@ func (s *Server) getFilteredDescriptions(serviceName string) (map[string]string,
 	return filtered, nil
 }
 
-func (s *Server) saveDescriptionUpdates(serviceName string, updates map[string]string) (map[string]string, error) {
+func (s *Server) saveDescriptionUpdates(serviceName string, updates map[string]string, cfg *config.Config) (map[string]string, error) {
 	current, err := s.loadDescriptionFile(serviceName)
 	if err != nil {
 		return nil, err
@@ -122,7 +124,7 @@ func (s *Server) saveDescriptionUpdates(serviceName string, updates map[string]s
 		current[key] = value
 	}
 
-	filtered := s.filterDescriptions(serviceName, current)
+	filtered := s.filterDescriptions(serviceName, current, cfg)
 	if err := s.writeDescriptionFile(serviceName, filtered); err != nil {
 		return nil, err
 	}

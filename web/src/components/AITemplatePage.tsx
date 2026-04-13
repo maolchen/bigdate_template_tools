@@ -824,7 +824,11 @@ function SessionHistoryModal({
   );
 }
 
-export function AITemplatePage() {
+interface AITemplatePageProps {
+  canSaveTemplate?: boolean;
+}
+
+export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) {
   const [settings, setSettings] = useState<AISettings | null>(null);
   const [rules, setRules] = useState('');
   const [session, setSession] = useState<AITemplateSession | null>(null);
@@ -868,6 +872,7 @@ export function AITemplatePage() {
   const [composerDragging, setComposerDragging] = useState(false);
   const [savingDrafts, setSavingDrafts] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const latestSessionRef = useRef<AITemplateSession | null>(null);
   const textUploadRef = useRef<HTMLInputElement | null>(null);
   const imageUploadRef = useRef<HTMLInputElement | null>(null);
   const messageListEndRef = useRef<HTMLDivElement | null>(null);
@@ -878,6 +883,7 @@ export function AITemplatePage() {
   const previousMessageCountRef = useRef(0);
 
   useEffect(() => { void bootstrap(); }, []);
+  useEffect(() => { latestSessionRef.current = session; }, [session]);
   useEffect(() => { setSessionRules(session?.sessionRules || ''); }, [session?.id, session?.sessionRules]);
   useEffect(() => {
     if (!session) return;
@@ -1278,10 +1284,35 @@ export function AITemplatePage() {
   }
 
   function updateDraftContent(targetPath: string, updater: (draft: AIDraftFile) => AIDraftFile) {
-    setSession((previous) => previous ? {
-      ...previous,
-      draftFiles: previous.draftFiles.map((draft) => draft.path === targetPath ? updater(draft) : draft),
-    } : previous);
+    const applyDraftUpdate = (drafts: AIDraftFile[] | undefined): AIDraftFile[] | undefined => {
+      if (!drafts || drafts.length === 0) return drafts;
+      return drafts.map((draft) => draft.path === targetPath ? updater(draft) : draft);
+    };
+
+    setSession((previous) => {
+      if (!previous) return previous;
+      const nextSession: AITemplateSession = {
+        ...previous,
+        draftFiles: applyDraftUpdate(previous.draftFiles) ?? [],
+        messages: previous.messages.map((message) => {
+          if (!message.draftFiles || message.draftFiles.length === 0) return message;
+          return {
+            ...message,
+            draftFiles: applyDraftUpdate(message.draftFiles) ?? [],
+          };
+        }),
+      };
+      latestSessionRef.current = nextSession;
+      return nextSession;
+    });
+
+    setOptimisticMessages((previous) => previous.map((message) => {
+      if (!message.draftFiles || message.draftFiles.length === 0) return message;
+      return {
+        ...message,
+        draftFiles: applyDraftUpdate(message.draftFiles) ?? [],
+      };
+    }));
   }
 
   async function handleDeleteDraft(path: string) {
@@ -1316,12 +1347,21 @@ export function AITemplatePage() {
   }
 
   async function handleSaveDrafts(files: AIDraftFile[], applyConfigPatch = false) {
-    if (!session || files.length === 0) return;
+    const currentSession = latestSessionRef.current;
+    if (!currentSession || files.length === 0) return;
+    const latestDraftByPath = new Map(currentSession.draftFiles.map((draft) => [draft.path, draft]));
+    const latestFiles = files
+      .map((draft) => latestDraftByPath.get(draft.path) ?? draft)
+      .filter((draft, index, arr) => draft.path.trim() !== '' && arr.findIndex((item) => item.path === draft.path) === index);
+    if (latestFiles.length === 0) {
+      setPageError('未找到可保存的草稿，请先重新选择模板后再试');
+      return;
+    }
     try {
       setSavingDrafts(true);
       setPageError(null);
-      const result = await saveAISessionDrafts(session.id, { files, applyConfigPatch });
-      await refreshSession(session.id);
+      const result = await saveAISessionDrafts(currentSession.id, { files: latestFiles, applyConfigPatch });
+      await refreshSession(currentSession.id);
       void loadHistorySessions();
       if (applyConfigPatch) {
         setToast(result.configApplied
@@ -1466,6 +1506,20 @@ export function AITemplatePage() {
     setEditorMode(true);
   }
 
+  function handleSaveCurrentDraft(applyConfigPatch = false) {
+    const currentSession = latestSessionRef.current;
+    if (!currentSession || !selectedDraftPath) {
+      setPageError('当前没有可保存的草稿');
+      return;
+    }
+    const currentDraft = currentSession.draftFiles.find((draft) => draft.path === selectedDraftPath);
+    if (!currentDraft) {
+      setPageError('当前草稿不存在，请重新选择后再试');
+      return;
+    }
+    void handleSaveDrafts([currentDraft], applyConfigPatch);
+  }
+
   function handleResizerMouseDown(event: React.MouseEvent<HTMLDivElement>) {
     if (!layoutRef.current) return;
     const rect = layoutRef.current.getBoundingClientRect();
@@ -1545,7 +1599,25 @@ export function AITemplatePage() {
                   {patchServiceNames.length > 0 && <div className="ai-inline-patch-card"><div className="ai-inline-patch-header"><div><div className="ai-inline-patch-title">配置同步建议</div><div className="ai-inline-patch-subtitle">保存模板时可以一并同步到 serviceTop 和 serverConfig.vars。</div></div><div className="flex items-center gap-2"><span className="badge badge-gray">{patchServiceNames.length} 个服务</span>{messageIssues.some((issue) => issue.severity === 'error') && <span className="badge badge-danger">{messageIssues.filter((issue) => issue.severity === 'error').length} 个阻塞项</span>}</div></div><div className="ai-inline-patch-list">{patchServiceNames.map((serviceName) => { const topo = item.configPatch?.serviceTop?.[serviceName]; const serviceCfg = item.configPatch?.serverConfig?.[serviceName]; const serviceIssues = messageIssues.filter((issue) => issue.service === serviceName); return <div key={`${item.id}-${serviceName}`} className="ai-inline-patch-item"><div className="flex items-center justify-between gap-2"><div className="font-medium text-gray-800">{serviceName}</div><div className="flex items-center gap-2">{topo && <span className="badge badge-blue">serviceTop</span>}{serviceCfg && <span className="badge badge-gray">vars {Object.keys(serviceCfg.vars || {}).length}</span>}</div></div>{topo && <div className="text-sm text-gray-600">节点: {topo.nodes?.join(', ') || '未设置'} · id_auto_derive: {String(Boolean(topo.id_auto_derive))}</div>}{serviceCfg && Object.keys(serviceCfg.vars || {}).length > 0 && <div className="text-sm text-gray-600">变量: {Object.keys(serviceCfg.vars || {}).join(', ')}</div>}{serviceIssues.length > 0 && <div className="ai-inline-patch-issues">{serviceIssues.map((issue) => <div key={`${item.id}-${issue.service}-${issue.field}-${issue.message}`} className={issue.severity === 'error' ? 'text-danger' : issue.severity === 'warning' ? 'text-warning' : 'text-gray-600'}>{issue.severity === 'error' ? '阻塞' : issue.severity === 'warning' ? '注意' : '提示'}: {issue.message}</div>)}</div>}</div>; })}</div></div>}
                   {messageDrafts.length > 0 && <div className="ai-inline-draft-list">{messageDrafts.map((draft) => <div key={`${item.id}-${draft.path}`} className="ai-inline-draft-card"><div className="ai-inline-draft-header"><div className="ai-inline-draft-title-block"><div className="ai-inline-draft-title"><FileText className="w-4 h-4 text-primary" /><span>{draft.path}</span></div><div className="ai-inline-draft-meta">{draft.reason || 'AI 生成的模板草稿'}</div></div><div className="ai-inline-draft-actions">{draft.source === 'image' && <span className="badge badge-danger">图片识别</span>}<span className={`badge ${draft.needsReview ? 'badge-blue' : 'badge-green'}`}>{draft.needsReview ? '待审核' : '已保存'}</span><button className="btn btn-sm btn-secondary" onClick={() => openDraftEditor(draft.path)}>编辑</button><button className="btn btn-sm btn-secondary btn-danger-soft" onClick={() => void handleDeleteDraft(draft.path)} disabled={savingDrafts}><Trash2 className="w-4 h-4" />删除</button></div></div><pre className="ai-inline-code-block">{draft.content}</pre></div>)}</div>}
                   {item.followUpQuestions && item.followUpQuestions.length > 0 && <div className="ai-follow-up-list">{item.followUpQuestions.map((question) => <div key={question} className="ai-follow-up-chip">{question}</div>)}</div>}
-                  {isLatestAssistant && hasAnyDraftFiles && <div className="ai-answer-actions"><button className="btn btn-primary" onClick={() => void handleSaveDrafts(session.draftFiles)} disabled={savingDrafts || session.draftFiles.length === 0}>{savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}保存全部</button><button className="btn btn-secondary" onClick={() => void handleSaveDrafts(session.draftFiles, true)} disabled={savingDrafts || session.draftFiles.length === 0 || !hasAnyConfigPatch}>{savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}保存并同步配置</button><button className="btn btn-secondary" onClick={() => latestAssistantDrafts[0] && openDraftEditor(latestAssistantDrafts[0].path)} disabled={latestAssistantDrafts.length === 0}>编辑模板</button></div>}
+                  {isLatestAssistant && hasAnyDraftFiles && (
+                    <div className="ai-answer-actions">
+                      {canSaveTemplate ? (
+                        <>
+                          <button className="btn btn-primary" onClick={() => void handleSaveDrafts(session.draftFiles)} disabled={savingDrafts || session.draftFiles.length === 0}>
+                            {savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            保存全部
+                          </button>
+                          <button className="btn btn-secondary" onClick={() => void handleSaveDrafts(session.draftFiles, true)} disabled={savingDrafts || session.draftFiles.length === 0 || !hasAnyConfigPatch}>
+                            {savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                            保存并同步配置
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-sm text-amber-700">普通用户仅可生成草稿，保存模板仅管理员可用。</span>
+                      )}
+                      <button className="btn btn-secondary" onClick={() => latestAssistantDrafts[0] && openDraftEditor(latestAssistantDrafts[0].path)} disabled={latestAssistantDrafts.length === 0}>编辑模板</button>
+                    </div>
+                  )}
                 </article>
               );
             })}
@@ -1591,7 +1663,74 @@ export function AITemplatePage() {
         </main>
 
         {editorMode && !isCompactViewport && <div className="ai-chat-resizer" onMouseDown={handleResizerMouseDown} role="separator" aria-orientation="vertical" aria-label="调整对话与编辑器宽度"><span className="ai-chat-resizer-grip" /></div>}
-        {editorMode && <aside className="ai-chat-editor-panel"><div className="ai-chat-editor-header"><div><div className="ai-chat-editor-title">编辑模板</div><div className="ai-chat-editor-subtitle">{selectedDraft ? selectedDraft.reason || '人工审核并修改草稿内容' : '选择一个草稿开始编辑'}</div></div><button className="btn btn-secondary" onClick={() => setEditorMode(false)}>退出编辑模式</button></div>{selectedDraft ? <><div className="ai-chat-editor-pathbar"><div className="form-group ai-draft-path-group"><label className="form-label">目标路径</label><input className="input" value={selectedDraft.path} onChange={(event) => { const currentPath = selectedDraft.path; const nextPath = event.target.value; updateDraftContent(currentPath, (draft) => ({ ...draft, path: nextPath, needsReview: true })); setSelectedDraftPath(nextPath); }} /></div><div className="ai-chat-editor-toolbar">{selectedDraft.source === 'image' && <span className="badge badge-danger">来自图片识别，需重点人工复核</span>}<span className="badge badge-gray">{getDraftLanguage(selectedDraft.path)}</span></div></div><div className="ai-chat-editor-monaco"><Editor height="100%" language={getDraftLanguage(selectedDraft.path)} value={selectedDraft.content} onChange={(value) => updateDraftContent(selectedDraft.path, (draft) => ({ ...draft, content: value ?? '', needsReview: true }))} options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'off', theme: 'vs', mouseWheelZoom: false, scrollbar: { alwaysConsumeMouseWheel: false } }} /></div><div className="ai-chat-editor-actions"><button className="btn btn-secondary btn-danger-soft" onClick={() => void handleDeleteDraft(selectedDraft.path)} disabled={savingDrafts}><Trash2 className="w-4 h-4" />删除模板</button><button className="btn btn-secondary" onClick={() => void handleSaveDrafts([selectedDraft], true)} disabled={savingDrafts || !selectedServiceHasConfigPatch}>{savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}保存并同步配置</button><button className="btn btn-primary" onClick={() => void handleSaveDrafts([selectedDraft])} disabled={savingDrafts}>{savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}保存当前</button></div></> : <div className="empty-state ai-draft-empty"><FolderPlus className="empty-state-icon" /><p>当前还没有可编辑的模板草稿。先让 AI 生成一个模板文件，再点击“编辑”。</p></div>}</aside>}
+        {editorMode && (
+          <aside className="ai-chat-editor-panel">
+            <div className="ai-chat-editor-header">
+              <div>
+                <div className="ai-chat-editor-title">编辑模板</div>
+                <div className="ai-chat-editor-subtitle">{selectedDraft ? selectedDraft.reason || '人工审核并修改草稿内容' : '选择一个草稿开始编辑'}</div>
+              </div>
+              <button className="btn btn-secondary" onClick={() => setEditorMode(false)}>退出编辑模式</button>
+            </div>
+            {selectedDraft ? (
+              <>
+                <div className="ai-chat-editor-pathbar">
+                  <div className="form-group ai-draft-path-group">
+                    <label className="form-label">目标路径</label>
+                    <input
+                      className="input"
+                      value={selectedDraft.path}
+                      onChange={(event) => {
+                        const currentPath = selectedDraft.path;
+                        const nextPath = event.target.value;
+                        updateDraftContent(currentPath, (draft) => ({ ...draft, path: nextPath, needsReview: true }));
+                        setSelectedDraftPath(nextPath);
+                      }}
+                    />
+                  </div>
+                  <div className="ai-chat-editor-toolbar">
+                    {selectedDraft.source === 'image' && <span className="badge badge-danger">来自图片识别，需重点人工复核</span>}
+                    <span className="badge badge-gray">{getDraftLanguage(selectedDraft.path)}</span>
+                  </div>
+                </div>
+                <div className="ai-chat-editor-monaco">
+                  <Editor
+                    height="100%"
+                    language={getDraftLanguage(selectedDraft.path)}
+                    value={selectedDraft.content}
+                    onChange={(value) => updateDraftContent(selectedDraft.path, (draft) => ({ ...draft, content: value ?? '', needsReview: true }))}
+                    options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'off', theme: 'vs', mouseWheelZoom: false, scrollbar: { alwaysConsumeMouseWheel: false } }}
+                  />
+                </div>
+                <div className="ai-chat-editor-actions">
+                  <button className="btn btn-secondary btn-danger-soft" onClick={() => void handleDeleteDraft(selectedDraft.path)} disabled={savingDrafts}>
+                    <Trash2 className="w-4 h-4" />
+                    删除模板
+                  </button>
+                  {canSaveTemplate ? (
+                    <>
+                      <button className="btn btn-secondary" onClick={() => handleSaveCurrentDraft(true)} disabled={savingDrafts || !selectedServiceHasConfigPatch}>
+                        {savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                        保存并同步配置
+                      </button>
+                      <button className="btn btn-primary" onClick={() => handleSaveCurrentDraft()} disabled={savingDrafts}>
+                        {savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        保存当前
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-sm text-amber-700">普通用户仅可编辑草稿，不能保存到 templates 目录。</span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="empty-state ai-draft-empty">
+                <FolderPlus className="empty-state-icon" />
+                <p>当前还没有可编辑的模板草稿。先让 AI 生成一个模板文件，再点击“编辑”。</p>
+              </div>
+            )}
+          </aside>
+        )}
       </div>
 
       <SettingsModal open={settingsOpen} settings={settings} modelOptions={modelSuggestions} modelsLoading={loadingModels} modelsError={modelsError} saving={savingSettings} testing={testingSettings} testSucceeded={settingsTestSucceeded} error={settingsError} onClose={() => { setSettingsOpen(false); setSettingsError(null); setSettingsTestSucceeded(false); }} onRefreshModels={refreshAvailableModels} onSave={handleSaveSettings} onTest={handleTestSettings} />

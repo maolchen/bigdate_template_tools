@@ -656,6 +656,51 @@ func mergeDraftFiles(existing []aiDraftFile, updates []aiDraftFile) []aiDraftFil
 	return result
 }
 
+// syncSavedDraftsToSession keeps session draft snapshots consistent with reviewed content saved from UI.
+// This avoids "templates 已落盘但会话仍显示旧草稿" when frontend refreshes session data after save.
+func syncSavedDraftsToSession(session *aiSession, savedPaths []string, incoming []aiDraftFile) {
+	if session == nil || len(savedPaths) == 0 || len(incoming) == 0 {
+		return
+	}
+	savedPathSet := make(map[string]struct{}, len(savedPaths))
+	for _, path := range savedPaths {
+		normalized := filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+		if normalized != "" {
+			savedPathSet[normalized] = struct{}{}
+		}
+	}
+	if len(savedPathSet) == 0 {
+		return
+	}
+
+	filtered := make([]aiDraftFile, 0, len(incoming))
+	for _, draft := range incoming {
+		normalized := filepath.ToSlash(filepath.Clean(strings.TrimSpace(draft.Path)))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := savedPathSet[normalized]; !ok {
+			continue
+		}
+		draft.Path = normalized
+		if strings.TrimSpace(draft.Source) == "" {
+			draft.Source = "ai"
+		}
+		filtered = append(filtered, draft)
+	}
+	if len(filtered) == 0 {
+		return
+	}
+
+	session.DraftFiles = mergeDraftFiles(session.DraftFiles, filtered)
+	for idx := range session.Messages {
+		if len(session.Messages[idx].DraftFiles) == 0 {
+			continue
+		}
+		session.Messages[idx].DraftFiles = mergeDraftFiles(session.Messages[idx].DraftFiles, filtered)
+	}
+}
+
 // handleAISettings manages AI endpoint settings retrieval and updates.
 func (s *Server) handleAISettings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -1117,6 +1162,17 @@ func (s *Server) handleAISessionPreview(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	principal, ok := authPrincipalFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.cfg = cfg
 
 	var req aiSessionMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1156,6 +1212,17 @@ func (s *Server) handleAISessionMessage(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	principal, ok := authPrincipalFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.cfg = cfg
 
 	var req aiSessionMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1391,6 +1458,21 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	principal, ok := authPrincipalFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if principal.Role != roleAdmin {
+		http.Error(w, "仅管理员可以保存模板到正式目录", http.StatusForbidden)
+		return
+	}
+	activeCfg, activePath, activeTemplateID, err := s.loadUserActiveConfig(principal.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.cfg = activeCfg
 
 	var req aiSessionSaveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1409,6 +1491,9 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Save succeeds on disk first, then mirror current reviewed content back into session snapshots.
+	syncSavedDraftsToSession(session, savedFiles, req.Files)
+	fmt.Printf("[AI] save session=%s syncedDraftSnapshots=%d\n", session.ID, len(savedFiles))
 
 	configApplied := false
 	appliedServices := make([]string, 0)
@@ -1442,12 +1527,13 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 			return
 		}
 
-		appliedServices = applyConfigPatchToConfig(s.cfg, selectedPatch)
-		if err := config.SaveConfig(s.configPath, s.cfg); err != nil {
+		appliedServices = applyConfigPatchToConfig(activeCfg, selectedPatch)
+		if err := config.SaveConfig(activePath, activeCfg); err != nil {
 			fmt.Printf("[AI] save config failed session=%s err=%v\n", session.ID, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		fmt.Printf("[AI] save config synced user=%s template=%s services=%d\n", principal.Username, activeTemplateID, len(appliedServices))
 		configApplied = true
 		removeAppliedServicesFromSession(session, selectedServices)
 	}

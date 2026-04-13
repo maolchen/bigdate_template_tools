@@ -1,15 +1,14 @@
-import {
+﻿import {
   Download,
   FileCode,
   Globe,
-  Layers,
   LayoutDashboard,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
-  Server,
   Settings,
   Sparkles,
+  Wrench,
 } from 'lucide-react';
 import type { EditorTab } from '../types/config';
 
@@ -23,11 +22,10 @@ interface SidebarProps {
 const navItems: { id: EditorTab; label: string; icon: React.ElementType }[] = [
   { id: 'overview', label: '概览', icon: LayoutDashboard },
   { id: 'global', label: '全局配置', icon: Globe },
-  { id: 'nodes', label: '节点管理', icon: Server },
-  { id: 'services', label: '服务配置', icon: Layers },
-  { id: 'ai', label: 'AI 模板', icon: Sparkles },
+  { id: 'config', label: '配置管理', icon: Wrench },
+  { id: 'ai', label: 'AI模板', icon: Sparkles },
   { id: 'generate', label: '生成配置', icon: Play },
-  { id: 'preview', label: 'YAML 预览', icon: FileCode },
+  { id: 'preview', label: 'YAML预览', icon: FileCode },
   { id: 'export', label: '导出配置', icon: Download },
 ];
 

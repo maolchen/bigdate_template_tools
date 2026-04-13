@@ -2,7 +2,7 @@
 # Elasticsearch 服务检查脚本模板
 # 服务：elasticsearch
 # 版本：{{ .Instance.Vars.version }}
-# 节点：{{ .Instance.NodeAlias }}
+# 节点：{{ .Instance.Node.NameNode }}
 # =============================================================================
 # 用途：检查 elasticsearch 服务运行状态、端口、进程、集群健康等
 # 执行用户：{{ .Global.user }}（部分检查需要 root 权限）
@@ -39,23 +39,23 @@ NC='\033[0m' # No Color
 # 日志函数
 # -----------------------------------------------------------------------------
 log_info() {
-    echo -e "${GREEN}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo -e "${GREEN}[INFO]${NC} $1"
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo -e "${RED}[ERROR]${NC} $1"
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
 # -----------------------------------------------------------------------------
-# 辅助函数
+# Root 权限执行函数
 # -----------------------------------------------------------------------------
 run_as_root() {
     if [ "$(whoami)" != "root" ]; then
@@ -65,23 +65,15 @@ run_as_root() {
     fi
 }
 
-check_command() {
-    if ! command -v "$1" &> /dev/null; then
-        log_error "命令不存在：$1"
-        return 1
-    fi
-    return 0
-}
+# -----------------------------------------------------------------------------
+# 检查函数
+# -----------------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------
-# 检查项 1：进程检查
-# -----------------------------------------------------------------------------
+# 检查进程是否存在
 check_process() {
     log_info "检查 Elasticsearch 进程..."
-    
     if pgrep -f "elasticsearch" > /dev/null 2>&1; then
-        local pid=$(pgrep -f "elasticsearch" | head -1)
-        log_success "Elasticsearch 进程运行中 (PID: $pid)"
+        log_success "Elasticsearch 进程运行正常"
         return 0
     else
         log_error "Elasticsearch 进程未运行"
@@ -89,29 +81,44 @@ check_process() {
     fi
 }
 
-# -----------------------------------------------------------------------------
-# 检查项 2：端口检查
-# -----------------------------------------------------------------------------
+# 检查端口监听
 check_ports() {
-    log_info "检查 Elasticsearch 端口..."
-    
+    log_info "检查 Elasticsearch 端口监听..."
     local http_port_ok=0
     local transport_port_ok=0
     
     # 检查 HTTP 端口
-    if ss -tlnp | grep -q ":${ES_HTTP_PORT} "; then
-        log_success "HTTP 端口 ${ES_HTTP_PORT} 监听正常"
-        http_port_ok=1
+    if command -v ss > /dev/null 2>&1; then
+        if ss -tlnp | grep -q ":${ES_HTTP_PORT}"; then
+            http_port_ok=1
+            log_success "HTTP 端口 ${ES_HTTP_PORT} 监听正常"
+        else
+            log_error "HTTP 端口 ${ES_HTTP_PORT} 未监听"
+        fi
+        
+        if ss -tlnp | grep -q ":${ES_TRANSPORT_PORT}"; then
+            transport_port_ok=1
+            log_success "Transport 端口 ${ES_TRANSPORT_PORT} 监听正常"
+        else
+            log_error "Transport 端口 ${ES_TRANSPORT_PORT} 未监听"
+        fi
+    elif command -v netstat > /dev/null 2>&1; then
+        if netstat -tlnp | grep -q ":${ES_HTTP_PORT}"; then
+            http_port_ok=1
+            log_success "HTTP 端口 ${ES_HTTP_PORT} 监听正常"
+        else
+            log_error "HTTP 端口 ${ES_HTTP_PORT} 未监听"
+        fi
+        
+        if netstat -tlnp | grep -q ":${ES_TRANSPORT_PORT}"; then
+            transport_port_ok=1
+            log_success "Transport 端口 ${ES_TRANSPORT_PORT} 监听正常"
+        else
+            log_error "Transport 端口 ${ES_TRANSPORT_PORT} 未监听"
+        fi
     else
-        log_error "HTTP 端口 ${ES_HTTP_PORT} 未监听"
-    fi
-    
-    # 检查 Transport 端口
-    if ss -tlnp | grep -q ":${ES_TRANSPORT_PORT} "; then
-        log_success "Transport 端口 ${ES_TRANSPORT_PORT} 监听正常"
-        transport_port_ok=1
-    else
-        log_error "Transport 端口 ${ES_TRANSPORT_PORT} 未监听"
+        log_warn "未找到 ss 或 netstat 命令，跳过端口检查"
+        return 0
     fi
     
     if [ $http_port_ok -eq 1 ] && [ $transport_port_ok -eq 1 ]; then
@@ -121,262 +128,190 @@ check_ports() {
     fi
 }
 
-# -----------------------------------------------------------------------------
-# 检查项 3：systemd 服务状态
-# -----------------------------------------------------------------------------
+# 检查 systemd 服务状态
 check_systemd() {
     log_info "检查 systemd 服务状态..."
-    
     if systemctl is-active --quiet elasticsearch; then
-        log_success "systemd 服务状态：active"
+        log_success "Elasticsearch systemd 服务运行正常"
         return 0
     else
-        local status=$(systemctl is-active elasticsearch 2>/dev/null || echo "unknown")
-        log_error "systemd 服务状态：$status"
+        log_error "Elasticsearch systemd 服务未运行"
+        systemctl status elasticsearch --no-pager 2>/dev/null || true
         return 1
     fi
 }
 
-# -----------------------------------------------------------------------------
-# 检查项 4：集群健康状态
-# -----------------------------------------------------------------------------
+# 检查集群健康状态
 check_cluster_health() {
     log_info "检查集群健康状态..."
+    local health_status
+    health_status=$(curl -s -u "${ES_CHECK_USER}:${ES_CHECK_PASS}" \
+        "http://localhost:${ES_HTTP_PORT}/_cluster/health?pretty" 2>/dev/null | \
+        grep '"status"' | head -1 | awk -F'"' '{print $4}')
     
-    local health_response
-    health_response=$(curl -s -u "${ES_CHECK_USER}:${ES_CHECK_PASS}" \
-        "http://localhost:${ES_HTTP_PORT}/_cluster/health?pretty" 2>/dev/null)
-    
-    if [ -z "$health_response" ]; then
-        log_error "无法获取集群健康状态（可能是认证失败或服务未响应）"
+    if [ -z "$health_status" ]; then
+        log_error "无法获取集群健康状态（认证失败或服务不可用）"
         return 1
     fi
     
-    local health_status=$(echo "$health_response" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
-    
     case "$health_status" in
-        "green")
+        green)
             log_success "集群健康状态：green"
             return 0
             ;;
-        "yellow")
-            log_warn "集群健康状态：yellow（可能有未分配的分片）"
+        yellow)
+            log_warn "集群健康状态：yellow（部分副本未分配）"
             return 0
             ;;
-        "red")
-            log_error "集群健康状态：red（数据丢失风险）"
+        red)
+            log_error "集群健康状态：red（主分片不可用）"
             return 1
             ;;
         *)
-            log_error "集群健康状态：未知 ($health_status)"
+            log_error "未知集群健康状态：$health_status"
             return 1
             ;;
     esac
 }
 
-# -----------------------------------------------------------------------------
-# 检查项 5：节点状态
-# -----------------------------------------------------------------------------
+# 检查节点状态
 check_node_status() {
     log_info "检查节点状态..."
+    local node_count
+    node_count=$(curl -s -u "${ES_CHECK_USER}:${ES_CHECK_PASS}" \
+        "http://localhost:${ES_HTTP_PORT}/_cat/nodes?h=node.name" 2>/dev/null | wc -l)
     
-    local node_response
-    node_response=$(curl -s -u "${ES_CHECK_USER}:${ES_CHECK_PASS}" \
-        "http://localhost:${ES_HTTP_PORT}/_nodes?pretty" 2>/dev/null)
-    
-    if [ -z "$node_response" ]; then
-        log_error "无法获取节点状态"
-        return 1
-    fi
-    
-    local node_count=$(echo "$node_response" | grep -c '"name"' || echo "0")
-    log_info "集群节点数量：$node_count"
-    
-    # 检查当前节点是否在集群中
-    if echo "$node_response" | grep -q "{{ .Instance.NodeAlias }}"; then
-        log_success "当前节点已加入集群"
+    if [ "$node_count" -ge 1 ]; then
+        log_success "集群节点数：$node_count"
+        curl -s -u "${ES_CHECK_USER}:${ES_CHECK_PASS}" \
+            "http://localhost:${ES_HTTP_PORT}/_cat/nodes?v" 2>/dev/null | head -10
         return 0
     else
-        log_warn "当前节点可能未正确加入集群"
+        log_error "无法获取节点信息"
         return 1
     fi
 }
 
-# -----------------------------------------------------------------------------
-# 检查项 6：目录权限
-# -----------------------------------------------------------------------------
+# 检查目录权限
 check_directories() {
     log_info "检查目录权限..."
+    local dir_ok=1
     
-    local dirs_ok=1
-    
-    # 检查安装目录
-    if [ -d "$ES_INSTALL_DIR" ]; then
-        log_success "安装目录存在：$ES_INSTALL_DIR"
-    else
-        log_error "安装目录不存在：$ES_INSTALL_DIR"
-        dirs_ok=0
-    fi
-    
-    # 检查数据目录
-    if [ -d "$ES_DATA_DIR" ]; then
-        if [ -w "$ES_DATA_DIR" ]; then
-            log_success "数据目录可写：$ES_DATA_DIR"
+    for dir in "$ES_INSTALL_DIR" "$ES_DATA_DIR" "$ES_LOG_DIR" "$ES_CONF_DIR"; do
+        if [ -d "$dir" ]; then
+            log_success "目录存在：$dir"
+            if [ "$(stat -c '%U' "$dir" 2>/dev/null)" != "$ES_USER" ]; then
+                log_warn "目录所有者不是 $ES_USER：$dir"
+            fi
         else
-            log_error "数据目录不可写：$ES_DATA_DIR"
-            dirs_ok=0
+            log_error "目录不存在：$dir"
+            dir_ok=0
         fi
-    else
-        log_error "数据目录不存在：$ES_DATA_DIR"
-        dirs_ok=0
-    fi
+    done
     
-    # 检查日志目录
-    if [ -d "$ES_LOG_DIR" ]; then
-        if [ -w "$ES_LOG_DIR" ]; then
-            log_success "日志目录可写：$ES_LOG_DIR"
-        else
-            log_error "日志目录不可写：$ES_LOG_DIR"
-            dirs_ok=0
-        fi
-    else
-        log_error "日志目录不存在：$ES_LOG_DIR"
-        dirs_ok=0
-    fi
-    
-    # 检查配置目录
-    if [ -d "$ES_CONF_DIR" ]; then
-        log_success "配置目录存在：$ES_CONF_DIR"
-    else
-        log_error "配置目录不存在：$ES_CONF_DIR"
-        dirs_ok=0
-    fi
-    
-    if [ $dirs_ok -eq 1 ]; then
-        return 0
-    else
-        return 1
-    fi
+    return $((1 - dir_ok))
 }
 
-# -----------------------------------------------------------------------------
-# 检查项 7：JVM 内存
-# -----------------------------------------------------------------------------
+# 检查 JVM 内存配置
 check_jvm_memory() {
     log_info "检查 JVM 内存配置..."
-    
-    local jvm_options="$ES_CONF_DIR/jvm.options"
+    local jvm_options="${ES_CONF_DIR}/jvm.options"
     
     if [ -f "$jvm_options" ]; then
-        local heap_size=$(grep -E "^-Xm[xs]" "$jvm_options" | head -1 | awk '{print $1}')
-        log_info "JVM 堆内存配置：$heap_size"
-        
-        # 检查是否设置了 4G（根据 .Instance.Vars.jvm_heap_size）
-        local expected_heap="-Xms{{ .Instance.Vars.jvm_heap_size }}"
-        if grep -q "$expected_heap" "$jvm_options"; then
-            log_success "JVM 堆内存配置符合预期"
-            return 0
+        local heap_size
+        heap_size=$(grep -E '^-Xm[xs]' "$jvm_options" | tail -1 | awk '{print $1}')
+        if [ -n "$heap_size" ]; then
+            log_success "JVM 堆内存配置：$heap_size"
         else
-            log_warn "JVM 堆内存配置可能与预期不符"
-            return 0
+            log_warn "未找到 JVM 堆内存配置"
         fi
     else
-        log_error "jvm.options 文件不存在"
+        log_error "jvm.options 文件不存在：$jvm_options"
         return 1
     fi
+    return 0
 }
 
-# -----------------------------------------------------------------------------
-# 检查项 8：系统参数
-# -----------------------------------------------------------------------------
+# 检查系统参数
 check_system_params() {
     log_info "检查系统参数..."
+    local max_map_count
+    max_map_count=$(sysctl -n vm.max_map_count 2>/dev/null || echo "0")
     
-    # 检查 vm.max_map_count
-    local max_map_count=$(sysctl -n vm.max_map_count 2>/dev/null || echo "0")
     if [ "$max_map_count" -ge 262144 ]; then
         log_success "vm.max_map_count = $max_map_count (>= 262144)"
     else
-        log_error "vm.max_map_count = $max_map_count (< 262144，需要调整)"
+        log_error "vm.max_map_count = $max_map_count (< 262144，可能导致启动失败)"
+        return 1
     fi
-    
-    # 检查文件描述符限制
-    local nofile_limit=$(ulimit -n 2>/dev/null || echo "0")
-    if [ "$nofile_limit" -ge 65535 ]; then
-        log_success "文件描述符限制 = $nofile_limit (>= 65535)"
-    else
-        log_warn "文件描述符限制 = $nofile_limit (< 65535)"
-    fi
-    
-    # 检查进程数限制
-    local nproc_limit=$(ulimit -u 2>/dev/null || echo "0")
-    if [ "$nproc_limit" -ge 4096 ]; then
-        log_success "进程数限制 = $nproc_limit (>= 4096)"
-    else
-        log_warn "进程数限制 = $nproc_limit (< 4096)"
-    fi
+    return 0
 }
 
 # -----------------------------------------------------------------------------
 # 主函数
 # -----------------------------------------------------------------------------
 main() {
-    log_info "========================================"
-    log_info "Elasticsearch 服务检查开始"
-    log_info "节点：{{ .Instance.NodeAlias }}"
-    log_info "版本：$ES_VERSION"
-    log_info "========================================"
-    
     local check_type="${1:-all}"
     local exit_code=0
     
+    echo "========================================"
+    echo "Elasticsearch 服务检查"
+    echo "节点：{{ .Instance.Name }}"
+    echo "版本：${ES_VERSION}"
+    echo "检查类型：${check_type}"
+    echo "========================================"
+    echo ""
+    
     case "$check_type" in
-        "process")
-            check_process || exit_code=1
-            ;;
-        "ports")
-            check_ports || exit_code=1
-            ;;
-        "systemd")
-            check_systemd || exit_code=1
-            ;;
-        "health")
-            check_cluster_health || exit_code=1
-            ;;
-        "node")
-            check_node_status || exit_code=1
-            ;;
-        "dirs")
-            check_directories || exit_code=1
-            ;;
-        "jvm")
-            check_jvm_memory || exit_code=1
-            ;;
-        "system")
-            check_system_params || exit_code=1
-            ;;
-        "all"|*)
+        all)
             check_process || exit_code=1
             check_ports || exit_code=1
             check_systemd || exit_code=1
+            check_cluster_health || exit_code=1
+            check_node_status || exit_code=1
             check_directories || exit_code=1
             check_jvm_memory || exit_code=1
             check_system_params || exit_code=1
+            ;;
+        process)
+            check_process || exit_code=1
+            ;;
+        ports)
+            check_ports || exit_code=1
+            ;;
+        systemd)
+            check_systemd || exit_code=1
+            ;;
+        health)
             check_cluster_health || exit_code=1
+            ;;
+        node)
             check_node_status || exit_code=1
+            ;;
+        dirs)
+            check_directories || exit_code=1
+            ;;
+        jvm)
+            check_jvm_memory || exit_code=1
+            ;;
+        system)
+            check_system_params || exit_code=1
+            ;;
+        *)
+            log_error "未知检查类型：$check_type"
+            echo "可用类型：all|process|ports|systemd|health|node|dirs|jvm|system"
+            exit 1
             ;;
     esac
     
-    log_info "========================================"
+    echo ""
     if [ $exit_code -eq 0 ]; then
-        log_success "Elasticsearch 服务检查完成 - 全部通过"
+        log_success "所有检查通过"
     else
-        log_error "Elasticsearch 服务检查完成 - 存在异常"
+        log_warn "部分检查未通过，请查看上方错误信息"
     fi
-    log_info "========================================"
     
     return $exit_code
 }
 
-# 执行主函数
 main "$@"

@@ -6,6 +6,7 @@ toolchain go1.22.6
 
 require (
 	github.com/openai/openai-go/v3 v3.31.0
+	golang.org/x/crypto v0.32.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

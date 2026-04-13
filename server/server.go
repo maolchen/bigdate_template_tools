@@ -16,39 +16,57 @@ import (
 
 // Server Web 服务器
 type Server struct {
-	configPath     string
-	outputDir      string
-	templatesDir   string
-	webDir         string
-	descsDir       string
-	aiDir          string
-	aiSessionsDir  string
-	aiUploadsDir   string
-	aiSkillsDir    string
-	aiExamplesPath string
-	aiSettingsPath string
-	aiRulesPath    string
-	aiClient       AIClient
-	aiSessionLocks sync.Map
-	cfg            *config.Config
+	workDir          string
+	dataDir          string
+	configPath       string
+	outputDir        string
+	templatesDir     string
+	webDir           string
+	descsDir         string
+	usersRootDir     string
+	authDir          string
+	usersFilePath    string
+	sessionsFilePath string
+	aiDir            string
+	aiSessionsDir    string
+	aiUploadsDir     string
+	aiSkillsDir      string
+	aiExamplesPath   string
+	aiSettingsPath   string
+	aiRulesPath      string
+	aiClient         AIClient
+	aiSessionLocks   sync.Map
+	authMu           sync.Mutex
+	authUsers        map[string]authUserRecord
+	authSessions     map[string]authSessionRecord
+	configMu         sync.Mutex
+	cfg              *config.Config
 }
 
 // NewServer 创建新的服务器实例
 func NewServer(workDir string) *Server {
 	return &Server{
-		configPath:     filepath.Join(workDir, "config.yaml"),
-		outputDir:      filepath.Join(workDir, "output"),
-		templatesDir:   filepath.Join(workDir, "templates"),
-		webDir:         filepath.Join(workDir, "web", "dist"),
-		descsDir:       filepath.Join(workDir, "data", "descriptions"),
-		aiDir:          filepath.Join(workDir, "data", "ai"),
-		aiSessionsDir:  filepath.Join(workDir, "data", "ai", "sessions"),
-		aiUploadsDir:   filepath.Join(workDir, "data", "ai", "uploads"),
-		aiSkillsDir:    filepath.Join(workDir, "data", "ai", "skills"),
-		aiExamplesPath: filepath.Join(workDir, "data", "ai", "examples_index.json"),
-		aiSettingsPath: filepath.Join(workDir, "data", "ai", "settings.json"),
-		aiRulesPath:    filepath.Join(workDir, "data", "ai", "template_rules.md"),
-		aiClient:       newDefaultAIClient(),
+		workDir:          workDir,
+		dataDir:          filepath.Join(workDir, "data"),
+		configPath:       filepath.Join(workDir, "config.yaml"),
+		outputDir:        filepath.Join(workDir, "output"),
+		templatesDir:     filepath.Join(workDir, "templates"),
+		webDir:           filepath.Join(workDir, "web", "dist"),
+		descsDir:         filepath.Join(workDir, "data", "descriptions"),
+		usersRootDir:     filepath.Join(workDir, "data", "users"),
+		authDir:          filepath.Join(workDir, "data", "auth"),
+		usersFilePath:    filepath.Join(workDir, "data", "users", "users.json"),
+		sessionsFilePath: filepath.Join(workDir, "data", "auth", "sessions.json"),
+		aiDir:            filepath.Join(workDir, "data", "ai"),
+		aiSessionsDir:    filepath.Join(workDir, "data", "ai", "sessions"),
+		aiUploadsDir:     filepath.Join(workDir, "data", "ai", "uploads"),
+		aiSkillsDir:      filepath.Join(workDir, "data", "ai", "skills"),
+		aiExamplesPath:   filepath.Join(workDir, "data", "ai", "examples_index.json"),
+		aiSettingsPath:   filepath.Join(workDir, "data", "ai", "settings.json"),
+		aiRulesPath:      filepath.Join(workDir, "data", "ai", "template_rules.md"),
+		aiClient:         newDefaultAIClient(),
+		authUsers:        make(map[string]authUserRecord),
+		authSessions:     make(map[string]authSessionRecord),
 	}
 }
 
@@ -72,7 +90,13 @@ func (s *Server) loadConfig() error {
 // corsMiddleware CORS 中间件
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
@@ -159,28 +183,40 @@ func (s *Server) Start(port string) error {
 			ServerConfig: make(config.ServiceConfigs),
 		}
 	}
+	if err := s.initAuthStore(); err != nil {
+		return fmt.Errorf("init auth store failed: %w", err)
+	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/config", s.handleConfig)
-	mux.HandleFunc("/api/generate", s.handleGenerate)
-	mux.HandleFunc("/api/output", s.handleGetOutput)
-	mux.HandleFunc("/api/output/download", s.handleDownloadOutput)
-	mux.HandleFunc("/api/output/file", s.handleGetOutputFile)
-	mux.HandleFunc("/api/templates", s.handleGetTemplates)
-	mux.HandleFunc("/api/config/reload", s.handleReloadConfig)
-	mux.HandleFunc("/api/descriptions/global", s.handleGlobalDescriptions)
-	mux.HandleFunc("/api/descriptions/", s.handleDescriptions)
-	mux.HandleFunc("/api/check-references", s.handleCheckReferences)
-	mux.HandleFunc("/api/ai/settings", s.handleAISettings)
-	mux.HandleFunc("/api/ai/settings/test", s.handleAISettingsTest)
-	mux.HandleFunc("/api/ai/models", s.handleAIModels)
-	mux.HandleFunc("/api/ai/rules", s.handleAIRules)
-	mux.HandleFunc("/api/ai/catalog", s.handleAIPromptCatalog)
-	mux.HandleFunc("/api/ai/skill-file", s.handleAISkillFile)
-	mux.HandleFunc("/api/ai/skills", s.handleAICustomSkillsCollection)
-	mux.HandleFunc("/api/ai/skills/", s.handleAICustomSkillsDetail)
-	mux.HandleFunc("/api/ai/template/session", s.handleAITemplateSessionCollection)
-	mux.HandleFunc("/api/ai/template/session/", s.handleAITemplateSessionDetail)
+	mux.HandleFunc("/api/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("/api/auth/logout", s.handleAuthLogout)
+	mux.HandleFunc("/api/auth/me", s.withAuth(s.handleAuthMe))
+	mux.HandleFunc("/api/auth/change-password", s.withAuth(s.handleAuthChangePassword))
+	mux.HandleFunc("/api/users", s.withAdmin(s.handleUsersCollection))
+	mux.HandleFunc("/api/users/", s.withAdmin(s.handleUsersDetail))
+
+	mux.HandleFunc("/api/config", s.withAuth(s.handleConfig))
+	mux.HandleFunc("/api/generate", s.withAuth(s.handleGenerate))
+	mux.HandleFunc("/api/output", s.withAuth(s.handleGetOutput))
+	mux.HandleFunc("/api/output/download", s.withAuth(s.handleDownloadOutput))
+	mux.HandleFunc("/api/output/file", s.withAuth(s.handleGetOutputFile))
+	mux.HandleFunc("/api/templates", s.withAuth(s.handleGetTemplates))
+	mux.HandleFunc("/api/config/reload", s.withAuth(s.handleReloadConfig))
+	mux.HandleFunc("/api/config-templates", s.withAuth(s.handleConfigTemplatesCollection))
+	mux.HandleFunc("/api/config-templates/", s.withAuth(s.handleConfigTemplatesDetail))
+	mux.HandleFunc("/api/descriptions/global", s.withAuth(s.handleGlobalDescriptions))
+	mux.HandleFunc("/api/descriptions/", s.withAuth(s.handleDescriptions))
+	mux.HandleFunc("/api/check-references", s.withAuth(s.handleCheckReferences))
+	mux.HandleFunc("/api/ai/settings", s.withAuth(s.handleAISettings))
+	mux.HandleFunc("/api/ai/settings/test", s.withAuth(s.handleAISettingsTest))
+	mux.HandleFunc("/api/ai/models", s.withAuth(s.handleAIModels))
+	mux.HandleFunc("/api/ai/rules", s.withAuth(s.handleAIRules))
+	mux.HandleFunc("/api/ai/catalog", s.withAuth(s.handleAIPromptCatalog))
+	mux.HandleFunc("/api/ai/skill-file", s.withAuth(s.handleAISkillFile))
+	mux.HandleFunc("/api/ai/skills", s.withAuth(s.handleAICustomSkillsCollection))
+	mux.HandleFunc("/api/ai/skills/", s.withAuth(s.handleAICustomSkillsDetail))
+	mux.HandleFunc("/api/ai/template/session", s.withAuth(s.handleAITemplateSessionCollection))
+	mux.HandleFunc("/api/ai/template/session/", s.withAuth(s.handleAITemplateSessionDetail))
 
 	if info, err := os.Stat(s.webDir); err == nil && info.IsDir() {
 		fs := http.FileServer(http.Dir(s.webDir))

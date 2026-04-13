@@ -10,4 +10,4 @@ export type {
 } from '../api/config';
 
 // 编辑器标签页类型
-export type EditorTab = 'overview' | 'global' | 'nodes' | 'services' | 'ai' | 'preview' | 'generate' | 'export';
+export type EditorTab = 'overview' | 'global' | 'config' | 'ai' | 'preview' | 'generate' | 'export';

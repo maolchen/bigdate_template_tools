@@ -1,0 +1,25 @@
+# =============================================================================
+# Nginx RedisAdmin Basic Auth 配置片段模板
+# 用途：为 redisadmin location 添加 basic auth 认证
+# 注意：本模板为通用片段，需根据实际 location 路径和密码文件路径调整
+# =============================================================================
+
+# 前置条件：
+# 1. 已安装 apache2-utils (含 htpasswd 命令)
+# 2. 已生成密码文件：{{ .Global.install_base_dir }}/nginx/auth/redisadmin.passwd
+# 3. 用户名：{{ .Instance.Vars.redisadmin_auth_user }}
+
+location {{ .Instance.Vars.redisadmin_location_path }} {
+    auth_basic "RedisAdmin Authentication";
+    auth_basic_user_file {{ .Global.install_base_dir }}/nginx/auth/redisadmin.passwd;
+
+    # 原有 proxy 配置（需根据实际后端地址补充）
+    # proxy_pass http://redisadmin_backend;
+    # proxy_set_header Host $host;
+    # proxy_set_header X-Real-IP $remote_addr;
+    # proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # 超时配置（参考图片中的片段）
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+}

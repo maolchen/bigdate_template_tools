@@ -152,7 +152,7 @@
       "shell"
     ],
     "isCluster": false,
-    "snippet": "# =============================================================================\n# Elasticsearch 服务检查脚本模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.NodeAlias }}\n# =============================================================================\n# 用途：检查 elasticsearch 服务运行状态、端口、进程、集群健康等\n# 执行用户：{{ .Global.user }}（部分检查需要 root 权限）\n# =============================================================================\n\nset -e\n\n# -----------------------------------------------------------------------------\n# 变量定义（优先使用 .Global 和 .Instance.Vars）\n# -----------------------------------------------------------------------------\nES_VERSION=\"{{ .Instance.Vars.version }}\"\nES_INSTALL_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nES_DATA_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}\"\nES_LOG_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\"\nES_CONF_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config\"\nES_HTTP_PORT=\"{{ .Instance.Vars.http_port }}\"\nES_TRANSPORT_PORT=\"{{ .Instance.Vars.transport_port }}\"\nES_CLUSTER_NAME=\"{{ .Instance.Vars.cluster_name }}\"\nES_USER=\"{{ .Global.user }}\"\nES_GROUP=\"{{ .Global.group }}\"\n\n# 健康检查参数\nES_HEALTH_TIMEOUT=\"${ES_HEALTH_TIMEOUT:-30}\"\nES_CHECK_USER=\"${ES_CHECK_USER:-elastic}\"\nES_CHECK_PASS=\"${ES_CHECK_PASS:-{{ .Instance.Vars.default_password }}}\"\n\n# 颜色定义\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m' # No Color\n\n# -----------------------------------------------------------------------------\n# 日志函数\n# -----------------------------------------------------------------------------"
+    "snippet": "# =============================================================================\n# Elasticsearch 服务检查脚本模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.Node.NodeName }}\n# =============================================================================\n# 用途：检查 elasticsearch 服务运行状态、端口、进程、集群健康等\n# 执行用户：{{ .Global.user }}（部分检查需要 root 权限）\n# =============================================================================\n\nset -e\n\n# -----------------------------------------------------------------------------\n# 变量定义（优先使用 .Global 和 .Instance.Vars）\n# -----------------------------------------------------------------------------\nES_VERSION=\"{{ .Instance.Vars.version }}\"\nES_INSTALL_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nES_DATA_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}\"\nES_LOG_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\"\nES_CONF_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config\"\nES_HTTP_PORT=\"{{ .Instance.Vars.http_port }}\"\nES_TRANSPORT_PORT=\"{{ .Instance.Vars.transport_port }}\"\nES_CLUSTER_NAME=\"{{ .Instance.Vars.cluster_name }}\"\nES_USER=\"{{ .Global.user }}\"\nES_GROUP=\"{{ .Global.group }}\"\n\n# 健康检查参数\nES_HEALTH_TIMEOUT=\"${ES_HEALTH_TIMEOUT:-30}\"\nES_CHECK_USER=\"${ES_CHECK_USER:-elastic}\"\nES_CHECK_PASS=\"${ES_CHECK_PASS:-{{ .Instance.Vars.default_password }}}\"\n\n# 颜色定义\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m' # No Color\n\n# -----------------------------------------------------------------------------\n# 日志函数\n# -----------------------------------------------------------------------------"
   },
   {
     "path": "templates/elasticsearch/elasticsearch.service.tmpl",
@@ -546,6 +546,40 @@
     ],
     "isCluster": false,
     "snippet": "#!/bin/bash\r\n# ============================================================\r\n# MySQL容器启动脚本\r\n# 服务: mysql\r\n# 节点: {{ .Instance.Node.NodeName }} ({{ .Instance.Node.IP }})\r\n# ============================================================\r\n\r\ndocker run --restart=always -d --name {{ .Instance.Vars.container_name }} \\\r\n     -e MYSQL_USER={{ .Instance.Vars.mysql_user }} \\\r\n     -e MYSQL_PASSWORD={{ .Instance.Vars.mysql_password }} \\\r\n     -e MYSQL_ROOT_PASSWORD={{ .Instance.Vars.mysql_root_password }} \\\r\n     -v {{ .Global.install_base_dir }}/{{ .Instance.Vars.mysql_config_subdir }}/my.cnf:/etc/mysql/conf.d/my.cnf \\\r\n     -v {{ .Global.install_base_dir }}/{{ .Instance.Vars.mysql_data_subdir }}:/var/lib/mysql \\\r\n     -e MYSQL_DATABASE={{ .Instance.Vars.mysql_database }} \\\r\n     -p {{ .Instance.Vars.container_port }}:{{ .Instance.Vars.mysql_port }} \\\r\n     {{ .Instance.Vars.mysql_image }}"
+  },
+  {
+    "path": "templates/nginx/diagnose_502.sh.tmpl",
+    "service": "nginx",
+    "fileName": "diagnose_502.sh.tmpl",
+    "kind": "shell_script",
+    "tags": [
+      "shell"
+    ],
+    "isCluster": false,
+    "snippet": "#!/bin/bash\n# =============================================================================\n# Nginx/OpenResty 502 错误诊断脚本模板\n# 服务：nginx/openresty\n# 节点：{{ .Instance.Name }}\n# =============================================================================\n# 用途：诊断 502 Bad Gateway 错误，检查上游服务连通性、端口、进程等\n# 执行用户：{{ .Global.user }}（部分检查需要 root 权限）\n# =============================================================================\n\nset -e\n\n# -----------------------------------------------------------------------------\n# 变量定义（优先使用 .Global 和 .Instance.Vars）\n# -----------------------------------------------------------------------------\nNGINX_NODE_NAME=\"{{ .Instance.Name }}\"\nNGINX_USER=\"{{ .Global.user }}\"\nNGINX_GROUP=\"{{ .Global.group }}\"\n\n# 上游服务配置（需人工补齐，此处为示例）\n# 请根据实际 nginx 配置中的 proxy_pass 修改以下变量\nUPSTREAM_HOST=\"${UPSTREAM_HOST:-localhost}\"\nUPSTREAM_PORT=\"${UPSTREAM_PORT:-9200}\"\nUPSTREAM_NAME=\"${UPSTREAM_NAME:-elasticsearch}\"\n\n# 颜色定义\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m'\n\n# -----------------------------------------------------------------------------\n# 日志函数\n# -----------------------------------------------------------------------------\nlog_info() {\n    echo -e \"${GREEN}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1\"\n}\n\nlog_warn() {\n    echo -e \"${YELLOW}[WARN]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1\""
+  },
+  {
+    "path": "templates/nginx/redisadmin_auth_setup.sh.tmpl",
+    "service": "nginx",
+    "fileName": "redisadmin_auth_setup.sh.tmpl",
+    "kind": "shell_script",
+    "tags": [
+      "setup",
+      "shell"
+    ],
+    "isCluster": false,
+    "snippet": "#!/bin/bash\n# =============================================================================\n# Nginx RedisAdmin Basic Auth 用户管理脚本模板\n# 用途：管理 /etc/nginx/.redisadmin_htpasswd 文件\n# 依赖：htpasswd (apache2-utils)\n# =============================================================================\n\nset -e\n\n# -----------------------------------------------------------------------------\n# 变量定义\n# -----------------------------------------------------------------------------\nAUTH_FILE=\"{{ .Instance.Vars.redisadmin_auth_file | default \"/etc/nginx/.redisadmin_htpasswd\" }}\"\nAUTH_USER=\"{{ .Instance.Vars.redisadmin_auth_user | default \"admin\" }}\"\nNGINX_USER=\"{{ .Global.user }}\"\nNGINX_GROUP=\"{{ .Global.group }}\"\n\n# 颜色定义\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m'\n\n# -----------------------------------------------------------------------------\n# 日志函数\n# -----------------------------------------------------------------------------\nlog_info() {\n    echo -e \"${GREEN}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $*\"\n}\n\nlog_warn() {\n    echo -e \"${YELLOW}[WARN]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $*\"\n}\n\nlog_error() {\n    echo -e \"${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $*\" \u003e\u00262\n}\n\nlog_success() {\n    echo -e \"${GREEN}[SUCCESS]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $*\""
+  },
+  {
+    "path": "templates/nginx/redisadmin_basic_auth.conf.tmpl",
+    "service": "nginx",
+    "fileName": "redisadmin_basic_auth.conf.tmpl",
+    "kind": "config_file",
+    "tags": [
+      "config"
+    ],
+    "isCluster": false,
+    "snippet": "# =============================================================================\n# Nginx RedisAdmin Basic Auth 配置片段模板\n# 用途：为 redisadmin location 添加 basic auth 认证\n# 注意：本模板为通用片段，需根据实际 location 路径和密码文件路径调整\n# =============================================================================\n\n# 前置条件：\n# 1. 已安装 apache2-utils (含 htpasswd 命令)\n# 2. 已生成密码文件：{{ .Global.install_base_dir }}/nginx/auth/redisadmin.passwd\n# 3. 用户名：{{ .Instance.Vars.redisadmin_auth_user }}\n\nlocation {{ .Instance.Vars.redisadmin_location_path }} {\n    auth_basic \"RedisAdmin Authentication\";\n    auth_basic_user_file {{ .Global.install_base_dir }}/nginx/auth/redisadmin.passwd;\n\n    # 原有 proxy 配置（需根据实际后端地址补充）\n    # proxy_pass http://redisadmin_backend;\n    # proxy_set_header Host $host;\n    # proxy_set_header X-Real-IP $remote_addr;\n    # proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\n    # 超时配置（参考图片中的片段）\n    proxy_send_timeout 60s;\n    proxy_read_timeout 60s;\n}"
   },
   {
     "path": "templates/ntp_master/install.sh.tmpl",

@@ -1,0 +1,12 @@
+{
+  "templates": [
+    {
+      "id": "config",
+      "fileName": "config.yaml",
+      "remark": "",
+      "nodeSummary": "14节点/23服务",
+      "updatedAt": "2026-04-11T16:43:52+08:00",
+      "isActive": true
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "sessions": [
+    {
+      "token": "42c9ae4b5f62bf4c44277bc8345005c2c34fbe94654371bc",
+      "username": "admin",
+      "role": "admin",
+      "createdAt": "2026-04-13T13:54:11+08:00",
+      "expiresAt": "2026-04-14T13:54:11+08:00"
+    },
+    {
+      "token": "14d746d413c9ed9cb83cc2a3882072d4a210020a8dee294d",
+      "username": "chenml",
+      "role": "user",
+      "createdAt": "2026-04-13T13:49:22+08:00",
+      "expiresAt": "2026-04-14T13:49:22+08:00"
+    }
+  ]
+}

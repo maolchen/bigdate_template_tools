@@ -16,38 +16,49 @@ import (
 	"config-generator/checker"
 	"config-generator/config"
 	"config-generator/generator"
-
-	"gopkg.in/yaml.v3"
 )
 
-// handleConfig 处理配置的 GET 和 PUT 请求
+// handleConfig handles current user's active config get/save.
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 
 	switch r.Method {
-	case "GET":
-		json.NewEncoder(w).Encode(s.cfg)
+	case http.MethodGet:
+		cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.cfg = cfg
+		json.NewEncoder(w).Encode(cfg)
 
-	case "PUT":
+	case http.MethodPut:
+		_, activePath, activeTemplateID, err := s.loadUserActiveConfig(principal.Username)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		var newConfig config.Config
 		if err := json.NewDecoder(r.Body).Decode(&newConfig); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
+		if err := config.SaveConfig(activePath, &newConfig); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		s.cfg = &newConfig
-		fmt.Printf("[Config] save requested: nodes=%d services=%d\n", len(s.cfg.Nodes), len(s.cfg.ServiceTop))
-
-		data, err := yaml.Marshal(s.cfg)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if err := os.WriteFile(s.configPath, data, 0644); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		fmt.Printf("[Config] save requested user=%s template=%s nodes=%d services=%d\n", principal.Username, activeTemplateID, len(newConfig.Nodes), len(newConfig.ServiceTop))
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
@@ -59,19 +70,38 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleGenerate 处理配置生成请求
+// handleGenerate generates outputs to current user's output directory.
 func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 
-	fmt.Printf("[Generate] start nodes=%d services=%d output=%s templates=%s\n", len(s.cfg.Nodes), len(s.cfg.ServiceTop), s.outputDir, s.templatesDir)
-	instances := generator.BuildServiceInstances(s.cfg)
+	s.configMu.Lock()
+	cfg, _, activeTemplateID, err := s.loadUserActiveConfig(principal.Username)
+	s.configMu.Unlock()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-	summary, err := generator.GenerateOutputs(s.cfg, instances, s.outputDir, s.templatesDir)
+	userOutputDir := s.userOutputDir(principal.Username)
+	if err := os.MkdirAll(userOutputDir, 0755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("[Generate] start user=%s template=%s nodes=%d services=%d output=%s templates=%s\n", principal.Username, activeTemplateID, len(cfg.Nodes), len(cfg.ServiceTop), userOutputDir, s.templatesDir)
+	instances := generator.BuildServiceInstances(cfg)
+
+	summary, err := generator.GenerateOutputs(cfg, instances, userOutputDir, s.templatesDir)
 	if err != nil {
 		fmt.Printf("[Generate] failed: %v\n", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -87,27 +117,33 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		"warnings":        summary.Warnings,
 		"skippedServices": summary.SkippedServices,
 		"stats": map[string]int{
-			"nodes":     len(s.cfg.Nodes),
-			"services":  len(s.cfg.ServiceTop),
+			"nodes":     len(cfg.Nodes),
+			"services":  len(cfg.ServiceTop),
 			"generated": summary.Generated,
 			"skipped":   len(summary.SkippedServices),
 		},
 	})
 }
 
-// handleGetOutput 处理获取输出文件列表请求
+// handleGetOutput returns file list from current user's output directory.
 func (s *Server) handleGetOutput(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 
+	userOutputDir := s.userOutputDir(principal.Username)
 	filesByNode := make(map[string][]string)
 	total := 0
 
-	filepath.Walk(s.outputDir, func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
+	_ = filepath.Walk(userOutputDir, func(path string, info fs.FileInfo, walkErr error) error {
+		if walkErr != nil {
 			return nil
 		}
 		if !info.IsDir() {
-			relPath, _ := filepath.Rel(s.outputDir, path)
+			relPath, _ := filepath.Rel(userOutputDir, path)
 			relPath = filepath.ToSlash(relPath)
 			parts := strings.SplitN(relPath, "/", 2)
 			if len(parts) == 2 {
@@ -130,17 +166,24 @@ func (s *Server) handleGetOutput(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleDownloadOutput 处理下载输出文件请求
+// handleDownloadOutput zips current user's output directory.
 func (s *Server) handleDownloadOutput(w http.ResponseWriter, r *http.Request) {
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	userOutputDir := s.userOutputDir(principal.Username)
 	buf := new(bytes.Buffer)
 	zipWriter := zip.NewWriter(buf)
 
-	filepath.Walk(s.outputDir, func(path string, info fs.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+	_ = filepath.Walk(userOutputDir, func(path string, info fs.FileInfo, walkErr error) error {
+		if walkErr != nil || info.IsDir() {
 			return nil
 		}
 
-		relPath, _ := filepath.Rel(s.outputDir, path)
+		relPath, _ := filepath.Rel(userOutputDir, path)
 		writer, err := zipWriter.Create(relPath)
 		if err != nil {
 			return err
@@ -155,16 +198,21 @@ func (s *Server) handleDownloadOutput(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 
-	zipWriter.Close()
+	_ = zipWriter.Close()
 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=output.zip")
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 }
 
-// handleGetOutputFile 处理获取单个输出文件请求
+// handleGetOutputFile returns a single file in current user's output directory.
 func (s *Server) handleGetOutputFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 
 	path := r.URL.Query().Get("path")
 	if path == "" {
@@ -172,10 +220,12 @@ func (s *Server) handleGetOutputFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userOutputDir := s.userOutputDir(principal.Username)
 	cleanPath := filepath.Clean(path)
-	fullPath := filepath.Join(s.outputDir, cleanPath)
-
-	if !strings.HasPrefix(fullPath, s.outputDir) {
+	fullPath := filepath.Clean(filepath.Join(userOutputDir, cleanPath))
+	absRoot, _ := filepath.Abs(userOutputDir)
+	absPath, _ := filepath.Abs(fullPath)
+	if absPath != absRoot && !strings.HasPrefix(absPath, absRoot+string(os.PathSeparator)) {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
@@ -192,13 +242,13 @@ func (s *Server) handleGetOutputFile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGetTemplates 处理获取模板列表请求
+// handleGetTemplates returns template list from templates directory.
 func (s *Server) handleGetTemplates(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var templates []map[string]interface{}
 
-	filepath.Walk(s.templatesDir, func(path string, info fs.FileInfo, err error) error {
+	_ = filepath.Walk(s.templatesDir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -226,32 +276,46 @@ func (s *Server) handleGetTemplates(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(templates)
 }
 
-// handleReloadConfig 处理重新加载配置请求
+// handleReloadConfig reloads current user's active config from file.
 func (s *Server) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if err := s.loadConfig(); err != nil {
-		fmt.Printf("[Config] reload failed: %v\n", err)
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	s.configMu.Lock()
+	cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+	s.configMu.Unlock()
+	if err != nil {
+		fmt.Printf("[Config] reload failed user=%s: %v\n", principal.Username, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fmt.Printf("[Config] reload ok: nodes=%d services=%d\n", len(s.cfg.Nodes), len(s.cfg.ServiceTop))
+	s.cfg = cfg
+	fmt.Printf("[Config] reload ok user=%s nodes=%d services=%d\n", principal.Username, len(cfg.Nodes), len(cfg.ServiceTop))
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "配置已重新加载",
-		"config":  s.cfg,
+		"config":  cfg,
 	})
 }
 
-// handleDescriptions 处理服务描述的 GET 和 POST 请求
+// handleDescriptions handles service description get/save.
 func (s *Server) handleDescriptions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 
 	escapedServiceName := strings.TrimPrefix(r.URL.EscapedPath(), "/api/descriptions/")
 	if escapedServiceName == "" || escapedServiceName == r.URL.EscapedPath() {
@@ -265,31 +329,31 @@ func (s *Server) handleDescriptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	switch r.Method {
-	case "GET":
-		descriptions, err := s.getFilteredDescriptions(serviceName)
+	case http.MethodGet:
+		descriptions, err := s.getFilteredDescriptions(serviceName, cfg)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 		json.NewEncoder(w).Encode(descriptions)
 
-	case "POST":
+	case http.MethodPost:
 		var updates map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
-		descriptions, err := s.saveDescriptionUpdates(serviceName, updates)
-		if err != nil {
+		if _, err := s.saveDescriptionUpdates(serviceName, updates, cfg); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		mergeDescriptions(serviceName, descriptions, s.cfg)
-
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"message": "描述已保存",
@@ -300,32 +364,40 @@ func (s *Server) handleDescriptions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleGlobalDescriptions 处理全局描述的 GET 和 POST 请求
+// handleGlobalDescriptions handles global description get/save.
 func (s *Server) handleGlobalDescriptions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	switch r.Method {
-	case "GET":
-		descriptions, err := s.getFilteredDescriptions("global")
+	case http.MethodGet:
+		descriptions, err := s.getFilteredDescriptions("global", cfg)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 		json.NewEncoder(w).Encode(descriptions)
 
-	case "POST":
+	case http.MethodPost:
 		var updates map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
-		if _, err := s.saveDescriptionUpdates("global", updates); err != nil {
+		if _, err := s.saveDescriptionUpdates("global", updates, cfg); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"message": "全局描述已保存",
@@ -336,11 +408,11 @@ func (s *Server) handleGlobalDescriptions(w http.ResponseWriter, r *http.Request
 	}
 }
 
-// handleCheckReferences 处理引用检查请求
+// handleCheckReferences performs template reference checking.
 func (s *Server) handleCheckReferences(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
