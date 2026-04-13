@@ -41,6 +41,11 @@
 .sidebar {
   width: 290px;
   padding: 16px 18px 18px;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100vh;
+  overflow-y: auto;
   transition: width 180ms ease, padding 180ms ease;
 }
 
@@ -349,6 +354,11 @@
   }
 
   .sidebar {
+    position: static;
+    top: auto;
+    align-self: stretch;
+    max-height: none;
+    overflow-y: visible;
     width: 100%;
     padding: 16px 16px 0;
   }
