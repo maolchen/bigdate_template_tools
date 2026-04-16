@@ -346,6 +346,39 @@ interface SkillMentionState {
   items: AISkillCatalogItem[];
 }
 
+const TEMPLATE_ENTRY_PATH = '__entry__/template';
+const TEMPLATE_ENTRY_SKILL_PATH = '__entry__/skill-template';
+
+function createTemplateEntrySkillCatalog(): AISkillCatalogItem[] {
+  return [
+    {
+      id: 'template',
+      scope: 'entry',
+      title: '模板模式总入口',
+      tags: ['recommended', 'entry'],
+      required: false,
+      path: TEMPLATE_ENTRY_PATH,
+      source: 'synthetic',
+      content: '显式进入模板模式，自动加载 core 规则并按需匹配 task skill。',
+    },
+    {
+      id: 'skill:template',
+      scope: 'entry',
+      title: '模板模式总入口（兼容 skill 写法）',
+      tags: ['alias', 'entry'],
+      required: false,
+      path: TEMPLATE_ENTRY_SKILL_PATH,
+      source: 'synthetic',
+      content: '与 #template 等价，保留给习惯 #skill:xxx 写法的用户。',
+    },
+  ];
+}
+
+function buildSkillMentionCatalog(catalog: AISkillCatalogItem[]): AISkillCatalogItem[] {
+  const visibleCatalog = catalog.filter((item) => item.scope !== 'core');
+  return [...createTemplateEntrySkillCatalog(), ...visibleCatalog];
+}
+
 function resolveSkillMentionState(
   text: string,
   cursor: number,
@@ -384,7 +417,8 @@ function resolveSkillMentionState(
       const id = (skill.id || '').toLowerCase();
       const path = (skill.path || '').toLowerCase();
       const title = (skill.title || '').toLowerCase();
-      return id.includes(normalized) || path.includes(normalized) || title.includes(normalized);
+      const tags = Array.isArray(skill.tags) ? skill.tags.join(' ').toLowerCase() : '';
+      return id.includes(normalized) || path.includes(normalized) || title.includes(normalized) || tags.includes(normalized);
     })
     .slice(0, 8);
 
@@ -1150,6 +1184,10 @@ export function AITemplatePage({ canSaveTemplate = true, onEditorModeChange, use
     }
   }, [session, selectedDraftPath]);
   const threadMessages = useMemo(() => [...(session?.messages ?? []), ...optimisticMessages], [session?.messages, optimisticMessages]);
+  const skillMentionCatalog = useMemo(
+    () => buildSkillMentionCatalog(skillCatalog),
+    [skillCatalog],
+  );
   const latestMessageSignature = useMemo(() => {
     const latest = threadMessages[threadMessages.length - 1];
     if (!latest) return '';
@@ -1368,8 +1406,8 @@ export function AITemplatePage({ canSaveTemplate = true, onEditorModeChange, use
     return '未知模型';
   }
   const skillMention = useMemo(
-    () => resolveSkillMentionState(message, composerCursor, skillCatalog, skillMentionSuppressed),
-    [message, composerCursor, skillCatalog, skillMentionSuppressed],
+    () => resolveSkillMentionState(message, composerCursor, skillMentionCatalog, skillMentionSuppressed),
+    [message, composerCursor, skillMentionCatalog, skillMentionSuppressed],
   );
   const activeMentionItem = skillMention.open
     ? skillMention.items[Math.max(0, Math.min(skillMentionIndex, skillMention.items.length - 1))]
@@ -1429,7 +1467,12 @@ export function AITemplatePage({ canSaveTemplate = true, onEditorModeChange, use
 
   function applySkillMention(skill: AISkillCatalogItem) {
     if (!skillMention.open) return;
-    const replacement = `#skill:${skill.id} `;
+    let replacement = `#skill:${skill.id} `;
+    if (skill.path === TEMPLATE_ENTRY_PATH) {
+      replacement = '#template ';
+    } else if (skill.path === TEMPLATE_ENTRY_SKILL_PATH) {
+      replacement = '#skill:template ';
+    }
     const nextMessage = `${message.slice(0, skillMention.start)}${replacement}${message.slice(skillMention.end)}`;
     const nextCursor = skillMention.start + replacement.length;
     setMessage(nextMessage);
@@ -2128,7 +2171,7 @@ export function AITemplatePage({ canSaveTemplate = true, onEditorModeChange, use
                       void handleSendMessage();
                     }
                   }}
-                  placeholder="描述你要生成或改写的模板。输入 # 触发技能提示；回车发送，Shift + Enter 换行。"
+                  placeholder="描述你要生成或改写的模板。输入 # 可选 template / skill:template；回车发送，Shift + Enter 换行。"
                 />
                 {skillMention.open && (
                   <div className="ai-skill-mention-menu">
@@ -2148,7 +2191,7 @@ export function AITemplatePage({ canSaveTemplate = true, onEditorModeChange, use
                     ))}
                   </div>
                 )}
-                <div className="ai-chat-input-tip-shadow">支持上传脚本、配置文件和文本截图，也支持 Ctrl+V 粘贴图片/文档或拖拽文件；AI 先生成草稿，再由你审核保存。</div>
+                <div className="ai-chat-input-tip-shadow">输入 # 可快速选 template 或 skill:template 进入模板模式。支持上传脚本、配置文件和文本截图，也支持 Ctrl+V 粘贴图片/文档或拖拽文件；AI 先生成草稿，再由你审核保存。</div>
               </div>
               <details className="ai-chat-example-panel">
                 <summary className="ai-chat-example-summary">首轮建模板示例提示词（可展开 / 可复制）</summary>
@@ -2312,5 +2355,3 @@ export function AITemplatePage({ canSaveTemplate = true, onEditorModeChange, use
     </div>
   );
 }
-
-

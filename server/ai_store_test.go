@@ -11,12 +11,21 @@ import (
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	root := t.TempDir()
+	templatesDir := filepath.Join(root, "templates")
+	aiSkillsDir := filepath.Join(root, "data", "ai", "skills")
+	if err := os.MkdirAll(templatesDir, 0o755); err != nil {
+		t.Fatalf("mkdir templates dir failed: %v", err)
+	}
+	if err := os.MkdirAll(aiSkillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir ai skills dir failed: %v", err)
+	}
 	return &Server{
-		templatesDir:   filepath.Join(root, "templates"),
+		templatesDir:   templatesDir,
 		aiDir:          filepath.Join(root, "data", "ai"),
 		aiSessionsDir:  filepath.Join(root, "data", "ai", "sessions"),
 		aiUploadsDir:   filepath.Join(root, "data", "ai", "uploads"),
-		aiSkillsDir:    filepath.Join(root, "data", "ai", "skills"),
+		aiSkillsDir:    aiSkillsDir,
+		aiExamplesPath: filepath.Join(root, "data", "ai", "examples_index.json"),
 		aiSettingsPath: filepath.Join(root, "data", "ai", "settings.json"),
 		aiRulesPath:    filepath.Join(root, "data", "ai", "template_rules.md"),
 	}

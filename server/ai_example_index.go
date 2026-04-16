@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -256,7 +257,7 @@ func scoreExampleEntry(entry aiExampleIndexEntry, requestedServices []string, de
 func (s *Server) selectPromptExamples(message string, selectedDrafts []aiDraftFile, skills []aiPromptSkill) ([]aiPromptExample, error) {
 	entries, err := s.buildExampleIndex()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build example index failed: %w", err)
 	}
 
 	requestedServices := extractRequestedServices(message, selectedDrafts, entries)

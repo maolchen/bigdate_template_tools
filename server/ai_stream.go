@@ -64,6 +64,16 @@ func (s *Server) handleAISessionMessageStream(w http.ResponseWriter, r *http.Req
 			Message: fmt.Sprintf("模型 %s 开始流式生成", strings.TrimSpace(chatReq.Model)),
 		})
 		return s.aiClient.StreamChatCompletion(baseURL, apiKey, chatReq, func(rawDelta string) {
+			if strings.EqualFold(strings.TrimSpace(chatReq.ResponseFormat["type"]), "text") {
+				if rawDelta == "" {
+					return
+				}
+				_ = writeSSEEvent(w, flusher, "delta", aiStreamEvent{
+					Type:  "delta",
+					Delta: rawDelta,
+				})
+				return
+			}
 			preview := extractor.Push(rawDelta)
 			if preview.AssistantDelta == "" && len(preview.DraftFiles) == 0 {
 				return

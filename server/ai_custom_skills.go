@@ -47,6 +47,9 @@ func normalizeSelectedSkillIDs(skillIDs []string) []string {
 		if skillID == "" {
 			continue
 		}
+		if strings.HasPrefix(strings.ToLower(skillID), "skill:") {
+			skillID = skillID[len("skill:"):]
+		}
 		if strings.HasPrefix(skillID, "custom/") {
 			skillID = strings.TrimPrefix(skillID, "custom/")
 		}

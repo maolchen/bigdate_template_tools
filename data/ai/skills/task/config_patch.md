@@ -3,7 +3,6 @@
 目标：
 - 为模板中用到的 `.Instance.Vars.*` 补齐 `serverConfig.<service>.vars`
 - 为新服务补齐最基本的 `serviceTop.<service>` 草案
-- 必要时补充 `global` 下新增共享变量
 
 输出原则：
 - patch 要最小化
@@ -19,8 +18,3 @@
 `serviceTop` 建议：
 - 新服务需要返回最基本的 `nodes`、`description`、`id_auto_derive`
 - 若无法确定节点分布，在 `warnings` 提示，不要编造不存在的节点别名
-
-`global` 建议：
-- 仅当变量适合做全局共享，才建议放到 `global`
-- 例如 `software_dir`、`log_base_dir`、通用用户名/用户组、JDK 路径
-- 不要把明显服务专属参数放到 `global`

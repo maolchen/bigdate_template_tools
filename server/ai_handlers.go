@@ -177,7 +177,19 @@ func parseAIModelResponse(raw string) (*aiModelResponse, error) {
 	if len([]rune(snippet)) > 240 {
 		snippet = string([]rune(snippet)[:240]) + "..."
 	}
-	return nil, fmt.Errorf("AI 返回内容不是合法 JSON，原始片段: %s", snippet)
+	return &aiModelResponse{
+		AssistantMessage: clean,
+		DraftFiles:       []aiDraftFile{},
+		PlannedActions:   []aiPlannedAction{},
+		Warnings: []string{
+			fmt.Sprintf("当前模型未按 JSON 协议返回结构化结果，已按纯文本展示；未生成可保存草稿与配置补丁。原始片段: %s", snippet),
+		},
+		FollowUpQuestions: []string{},
+		ConfigPatch: aiConfigPatch{
+			ServiceTop:   map[string]config.ServiceTopo{},
+			ServerConfig: map[string]config.ServiceConfig{},
+		},
+	}, nil
 }
 
 func buildAIJSONCandidates(raw string) []string {
@@ -479,7 +491,7 @@ func resolveAIModel(requestModel, sessionModel, settingsModel string) string {
 // buildAIPromptPreview returns a trace of which skills/examples/attachments will be sent in the next request.
 func (s *Server) buildAIPromptPreview(session *aiSession, req aiSessionMessageRequest, attachmentIDs []string) (aiPromptPreviewResponse, error) {
 	selectedDrafts := resolveSelectedDrafts(session, req.SelectedDraftPaths)
-	_, promptTrace, err := s.buildAIPromptBundle(session, req, selectedDrafts, attachmentIDs)
+	bundle, err := s.buildAIPromptBundle(session, req, selectedDrafts, attachmentIDs)
 	if err != nil {
 		return aiPromptPreviewResponse{}, err
 	}
@@ -503,8 +515,8 @@ func (s *Server) buildAIPromptPreview(session *aiSession, req aiSessionMessageRe
 	}
 
 	return aiPromptPreviewResponse{
-		Summary:            buildPromptPreviewSummary(promptTrace, selectedDrafts, attachments),
-		PromptTrace:        promptTrace,
+		Summary:            buildPromptPreviewSummary(bundle.PromptTrace, selectedDrafts, attachments),
+		PromptTrace:        bundle.PromptTrace,
 		SelectedDraftPaths: selectedDraftPaths,
 		SelectedSkillIDs:   append([]string(nil), req.SelectedSkillIDs...),
 		Attachments:        attachments,
@@ -516,12 +528,12 @@ func (s *Server) buildAIPromptPreview(session *aiSession, req aiSessionMessageRe
 func (s *Server) buildAIChatRequest(session *aiSession, req aiSessionMessageRequest, attachmentIDs []string) (openAIChatRequest, error) {
 	selectedDrafts := resolveSelectedDrafts(session, req.SelectedDraftPaths)
 
-	systemPrompt, promptTrace, err := s.buildAIPromptBundle(session, req, selectedDrafts, attachmentIDs)
+	bundle, err := s.buildAIPromptBundle(session, req, selectedDrafts, attachmentIDs)
 	if err != nil {
-		return openAIChatRequest{}, err
+		return openAIChatRequest{}, fmt.Errorf("build prompt bundle failed: %w", err)
 	}
 
-	messages := []openAIChatMessage{newTextMessage("system", systemPrompt)}
+	messages := []openAIChatMessage{newTextMessage("system", bundle.SystemPrompt)}
 
 	for _, message := range session.Messages {
 		builder := strings.TrimSpace(message.Content)
@@ -613,19 +625,23 @@ func (s *Server) buildAIChatRequest(session *aiSession, req aiSessionMessageRequ
 
 	settings, err := s.loadAISettingsFile()
 	if err != nil {
-		return openAIChatRequest{}, err
+		return openAIChatRequest{}, fmt.Errorf("load AI settings failed: %w", err)
 	}
 	resolvedModel := resolveAIModel(req.Model, session.SelectedModel, settings.Model)
 	if resolvedModel == "" {
 		return openAIChatRequest{}, errors.New("妯″瀷涓嶈兘涓虹┖")
 	}
 
-	session.PromptTrace = promptTrace
+	session.PromptTrace = bundle.PromptTrace
 	session.SelectedModel = resolvedModel
+	responseFormat := map[string]string{"type": "text"}
+	if bundle.Structured {
+		responseFormat = map[string]string{"type": "json_object"}
+	}
 	return openAIChatRequest{
 		Model:          resolvedModel,
 		Messages:       messages,
-		ResponseFormat: map[string]string{"type": "json_object"},
+		ResponseFormat: responseFormat,
 		Temperature:    0.2,
 		MaxTokens:      8192,
 	}, nil

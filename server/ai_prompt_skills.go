@@ -24,6 +24,12 @@ type aiPromptSkillSpec struct {
 	DefaultBody  string
 }
 
+type aiPromptBundle struct {
+	SystemPrompt string
+	PromptTrace  aiPromptTrace
+	Structured   bool
+}
+
 func emptyAIPromptTrace() aiPromptTrace {
 	return aiPromptTrace{
 		SkillRefs:   []aiSkillRef{},
@@ -57,8 +63,7 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 			Title:        "Base Project Rules",
 			Tags:         []string{"global", "idempotent"},
 			Required:     true,
-			DefaultBody: strings.TrimSpace(`
-浠呯敓鎴愬彲瀹¤鐨勬ā鏉胯崏绋?(auditable draft templates only)銆?- 浼樺厛浣跨敤 .Global 鎻愪緵 user/group/java/path 绛夊叏灞€鍊笺€?- Shell 鑴氭湰灏介噺淇濊瘉骞傜瓑 (idempotent where possible)銆?- 浠呭湪鐗规潈鎿嶄綔浣跨敤 run_as_root銆?- 浼樺厛澶嶇敤鐜版湁妯℃澘 helper 鍑芥暟銆?- 涓嶈澹扮О鏂囦欢鈥滃凡缁忓啓鍏ョ鐩樷€濄€?`),
+			DefaultBody:  "AI 助手主用途：生成符合项目规范、支持 Go Template 语法、可审核、可保存的 .tmpl 模板草稿。",
 		},
 		{
 			RelativePath: "core/output_json.md",
@@ -67,14 +72,7 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 			Tags:         []string{"json", "output"},
 			Required:     true,
 			DefaultBody: strings.TrimSpace(`
-璇峰彧杩斿洖涓€涓?JSON object锛屽繀椤诲寘鍚細
-- assistantMessage
-- draftFiles[]: path, content, reason
-- plannedActions[]: type, path, reason
-- warnings[]
-- followUpQuestions[]
-- configPatch: serviceTop, serverConfig
-`),
+请只返回一个 JSON object，不要输出任何 JSON 之外的解释文本。`),
 		},
 		{
 			RelativePath: "core/path_guard.md",
@@ -83,10 +81,9 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 			Tags:         []string{"path", "templates"},
 			Required:     true,
 			DefaultBody: strings.TrimSpace(`
-璺緞绾︽潫 (path constraints):
-- 鎵€鏈?draftFiles 璺緞蹇呴』鍦?templates/<service>/...
-- 妯℃澘鏂囦欢蹇呴』浠?.tmpl 缁撳熬
-- plannedActions.path 蹇呴』浣嶄簬 templates/ 涓?`),
+路径约束：
+- 所有草稿文件必须位于 templates/<service>/...
+- 所有模板文件必须以 .tmpl 结尾`),
 		},
 		{
 			RelativePath: "core/template_contract.md",
@@ -95,8 +92,10 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 			Tags:         []string{"contract", "hostname", "placeholder"},
 			Required:     true,
 			DefaultBody: strings.TrimSpace(`
-妯℃澘濂戠害 (strict template contract):
-- 鑺傜偣鍗犱綅绗﹀繀椤讳娇鐢?{{ .Instance.Node.Hostname }}銆?- 绂佹鍗犱綅绗︼細.Instance.NodeAlias, .Instance.Node.HostName銆?- 妯℃澘璺緞蹇呴』鍦?templates/<service>/ 涓嬶紝涓斿悗缂€涓?.tmpl銆?- 榛樿杈撳嚭缁撴瀯鏄?output/<ip>/<service>/ 骞抽摵鐩綍銆?- 闄ら潪鐢ㄦ埛鏄庣‘瑕佹眰锛屽惁鍒欎笉瑕佸垱寤?templates/<service>/config/...銆?- 鑻ユ棫鑽夌涓庡绾﹀啿绐侊紝浼樺厛閬靛惊鏈绾﹀苟鍦?warnings 璇存槑銆?`),
+模板契约：
+- 草稿文件路径必须位于 templates/<service>/
+- 节点主机名必须使用 {{ .Instance.Node.Hostname }}
+- 节点 IP 必须使用 {{ .Instance.Node.IP }}`),
 		},
 		{
 			RelativePath: "core/variable_contract.md",
@@ -105,17 +104,22 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 			Tags:         []string{"variables", "context", "schema"},
 			Required:     true,
 			DefaultBody: strings.TrimSpace(`
-妯℃澘涓婁笅鏂囧绾?(template context contract):
-- .Global.<key>锛堟潵鑷?config.yaml global锛屽姩鎬?key锛?- .Nodes.<alias>.IP / .Nodes.<alias>.Hostname锛堝浐瀹氳妭鐐瑰瓧娈碉級
-- .Instance.ServiceName / .Instance.NodeName / .Instance.AutoID
-- .Instance.Node.IP / .Instance.Node.Hostname / .Instance.Node.NodeName
-- .Instance.Vars.<key>锛堟潵鑷?serverConfig.<service>.vars锛屽姩鎬?key锛?- .AllInstances[]锛堝瓧娈电粨鏋勪笌 .Instance 涓€鑷达級
-
-绂佹鍋囪 (forbidden assumptions):
-- Do not use .Instance.NodeAlias
-- Do not use .Instance.Node.HostName
-- Do not invent .Instance.<unknownField>
-`),
+模板变量契约：
+- .Global.<key> 来自 config.yaml.global
+- .Instance.Vars.<key> 来自 serverConfig.<service>.vars
+- 禁止使用 .Instance.NodeAlias 和 .Instance.Node.HostName`),
+		},
+		{
+			RelativePath: "core/template_functions.md",
+			Scope:        "core",
+			Title:        "Template Function Reference",
+			Tags:         []string{"functions", "helpers", "examples"},
+			Required:     true,
+			DefaultBody: strings.TrimSpace(`
+模板函数参考：
+- serviceNodes("service") 返回服务实例列表
+- serviceEndpoints("service","port") 返回 ip:port 列表
+- default("fallback", value) 用于空值兜底`),
 		},
 		{
 			RelativePath: "task/install_script.md",
@@ -124,7 +128,7 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 			Tags:         []string{"shell", "install"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-鐢ㄤ簬 install/start/stop/check 鑴氭湰锛?- 缁撴瀯娓呮櫚锛歷ariables/helpers/main flow銆?- 浼樺厛浣跨敤 .Global + .Instance.Vars 缁勫悎銆?- 鑻ヤ娇鐢?.Instance.Vars.xxx锛屽簲鎻愪緵鍖归厤鐨?serverConfig.vars 寤鸿銆?`),
+用于 install.sh.tmpl 及少量必要的 start/stop/check 脚本。`),
 		},
 		{
 			RelativePath: "task/config_file.md",
@@ -133,7 +137,7 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 			Tags:         []string{"config"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-鐢ㄤ簬閰嶇疆鏂囦欢妯℃澘锛?- 鐜鐩稿叧鍊间紭鍏堝弬鏁板寲鍒?.Global 鍜?.Instance.Vars銆?- 鑳藉弬鏁板寲鐨?host/IP/user/path 涓嶈纭紪鐮併€?- 鏂囦欢鍛藉悕搴斾笌鐪熷疄閰嶇疆鏂囦欢鍚嶄繚鎸佷竴鑷淬€?`),
+用于服务配置文件模板。`),
 		},
 		{
 			RelativePath: "task/systemd_service.md",
@@ -142,7 +146,7 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 			Tags:         []string{"systemd", "service"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-鐢ㄤ簬 systemd unit 妯℃澘锛?- 浼樺厛浣跨敤 {{ .Global.user }} 涓?{{ .Global.group }}銆?- unit 鏂囦欢淇濇寔鑱氱劍锛屼笉瑕佸祵鍏ュ畬鏁村畨瑁呴€昏緫銆?`),
+用于 systemd unit 模板。`),
 		},
 		{
 			RelativePath: "task/cluster_service.md",
@@ -151,7 +155,7 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 			Tags:         []string{"cluster"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-鐢ㄤ簬闆嗙兢鏈嶅姟妯℃澘锛?- 涓嶈缂栭€犻厤缃鐨?node aliases銆?- 鎷撴墤绾︽潫涓嶆槑纭椂鍏堟彁 follow-up questions銆?`),
+用于集群服务模板。`),
 		},
 		{
 			RelativePath: "task/image_rewrite.md",
@@ -160,7 +164,7 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 			Tags:         []string{"image", "ocr"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-褰撴彁渚涘浘鐗囪緭鍏ユ椂锛?- 鍏堟彁鍙栧彲瑙佹枃瀛楋紝鍐嶉噸鍐欎负妯℃澘鑽夌鏍煎紡銆?- OCR 涓嶇‘瀹氭€ф垨鎴柇椋庨櫓鍐欏叆 warnings銆?`),
+当提供图片输入时，先提取可见文字，再按模板规范生成草稿。`),
 		},
 		{
 			RelativePath: "task/config_patch.md",
@@ -169,44 +173,7 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 			Tags:         []string{"configPatch"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-褰撴ā鏉垮紩鍏ユ柊 vars 鏃讹細
-- 杩斿洖鍖归厤鐨?configPatch.serverConfig vars 寤鸿銆?- 鏃犲厖鍒嗙悊鐢辨椂涓嶈瑕嗙洊鏃犲叧鐜版湁閰嶇疆銆?`),
-		},
-		{
-			RelativePath: "service/docker.md",
-			Scope:        "service",
-			Title:        "Docker Rules",
-			Tags:         []string{"docker"},
-			Required:     false,
-			DefaultBody: strings.TrimSpace(`
-Docker 妯℃澘鍙秹鍙婄郴缁熺洰褰曡矾寰勶紙濡?/etc/docker锛夈€?浣?user/group/path 浠嶅簲浼樺厛澶嶇敤鍏ㄥ眬鍙橀噺 (.Global)銆?`),
-		},
-		{
-			RelativePath: "service/mysql.md",
-			Scope:        "service",
-			Title:        "MySQL Rules",
-			Tags:         []string{"mysql"},
-			Required:     false,
-			DefaultBody: strings.TrimSpace(`
-MySQL 妯℃澘搴斾繚鎸佺洰褰曞弬鏁板寲骞朵繚鎸佺粨鏋勬竻鏅般€?`),
-		},
-		{
-			RelativePath: "service/kerberos.md",
-			Scope:        "service",
-			Title:        "Kerberos Rules",
-			Tags:         []string{"kerberos"},
-			Required:     false,
-			DefaultBody: strings.TrimSpace(`
-Kerberos 妯℃澘涓殑 realm/hostname 蹇呴』娓呮櫚銆佸彲瀹¤銆?`),
-		},
-		{
-			RelativePath: "service/elasticsearch.md",
-			Scope:        "service",
-			Title:        "Elasticsearch Contract",
-			Tags:         []string{"elasticsearch", "hostname", "output-layout"},
-			Required:     false,
-			DefaultBody: strings.TrimSpace(`
-Elasticsearch 涓撻」绾︽潫锛?- 鑺傜偣鍗犱綅绗﹀繀椤绘槸 {{ .Instance.Node.Hostname }}銆?- 绂佹 .Instance.NodeAlias / .Instance.Node.HostName銆?- 榛樿浣跨敤 templates/elasticsearch/*.tmpl 骞抽摵缁撴瀯銆?- 鏈槑纭姹傛椂锛屼笉瑕佹斁鍒?templates/elasticsearch/config/銆?- 鑻ョ敤鎴疯姹傗€滀慨鏀瑰叏閮ㄦā鏉库€濓紝蹇呴』鏇存柊鐩稿叧鍏ㄩ儴 draft files锛屼笉鍙敼涓€涓€?`),
+当模板变更引入或依赖变量时，返回最小可用的配置补丁建议。`),
 		},
 	}
 }
@@ -517,8 +484,19 @@ func containsAny(text string, keywords ...string) bool {
 	return false
 }
 
+func isTemplateEntrySkillID(raw string) bool {
+	switch normalizePromptSkillToken(raw) {
+	case "template":
+		return true
+	default:
+		return false
+	}
+}
+
 var templateIntentKeywords = []string{
 	"模板", "生成模板", "改模板", "改写模板", "template", ".tmpl", "生成草稿", "draft",
+	"安装脚本", "部署脚本", "配置文件模板", "systemd", "unit file", "install.sh",
+	"start.sh", "stop.sh", "check.sh", "config patch", "serviceTop", "serverConfig",
 }
 
 func (s *Server) listTemplateServiceNames() []string {
@@ -549,13 +527,31 @@ func detectTemplateIntent(message string, selectedDrafts []aiDraftFile, serviceN
 			reasons = append(reasons, "keyword:"+keyword)
 		}
 	}
-	for _, serviceName := range serviceNames {
-		if strings.Contains(lower, serviceName) {
-			reasons = append(reasons, "service:"+serviceName)
-		}
+	if len(selectedDrafts) > 0 {
+		reasons = append(reasons, "selectedDrafts")
+	}
+	if len(reasons) == 0 {
+		return false, []string{}
+	}
+	return true, uniqueSortedStrings(reasons)
+}
+
+func shouldUseTemplateSkillMode(req aiSessionMessageRequest, selectedDrafts []aiDraftFile, attachmentIDs []string, serviceNames []string) (bool, []string) {
+	reasons := make([]string, 0, 6)
+	if ok, intentReasons := detectTemplateIntent(req.Message, selectedDrafts, serviceNames); ok {
+		reasons = append(reasons, intentReasons...)
+	}
+	if len(req.SelectedSkillIDs) > 0 {
+		reasons = append(reasons, "explicit-skills")
 	}
 	if len(selectedDrafts) > 0 {
 		reasons = append(reasons, "selectedDrafts")
+	}
+	if len(attachmentIDs) > 0 {
+		reasons = append(reasons, "attachments")
+	}
+	if strings.TrimSpace(req.SessionRules) != "" {
+		reasons = append(reasons, "sessionRules")
 	}
 	if len(reasons) == 0 {
 		return false, []string{}
@@ -588,6 +584,13 @@ func extractInlineSkillIDs(message string) []string {
 		lowerToken := strings.ToLower(strings.TrimSpace(token))
 		if strings.HasPrefix(lowerToken, "#skill:") {
 			collected = append(collected, token[len("#skill:"):])
+			continue
+		}
+		if strings.HasPrefix(lowerToken, "#") {
+			alias := normalizePromptSkillToken(strings.TrimPrefix(token, "#"))
+			if isTemplateEntrySkillID(alias) {
+				collected = append(collected, alias)
+			}
 		}
 	}
 
@@ -631,6 +634,9 @@ func resolveBuiltinPromptSkillSpec(skillID string) (aiPromptSkillSpec, bool) {
 	if normalized == "" || strings.HasPrefix(normalized, "custom/") {
 		return aiPromptSkillSpec{}, false
 	}
+	if isTemplateEntrySkillID(normalized) {
+		return aiPromptSkillSpec{}, false
+	}
 	candidates := []string{normalized}
 	if strings.HasSuffix(normalized, ".md") {
 		candidates = append(candidates, strings.TrimSuffix(normalized, ".md"))
@@ -669,6 +675,9 @@ func (s *Server) selectExplicitPromptSkills(skillIDs []string) ([]aiPromptSkill,
 
 	selected := make([]aiPromptSkill, 0, len(normalized))
 	for _, skillID := range normalized {
+		if isTemplateEntrySkillID(skillID) {
+			continue
+		}
 		if spec, ok := resolveBuiltinPromptSkillSpec(skillID); ok {
 			skill, err := s.loadPromptSkill(spec)
 			if err != nil {
@@ -786,23 +795,6 @@ func (s *Server) detectPromptKinds(message string, selectedDrafts []aiDraftFile,
 
 	return kinds
 }
-func (s *Server) detectSpecialServices(message string, selectedDrafts []aiDraftFile) map[string]bool {
-	services := make(map[string]bool)
-	messageLower := strings.ToLower(message)
-	for _, serviceName := range s.listTemplateServiceNames() {
-		if strings.Contains(messageLower, serviceName) {
-			services[serviceName] = true
-		}
-	}
-	for _, draft := range selectedDrafts {
-		serviceName := strings.ToLower(serviceNameFromTemplatePath(draft.Path))
-		if serviceName == "" {
-			continue
-		}
-		services[serviceName] = true
-	}
-	return services
-}
 func (s *Server) selectPromptSkills(session *aiSession, req aiSessionMessageRequest, selectedDrafts []aiDraftFile, attachmentIDs []string) ([]aiPromptSkill, error) {
 	if err := s.ensureAIDirs(); err != nil {
 		return nil, err
@@ -812,26 +804,30 @@ func (s *Server) selectPromptSkills(session *aiSession, req aiSessionMessageRequ
 	explicitSkillIDs := make([]string, 0, len(req.SelectedSkillIDs)+len(inlineSkillIDs))
 	explicitSkillIDs = append(explicitSkillIDs, req.SelectedSkillIDs...)
 	explicitSkillIDs = append(explicitSkillIDs, inlineSkillIDs...)
+	req.SelectedSkillIDs = explicitSkillIDs
 
-	templateIntent, intentReasons := detectTemplateIntent(req.Message, selectedDrafts, s.listTemplateServiceNames())
+	templateMode, modeReasons := shouldUseTemplateSkillMode(req, selectedDrafts, attachmentIDs, s.listTemplateServiceNames())
 	hasExplicitSkill := len(explicitSkillIDs) > 0
 
 	specMap := defaultAISkillSpecMap()
-	selectedSpecs := []aiPromptSkillSpec{
-		specMap["core/output_json.md"],
-	}
-	if templateIntent || hasExplicitSkill {
+	selectedSpecs := []aiPromptSkillSpec{}
+	if templateMode {
 		selectedSpecs = append(selectedSpecs,
+			specMap["core/output_json.md"],
 			specMap["core/base.md"],
 			specMap["core/path_guard.md"],
 			specMap["core/template_contract.md"],
 			specMap["core/variable_contract.md"],
+			specMap["core/template_functions.md"],
 		)
 	}
-	fmt.Printf("[AI] skill trigger templateIntent=%t explicit=%t reasons=%s\n",
-		templateIntent, hasExplicitSkill, summarizePathsForLog(intentReasons, 12))
+	fmt.Printf("[AI] skill trigger templateMode=%t explicit=%t reasons=%s\n",
+		templateMode, hasExplicitSkill, summarizePathsForLog(modeReasons, 12))
+	if !templateMode && !hasExplicitSkill {
+		return []aiPromptSkill{}, nil
+	}
 
-	kinds := s.detectPromptKinds(req.Message, selectedDrafts, attachmentIDs, session, templateIntent)
+	kinds := s.detectPromptKinds(req.Message, selectedDrafts, attachmentIDs, session, templateMode)
 	if kinds["install_script"] {
 		selectedSpecs = append(selectedSpecs, specMap["task/install_script.md"])
 	}
@@ -849,12 +845,6 @@ func (s *Server) selectPromptSkills(session *aiSession, req aiSessionMessageRequ
 	}
 	if kinds["config_patch"] {
 		selectedSpecs = append(selectedSpecs, specMap["task/config_patch.md"])
-	}
-
-	for serviceName := range s.detectSpecialServices(req.Message, selectedDrafts) {
-		if spec, exists := specMap["service/"+serviceName+".md"]; exists {
-			selectedSpecs = append(selectedSpecs, spec)
-		}
 	}
 
 	dedup := make(map[string]struct{}, len(selectedSpecs))
@@ -931,18 +921,36 @@ func (s *Server) selectPromptSkills(session *aiSession, req aiSessionMessageRequ
 	return skills, nil
 }
 
-func (s *Server) buildAIPromptBundle(session *aiSession, req aiSessionMessageRequest, selectedDrafts []aiDraftFile, attachmentIDs []string) (string, aiPromptTrace, error) {
+func (s *Server) buildAIPromptBundle(session *aiSession, req aiSessionMessageRequest, selectedDrafts []aiDraftFile, attachmentIDs []string) (aiPromptBundle, error) {
 	customRules, err := s.loadAIRules()
 	if err != nil {
-		return "", aiPromptTrace{}, err
+		return aiPromptBundle{}, fmt.Errorf("load AI rules failed: %w", err)
 	}
 
 	skills, err := s.selectPromptSkills(session, req, selectedDrafts, attachmentIDs)
 	if err != nil {
-		return "", aiPromptTrace{}, err
+		return aiPromptBundle{}, fmt.Errorf("select prompt skills failed: %w", err)
 	}
 
 	trace := emptyAIPromptTrace()
+	if len(skills) == 0 {
+		trace.Mode = "general-chat"
+		builder := strings.Builder{}
+		builder.WriteString("你是该内部工具的中文技术助手。直接回答用户问题。\n")
+		builder.WriteString("只有当用户明确要求生成/修改模板、显式调用 skill、选择草稿或上传附件时，才进入模板草稿模式。\n")
+		builder.WriteString("不要虚构已经生成模板、已经修改文件、已经保存成功。\n")
+		if strings.TrimSpace(customRules) != "" {
+			builder.WriteString("\n[Global Extra Rules]\n")
+			builder.WriteString(strings.TrimSpace(customRules))
+			builder.WriteString("\n")
+		}
+		return aiPromptBundle{
+			SystemPrompt: strings.TrimSpace(builder.String()),
+			PromptTrace:  normalizeAIPromptTrace(trace),
+			Structured:   false,
+		}, nil
+	}
+
 	builder := strings.Builder{}
 	builder.WriteString("Follow the selected skill modules and produce one valid JSON response.\n")
 
@@ -980,7 +988,7 @@ func (s *Server) buildAIPromptBundle(session *aiSession, req aiSessionMessageReq
 	if includeExamples {
 		examples, selectErr := s.selectPromptExamples(req.Message, selectedDrafts, skills)
 		if selectErr != nil {
-			return "", aiPromptTrace{}, selectErr
+			return aiPromptBundle{}, fmt.Errorf("select prompt examples failed: %w", selectErr)
 		}
 		if len(examples) > 0 {
 			builder.WriteString("\n[Reference Examples]\nUse style/structure for reference only, do not copy blindly.\n")
@@ -1004,7 +1012,11 @@ func (s *Server) buildAIPromptBundle(session *aiSession, req aiSessionMessageReq
 	builder.WriteString(". Go-template builtins are allowed. If extra helper is needed, rewrite and explain in warnings.\n")
 
 	builder.WriteString("\n[Output Requirement]\nReturn configPatch for serviceTop/serverConfig when possible; if info is missing, ask in followUpQuestions.\n")
-	return strings.TrimSpace(builder.String()), normalizeAIPromptTrace(trace), nil
+	return aiPromptBundle{
+		SystemPrompt: strings.TrimSpace(builder.String()),
+		PromptTrace:  normalizeAIPromptTrace(trace),
+		Structured:   true,
+	}, nil
 }
 
 func formatPromptTraceSummary(trace aiPromptTrace) string {

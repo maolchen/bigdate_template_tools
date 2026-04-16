@@ -6,7 +6,7 @@
 - `plannedActions[]`: `type`, `path`, `reason`
 - `warnings[]`
 - `followUpQuestions[]`
-- `configPatch`: `global`, `serviceTop`, `serverConfig`
+- `configPatch`: `serviceTop`, `serverConfig`
 
 输出要求：
 - `draftFiles[].path` 必须指向 `templates/<service>/*.tmpl`

@@ -56,3 +56,35 @@ func TestTemplateFunctionWhitelistSummaryIncludesJoin(t *testing.T) {
 		t.Fatalf("expected summary to include serviceEndpoints, got: %s", summary)
 	}
 }
+
+func TestBuildAIChatRequestUsesTextModeForGeneralQuestion(t *testing.T) {
+	server := newTestServer(t)
+	req, err := server.buildAIChatRequest(&aiSession{}, aiSessionMessageRequest{
+		Message: "你是什么模型",
+	}, nil)
+	if err != nil {
+		t.Fatalf("buildAIChatRequest error: %v", err)
+	}
+	if got := req.ResponseFormat["type"]; got != "text" {
+		t.Fatalf("expected text response format, got %q", got)
+	}
+	if len(req.Messages) == 0 || !strings.Contains(req.Messages[0].Content[0].Text, "直接回答用户问题") {
+		t.Fatalf("expected general-chat system prompt, got %#v", req.Messages)
+	}
+}
+
+func TestBuildAIChatRequestUsesJSONModeForTemplateQuestion(t *testing.T) {
+	server := newTestServer(t)
+	req, err := server.buildAIChatRequest(&aiSession{}, aiSessionMessageRequest{
+		Message: "请生成 elasticsearch 安装脚本模板",
+	}, nil)
+	if err != nil {
+		t.Fatalf("buildAIChatRequest error: %v", err)
+	}
+	if got := req.ResponseFormat["type"]; got != "json_object" {
+		t.Fatalf("expected json_object response format, got %q", got)
+	}
+	if len(req.Messages) == 0 || !strings.Contains(req.Messages[0].Content[0].Text, "Follow the selected skill modules") {
+		t.Fatalf("expected structured template system prompt, got %#v", req.Messages)
+	}
+}
