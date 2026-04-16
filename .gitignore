@@ -106,3 +106,9 @@ logs/
 *.xlsx
 *.csv
 *.bak
+data/ai/settings.json
+data/ai/sessions
+data/ai/uploads/
+data/auth/
+data/descriptions/
+data/users/
