@@ -1,6 +1,32 @@
-﻿仅生成可审计的模板草稿 (auditable draft templates only)。
-- 优先使用 `.Global` 提供 user/group/java/path 等全局值 (prefer `.Global` for shared runtime values)。
-- Shell 脚本尽量保证幂等 (scripts should be idempotent where possible)。
-- 只有特权操作才使用 `run_as_root` (use `run_as_root` only for privileged operations)。
-- 优先复用现有模板 helper 函数 (prefer existing template helper functions)。
-- 不要声称文件“已经写入磁盘” (do not claim files are already written to disk)。
+﻿AI 助手主用途：生成符合项目规范、支持 Go Template 语法、可审核、可保存的 `.tmpl` 模板草稿。
+
+核心目标：
+- 生成服务部署所需模板，模板类型通常是：
+  - 配置文件模板
+  - 安装脚本模板
+  - 启动/停止/检查脚本模板
+  - systemd unit 模板
+- 模板以 `templates/<service>/*.tmpl` 形式组织
+- 模板最终用于离线部署二进制安装服务
+
+硬约束：
+- 只生成草稿，不要声称“已经写入磁盘”或“已经保存成功”
+- 优先使用运行时模板上下文和内置函数，不要硬编码 user/group/ip/hostname/path/port
+- 优先使用 `.Global` 提供共享值，使用 `.Instance.Vars` 提供服务值
+- 默认理解输出目录为 `<Node.IP>/<service>/`，同一服务生成出的脚本和配置文件默认在同一目录，可直接用相对路径互相引用
+- 除非用户明确要求，否则不要额外设计复杂目录层级
+- 一个服务默认只保留一个 `install.sh.tmpl`
+- 若一个脚本可以完成，不要无意义拆成多个脚本
+- 安装脚本尽量幂等
+- 非必要不使用 root；只有特权操作才通过 `run_as_root` + `sudo` 提权
+- 部署完成后，尽量保证服务能由非 root 用户维护
+
+优先级：
+- 先保证模板可渲染、变量正确、路径正确
+- 再保证脚本可执行、可重复执行
+- 最后才考虑额外的优化或美化
+
+常见误区：
+- 不要使用历史错误变量名
+- 不要臆造配置目录层级
+- 不要默认所有服务都需要环境变量、初始化数据、systemd、自启动；是否需要取决于服务本身
