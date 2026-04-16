@@ -1,4 +1,4 @@
-﻿# 大数据平台脚本生成工具
+# 大数据平台脚本生成工具
 
 一个面向公司内部交付场景的离线配置与脚本生成工具。
 
@@ -103,7 +103,7 @@
 
 ### 前端
 
-- `App.tsx`
+- `web/src/App.tsx`
   - 登录态初始化
   - 页面切换
   - 主配置版本轮询
@@ -119,7 +119,8 @@
 - `配置管理`
   - 模板管理
   - 节点管理
-  - 服务拓扑 / 服务配置
+  - 服务拓扑
+  - 服务配置
 - `AI模板`
 - `模板编辑器`
 - `生成配置`
@@ -127,7 +128,7 @@
 - `导出配置`
 - `系统设置`
   - 修改密码
-  - 用户管理（仅管理员）
+  - 用户管理
   - 退出系统
 
 ## 快速开始
@@ -179,13 +180,15 @@ go run main.go
 ### 前端构建
 
 ```bash
+#node20.19.0
 pnpm --dir web build
 ```
 
 ### 后端构建
 
 ```bash
-go build -o server.exe main.go
+#go1.22.6
+go build -o server_bin main.go
 ```
 
 ## 测试
@@ -195,11 +198,17 @@ go test ./...
 pnpm --dir web build
 ```
 
+## 运行
+```bash
+export CONFIG_GENERATOR_AI_MASTER_KEY="AES_KEY"  #AES_KEY 为AI API的加解密key，保存api key是密文保存的
+./server_bin --web --port 5000    #默认5000端口
+```
+
 说明：当前仓库存在部分既有 AI 单测失败时，优先以具体失败日志为准，不代表配置/模板主链路不可用。
 
-## 配置与渲染模型
+## 配置文件详解
 
-核心配置结构：
+当前核心配置结构见 [config/types.go](config/types.go)：
 
 - `global`
 - `nodes`
@@ -207,19 +216,171 @@ pnpm --dir web build
 - `serverConfig`
 - `nodeOverrides`
 
-生成流程：
+### 1. `global`
 
-1. 读取配置
-2. 构建服务实例列表
-3. 扫描 `templates/<service>/*.tmpl`
-4. 渲染到 `output/users/<username>/<nodeIP>/<service>/...`
+放全局复用变量，供所有服务模板共享。
 
-## 模板变量模型
+示例：
 
-运行时模板上下文位于 `config.Context`：
+```yaml
+global:
+  user: bigdata
+  group: bigdata
+  install_base_dir: /data/localization
+  data_base_dir: /data/bigdata
+  log_base_dir: /data/logs
+  software_dir: /data/software
+  java_home: /data/jdk
+```
+
+适合放：
+
+- 用户与用户组
+- 安装基目录
+- 数据基目录
+- 日志基目录
+- 软件包目录
+- JDK 路径
+
+模板使用示例：
+
+```gotemplate
+{{ .Global.user }}
+{{ .Global.install_base_dir }}
+{{ .Global.software_dir }}
+```
+
+### 2. `nodes`
+
+节点池，键名为节点别名。
+
+示例：
+
+```yaml
+nodes:
+  master1:
+    ip: 192.168.10.11
+    hostname: master1.hadoop.local
+  master2:
+    ip: 192.168.10.12
+    hostname: master2.hadoop.local
+  worker1:
+    ip: 192.168.10.21
+    hostname: worker1.hadoop.local
+```
+
+说明：
+
+- 节点别名用于 `serviceTop.nodes`
+- 运行时模板中推荐使用 `.Instance.Node.IP`、`.Instance.Node.Hostname`
+- 同一个 IP 理论上可以对应多个节点别名
+
+### 3. `serviceTop`
+
+定义服务拓扑，决定服务部署到哪些节点。
+
+示例：
+
+```yaml
+serviceTop:
+  zookeeper:
+    nodes: [master1, master2, master3]
+    id_auto_derive: true
+  server_init:
+    nodes: ["*"]
+    id_auto_derive: false
+```
+
+说明：
+
+- `nodes` 是节点别名列表
+- `nodes: ["*"]` 或 `["all"]` 表示所有节点
+- `id_auto_derive: true` 时，生成实例会自动填充 `.Instance.AutoID`
+- 是否真的生成 `AutoID` 还取决于对应 `serverConfig.<service>` 中是否配置了 `id_field`
+
+### 4. `serverConfig`
+
+定义服务级配置与变量。
+
+示例：
+
+```yaml
+serverConfig:
+  zookeeper:
+    type: ""
+    description: ZooKeeper 集群
+    id_field: myid
+    id_format: index+1
+    vars:
+      version: 3.8.4
+      install_subdir: zookeeper
+      data_subdir: zookeeper/data
+      log_subdir: zookeeper/logs
+      client_port: 2181
+```
+
+字段说明：
+
+- `type`
+  - 当前用于区分特殊服务类型，常见值为空字符串或 `global`
+- `description`
+  - 服务描述，主要供界面与说明使用
+- `id_field`
+  - 自动 ID 对应的逻辑字段名，例如 `myid`
+- `id_format`
+  - 自动 ID 的格式规则
+- `vars`
+  - 服务实际渲染变量来源，对应模板中的 `.Instance.Vars`
+
+### 5. `nodeOverrides`
+
+节点级覆盖变量，用于某个服务在不同节点上的局部差异。
+
+示例：
+
+```yaml
+nodeOverrides:
+  worker1:
+    elasticsearch:
+      heap_size: 8g
+      data_subdir: elasticsearch/data01
+```
+
+说明：
+
+- 键路径是 `nodeOverrides.<nodeName>.<service>.<varKey>`
+- 会覆盖对应节点上该服务的 `serverConfig.vars`
+- 适合处理单节点磁盘路径、堆大小、端口差异
+
+## 渲染模型说明
+
+当前渲染逻辑见：
+
+- [generator/instance.go](generator/instance.go)
+- [generator/template.go](generator/template.go)
+- [generator/output.go](generator/output.go)
+
+### 生成流程
+
+1. 读取当前配置文件
+2. 遍历 `serviceTop`
+3. 构建 `ServiceInstance`
+4. 合并 `serverConfig.vars` 与 `nodeOverrides`
+5. 扫描 `templates/<service>/*.tmpl`
+6. 对每个节点、每个服务实例渲染输出
+7. 输出到用户目录或命令行默认目录
+
+### 运行时模板上下文
+
+模板上下文位于 `config.Context`：
 
 - `.Global`
 - `.Nodes`
+- `.Instance`
+- `.AllInstances`
+
+其中 `.Instance` 结构包含：
+
 - `.Instance.ServiceName`
 - `.Instance.NodeName`
 - `.Instance.Node.IP`
@@ -227,19 +388,298 @@ pnpm --dir web build
 - `.Instance.Node.NodeName`
 - `.Instance.Vars`
 - `.Instance.AutoID`
-- `.AllInstances`
 
-常用内置函数位于 `generator/template.go`，例如：
+示例：
 
-- `serviceNodes`
-- `serviceEndpoints`
-- `serviceIPs`
-- `serviceHostnames`
-- `serviceVars`
-- `serviceVar`
-- `nodeInfo`
+```gotemplate
+SERVICE_NAME={{ .Instance.ServiceName }}
+NODE_NAME={{ .Instance.NodeName }}
+NODE_IP={{ .Instance.Node.IP }}
+NODE_HOSTNAME={{ .Instance.Node.Hostname }}
+INSTALL_DIR={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}
+```
+
+## 内置模板函数说明
+
+当前函数定义以 [generator/template.go](generator/template.go) 为准。
+
+### 基础函数
+
 - `join`
+- `split`
 - `default`
+- `toUpper`
+- `toLower`
+- `trim`
+- `replace`
+
+### 服务查询函数
+
+#### `serviceNodes(serviceName)`
+
+返回某个服务的全部实例，类型为 `[]config.ServiceInstance`。
+
+示例：
+
+```gotemplate
+{{ range serviceNodes "zookeeper" }}
+server.{{ .AutoID }}={{ .Node.IP }}:2888:3888
+{{ end }}
+```
+
+#### `serviceIPs(serviceName)`
+
+返回某个服务的全部实例 IP 列表，类型为 `[]string`。
+
+示例：
+
+```gotemplate
+{{ join "," (serviceIPs "zookeeper") }}
+```
+
+#### `serviceHostnames(serviceName)`
+
+返回某个服务的全部实例主机名列表，类型为 `[]string`。
+
+示例：
+
+```gotemplate
+{{ join "," (serviceHostnames "zookeeper") }}
+```
+
+#### `serviceEndpoints(serviceName, portField)`
+
+根据服务名和端口字段，返回 `ip:port` 列表，类型为 `[]string`。
+
+示例：
+
+```gotemplate
+{{ join "," (serviceEndpoints "zookeeper" "client_port") }}
+{{ join "," (serviceEndpoints "elasticsearch" "transport_port") }}
+```
+
+#### `serviceEndpointsJoin(serviceName, portField)`
+
+与 `serviceEndpoints` 类似，但直接返回逗号拼接后的字符串。
+
+示例：
+
+```gotemplate
+{{ serviceEndpointsJoin "zookeeper" "client_port" }}
+```
+
+#### `getServiceNodes(serviceName)`
+
+返回某个服务涉及到的节点别名列表，去重后输出 `[]string`。
+
+示例：
+
+```gotemplate
+{{ join "," (getServiceNodes "hdfs_namenode") }}
+```
+
+#### `serviceVars(serviceName)`
+
+返回某个服务在 `serverConfig.<service>.vars` 下的全部变量。
+
+示例：
+
+```gotemplate
+{{ index (serviceVars "zookeeper") "client_port" }}
+```
+
+#### `serviceVar(serviceName, varName)`
+
+读取某个服务单个变量。
+
+示例：
+
+```gotemplate
+{{ serviceVar "zookeeper" "client_port" }}
+{{ default "2181" (serviceVar "zookeeper" "client_port") }}
+```
+
+注意：
+
+- 当前实现只有两个参数
+- 不支持 `{{ serviceVar "zookeeper" "client_port" "2181" }}`
+- 需要默认值时，应配合 `default`
+
+#### `serviceConfig(serviceName)`
+
+返回完整服务配置对象 `serverConfig.<service>`。
+
+示例：
+
+```gotemplate
+{{ (serviceConfig "zookeeper").Description }}
+```
+
+#### `nodeInfo(nodeName)`
+
+按节点别名返回 `nodes.<nodeName>`。
+
+示例：
+
+```gotemplate
+{{ with nodeInfo "master1" }}
+{{ .IP }} {{ .Hostname }}
+{{ end }}
+```
+
+## 模板编写说明
+
+### 1. 模板目录规范
+
+模板路径必须位于：
+
+```text
+templates/<service>/*.tmpl
+```
+
+例如：
+
+```text
+templates/elasticsearch/install.sh.tmpl
+templates/elasticsearch/elasticsearch.yml.tmpl
+templates/elasticsearch/check.sh.tmpl
+```
+
+### 2. 输出目录规范
+
+当前输出目录由代码自动决定，默认结构为：
+
+```text
+output/users/<username>/<nodeIP>/<service>/
+```
+
+命令行模式通常输出到：
+
+```text
+output/<nodeIP>/<service>/
+```
+
+因此模板内容应默认理解为：
+
+- 安装脚本与配置文件会出现在 `<nodeIP>/<service>/`
+- 不要自行假设额外存在 `config/` 子目录，除非你的模板文件本身路径就设计成子目录输出
+
+### 3. 变量使用规范
+
+优先使用：
+
+```gotemplate
+{{ .Global.user }}
+{{ .Global.group }}
+{{ .Global.install_base_dir }}
+{{ .Global.data_base_dir }}
+{{ .Instance.Node.IP }}
+{{ .Instance.Node.Hostname }}
+{{ .Instance.Node.NodeName }}
+{{ .Instance.Vars.install_subdir }}
+{{ .Instance.Vars.data_subdir }}
+```
+
+避免使用不存在或历史错误变量：
+
+```gotemplate
+{{ .Instance.NodeAlias }}
+{{ .Instance.Node.HostName }}
+{{ .Instance.Hostname }}
+{{ .Node.Hostname }}
+```
+
+### 4. 路径拼接建议
+
+推荐方式：
+
+```gotemplate
+INSTALL_DIR={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}
+DATA_DIR={{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}
+LOG_DIR={{ .Global.log_base_dir }}/{{ .Instance.Vars.log_subdir }}
+```
+
+不建议在模板里写死：
+
+```gotemplate
+/data/elasticsearch
+/opt/elasticsearch
+```
+
+除非该服务明确要求固定路径，且你已经在说明里写清楚。
+
+### 5. 脚本编写建议
+
+安装脚本建议满足：
+
+- 幂等
+- 路径可配置
+- 用户和组取自全局变量
+- 配置文件生成后可以被安装脚本复制到服务真实目录
+- 尽量避免写死端口、路径和账号
+
+推荐模式：
+
+```bash
+run_as_root mkdir -p "{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
+run_as_root mkdir -p "{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}"
+run_as_root chown -R {{ .Global.user }}:{{ .Global.group }} "{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}"
+```
+
+### 6. 集群模板写法建议
+
+集群成员相关配置优先使用全局服务函数，而不是写死节点。
+
+例如：
+
+```gotemplate
+zookeeper.connect={{ join "," (serviceEndpoints "zookeeper" "client_port") }}
+cluster.initial_master_nodes={{ join "," (serviceHostnames "elasticsearch") }}
+discovery.seed_hosts={{ join "," (serviceEndpoints "elasticsearch" "transport_port") }}
+```
+
+### 7. 配置文件与安装脚本配合
+
+如果模板生成配置文件，通常还需要在安装脚本中：
+
+- 备份原始配置
+- 把生成后的配置复制到服务目录
+- 修改权限
+- 重载 systemd 或重启服务
+
+示例：
+
+```bash
+run_as_root cp ./elasticsearch.yml "{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config/elasticsearch.yml"
+run_as_root chown {{ .Global.user }}:{{ .Global.group }} "{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config/elasticsearch.yml"
+```
+
+## AI 模板编写建议
+
+如果通过 AI 生成模板，建议在提问时写清楚：
+
+- 服务名
+- 服务版本
+- 安装包路径
+- 安装目录
+- 数据目录
+- 日志目录
+- 运行用户和用户组
+- 配置文件是否需要替换到实际目录
+- 最终输出目录结构要求
+- 需要补哪些 `serviceTop` 与 `serverConfig.vars`
+
+推荐搭配：
+
+- `core/template_contract`
+- `core/variable_contract`
+- `task/install_script`
+- `task/config_file`
+- `task/systemd_service`
+
+更完整的 AI 使用规范见：
+
+- [AI 模板使用规范](docs/AI_TEMPLATE_USAGE_GUIDE.md)
 
 ## 文档
 
@@ -257,3 +697,4 @@ pnpm --dir web build
 - 普通用户保存配置时只影响自己的用户空间
 - 管理员保存根配置后会同步增量更新到普通用户空间
 - 普通用户看到的“主模板”本质上始终是自己空间下的 `config.yaml`
+- 模板函数说明必须以当前代码实现为准，不要沿用历史旧变量名或历史函数签名

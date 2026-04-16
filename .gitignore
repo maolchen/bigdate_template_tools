@@ -1,5 +1,8 @@
 node_modules
 web/dist
+data/ai/sessions/*.json
+data/uploads/
+data/users/
 .DS_Store
 *.swp
 .git/*
@@ -107,8 +110,11 @@ logs/
 *.csv
 *.bak
 data/ai/settings.json
-data/ai/sessions
-data/ai/uploads/
+data\ai\settings.json
+data/ai/skills/sessions
+data\ai\skills\sessions
+data\auth
 data/auth/
 data/descriptions/
 data/users/
+data\users\
