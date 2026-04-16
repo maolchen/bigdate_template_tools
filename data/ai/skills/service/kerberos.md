@@ -1,3 +1,4 @@
-Kerberos 特殊规则：
-- krb5.conf、kdc.conf 等配置项较多时，优先保持结构清晰，减少无关注释。
-- realm、域名、主机名这类值不要编造，信息不足时必须追问。
+﻿Kerberos 模板补充约束 (Kerberos-specific guidance)：
+- realm 与 hostname 相关值要清晰、可审计 (explicit and auditable)
+- 未给定上下文时不要编造 principal/realm 值
+- 涉及域名映射时优先按现有配置变量输出

@@ -30,6 +30,9 @@ type aiStreamPreview struct {
 
 // handleAISessionMessageStream emits SSE events for accepted/status/delta/complete message lifecycle.
 func (s *Server) handleAISessionMessageStream(w http.ResponseWriter, r *http.Request, session *aiSession, req aiSessionMessageRequest) {
+	fmt.Printf("[AI] stream start session=%s model=%s selectedDraftPaths=%s selectedSkills=%s messagePreview=%q\n",
+		session.ID, strings.TrimSpace(req.Model), summarizePathsForLog(req.SelectedDraftPaths, 8),
+		summarizePathsForLog(req.SelectedSkillIDs, 8), previewLogText(req.Message, 160))
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -58,7 +61,7 @@ func (s *Server) handleAISessionMessageStream(w http.ResponseWriter, r *http.Req
 	}, func(baseURL, apiKey string, chatReq openAIChatRequest) (string, error) {
 		_ = writeSSEEvent(w, flusher, "status", aiStreamEvent{
 			Type:    "status",
-			Message: "模型开始流式输出结构化结果",
+			Message: fmt.Sprintf("模型 %s 开始流式生成", strings.TrimSpace(chatReq.Model)),
 		})
 		return s.aiClient.StreamChatCompletion(baseURL, apiKey, chatReq, func(rawDelta string) {
 			preview := extractor.Push(rawDelta)
@@ -73,12 +76,15 @@ func (s *Server) handleAISessionMessageStream(w http.ResponseWriter, r *http.Req
 		})
 	})
 	if err != nil {
+		fmt.Printf("[AI] stream failed session=%s err=%v\n", session.ID, err)
 		_ = writeSSEEvent(w, flusher, "error", aiStreamEvent{
 			Type:    "error",
 			Message: err.Error(),
 		})
 		return
 	}
+	fmt.Printf("[AI] stream complete session=%s messages=%d drafts=%d\n",
+		session.ID, len(result.Session.Messages), len(result.Session.DraftFiles))
 
 	_ = writeSSEEvent(w, flusher, "complete", aiStreamEvent{
 		Type:    "complete",

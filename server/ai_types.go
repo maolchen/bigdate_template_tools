@@ -44,6 +44,7 @@ type aiSessionMessage struct {
 	ID                string            `json:"id"`
 	Role              string            `json:"role"`
 	Content           string            `json:"content"`
+	Model             string            `json:"model,omitempty"`
 	CreatedAt         string            `json:"createdAt"`
 	AttachmentIDs     []string          `json:"attachmentIds,omitempty"`
 	Warnings          []string          `json:"warnings,omitempty"`
@@ -143,6 +144,14 @@ type aiConfigIssue struct {
 	Service  string `json:"service"`
 	Field    string `json:"field"`
 	Message  string `json:"message"`
+}
+
+type aiConfigNextAction struct {
+	Severity string `json:"severity"`
+	Service  string `json:"service"`
+	Field    string `json:"field"`
+	Action   string `json:"action"`
+	Detail   string `json:"detail"`
 }
 
 type aiSkillRef struct {

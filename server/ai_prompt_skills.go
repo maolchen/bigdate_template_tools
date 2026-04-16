@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -53,165 +54,159 @@ func defaultAISkillSpecs() []aiPromptSkillSpec {
 		{
 			RelativePath: "core/base.md",
 			Scope:        "core",
-			Title:        "基础项目约束",
+			Title:        "Base Project Rules",
 			Tags:         []string{"global", "idempotent"},
 			Required:     true,
 			DefaultBody: strings.TrimSpace(`
-你正在为本项目生成可审核、可保存、可渲染的 templates/**/*.tmpl 草稿。
-
-强约束：
-- 路径、用户、组、JAVA_HOME 优先复用 .Global，不要重复定义 run_user、run_group、java_home、install_base_dir、data_base_dir。
-- shell 脚本必须优先考虑幂等性：mkdir -p、软链接先删后建、覆盖前备份、重复执行不应产生脏状态。
-- 涉及 root 权限的操作通过 run_as_root 包装；非必要不要直接使用 root 运行服务。
-- 模板上下文优先使用 .Global、.Nodes、.Instance、.AllInstances。
-- 优先使用已有模板函数：serviceNodes、serviceEndpoints、serviceEndpointsJoin、serviceIPs、serviceHostnames、getServiceNodes、serviceVars、serviceVar、serviceConfig、nodeInfo。
-- 你只能输出草稿计划，不能假设文件已经真正写入。`),
+浠呯敓鎴愬彲瀹¤鐨勬ā鏉胯崏绋?(auditable draft templates only)銆?- 浼樺厛浣跨敤 .Global 鎻愪緵 user/group/java/path 绛夊叏灞€鍊笺€?- Shell 鑴氭湰灏介噺淇濊瘉骞傜瓑 (idempotent where possible)銆?- 浠呭湪鐗规潈鎿嶄綔浣跨敤 run_as_root銆?- 浼樺厛澶嶇敤鐜版湁妯℃澘 helper 鍑芥暟銆?- 涓嶈澹扮О鏂囦欢鈥滃凡缁忓啓鍏ョ鐩樷€濄€?`),
 		},
 		{
 			RelativePath: "core/output_json.md",
 			Scope:        "core",
-			Title:        "结构化输出",
+			Title:        "Structured JSON Output",
 			Tags:         []string{"json", "output"},
 			Required:     true,
 			DefaultBody: strings.TrimSpace(`
-响应必须是单个 JSON 对象，字段固定为：
+璇峰彧杩斿洖涓€涓?JSON object锛屽繀椤诲寘鍚細
 - assistantMessage
-- draftFiles[]: path、content、reason
-- plannedActions[]: type、path、reason
+- draftFiles[]: path, content, reason
+- plannedActions[]: type, path, reason
 - warnings[]
 - followUpQuestions[]
-- configPatch: serviceTop、serverConfig
-
-如果信息不足，不要伪造配置，把问题写到 followUpQuestions。`),
+- configPatch: serviceTop, serverConfig
+`),
 		},
 		{
 			RelativePath: "core/path_guard.md",
 			Scope:        "core",
-			Title:        "模板路径限制",
+			Title:        "Template Path Guard",
 			Tags:         []string{"path", "templates"},
 			Required:     true,
 			DefaultBody: strings.TrimSpace(`
-路径约束：
-- 模板文件路径必须位于 templates/<service>/... 下。
-- 模板文件必须以 .tmpl 结尾。
-- 新服务可以先规划 mkdir 动作，再生成具体草稿文件。
-- 目录计划和文件计划都只能落在 templates/ 下。`),
+璺緞绾︽潫 (path constraints):
+- 鎵€鏈?draftFiles 璺緞蹇呴』鍦?templates/<service>/...
+- 妯℃澘鏂囦欢蹇呴』浠?.tmpl 缁撳熬
+- plannedActions.path 蹇呴』浣嶄簬 templates/ 涓?`),
+		},
+		{
+			RelativePath: "core/template_contract.md",
+			Scope:        "core",
+			Title:        "Template Contract",
+			Tags:         []string{"contract", "hostname", "placeholder"},
+			Required:     true,
+			DefaultBody: strings.TrimSpace(`
+妯℃澘濂戠害 (strict template contract):
+- 鑺傜偣鍗犱綅绗﹀繀椤讳娇鐢?{{ .Instance.Node.Hostname }}銆?- 绂佹鍗犱綅绗︼細.Instance.NodeAlias, .Instance.Node.HostName銆?- 妯℃澘璺緞蹇呴』鍦?templates/<service>/ 涓嬶紝涓斿悗缂€涓?.tmpl銆?- 榛樿杈撳嚭缁撴瀯鏄?output/<ip>/<service>/ 骞抽摵鐩綍銆?- 闄ら潪鐢ㄦ埛鏄庣‘瑕佹眰锛屽惁鍒欎笉瑕佸垱寤?templates/<service>/config/...銆?- 鑻ユ棫鑽夌涓庡绾﹀啿绐侊紝浼樺厛閬靛惊鏈绾﹀苟鍦?warnings 璇存槑銆?`),
+		},
+		{
+			RelativePath: "core/variable_contract.md",
+			Scope:        "core",
+			Title:        "Variable Contract",
+			Tags:         []string{"variables", "context", "schema"},
+			Required:     true,
+			DefaultBody: strings.TrimSpace(`
+妯℃澘涓婁笅鏂囧绾?(template context contract):
+- .Global.<key>锛堟潵鑷?config.yaml global锛屽姩鎬?key锛?- .Nodes.<alias>.IP / .Nodes.<alias>.Hostname锛堝浐瀹氳妭鐐瑰瓧娈碉級
+- .Instance.ServiceName / .Instance.NodeName / .Instance.AutoID
+- .Instance.Node.IP / .Instance.Node.Hostname / .Instance.Node.NodeName
+- .Instance.Vars.<key>锛堟潵鑷?serverConfig.<service>.vars锛屽姩鎬?key锛?- .AllInstances[]锛堝瓧娈电粨鏋勪笌 .Instance 涓€鑷达級
+
+绂佹鍋囪 (forbidden assumptions):
+- Do not use .Instance.NodeAlias
+- Do not use .Instance.Node.HostName
+- Do not invent .Instance.<unknownField>
+`),
 		},
 		{
 			RelativePath: "task/install_script.md",
 			Scope:        "task",
-			Title:        "脚本模板规则",
+			Title:        "Install Script Rules",
 			Tags:         []string{"shell", "install"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-安装/脚本模板规则：
-- install.sh.tmpl、install_binary.sh.tmpl、setup_dirs.sh.tmpl、start.sh.tmpl、stop.sh.tmpl、check.sh.tmpl 都属于脚本类模板。
-- 脚本里优先集中定义变量区，再定义辅助函数，再执行安装/配置/启动步骤。
-- 涉及数据目录、安装目录、软件包目录时，优先分别使用：
-  - {{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}
-  - {{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}
-  - {{ .Global.software_dir }}/{{ .Instance.Vars.package_subdir }}
-- 推荐包含 log_info、log_warn、log_error、log_success 这类基础日志函数。
-- 如果脚本引用了 .Instance.Vars.xxx，必须同步给出 serverConfig.vars.xxx 草案。`),
+鐢ㄤ簬 install/start/stop/check 鑴氭湰锛?- 缁撴瀯娓呮櫚锛歷ariables/helpers/main flow銆?- 浼樺厛浣跨敤 .Global + .Instance.Vars 缁勫悎銆?- 鑻ヤ娇鐢?.Instance.Vars.xxx锛屽簲鎻愪緵鍖归厤鐨?serverConfig.vars 寤鸿銆?`),
 		},
 		{
 			RelativePath: "task/config_file.md",
 			Scope:        "task",
-			Title:        "配置模板规则",
+			Title:        "Config File Rules",
 			Tags:         []string{"config"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-配置文件模板规则：
-- 优先把环境相关值参数化成 .Global 或 .Instance.Vars，不要硬编码 IP、主机名、目录、用户、JDK 路径。
-- 配置模板命名尽量对齐真实文件名，例如 my.cnf.tmpl、dnsmasq.conf.tmpl、docker.service.tmpl。
-- 允许保留服务本身要求的固定键名，但取值应参数化。
-- 如果某些固定路径不可避免，必须在 reason 或 warnings 中说明原因。`),
+鐢ㄤ簬閰嶇疆鏂囦欢妯℃澘锛?- 鐜鐩稿叧鍊间紭鍏堝弬鏁板寲鍒?.Global 鍜?.Instance.Vars銆?- 鑳藉弬鏁板寲鐨?host/IP/user/path 涓嶈纭紪鐮併€?- 鏂囦欢鍛藉悕搴斾笌鐪熷疄閰嶇疆鏂囦欢鍚嶄繚鎸佷竴鑷淬€?`),
 		},
 		{
 			RelativePath: "task/systemd_service.md",
 			Scope:        "task",
-			Title:        "systemd 规则",
+			Title:        "Systemd Rules",
 			Tags:         []string{"systemd", "service"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-systemd 模板规则：
-- systemd unit 文件通常属于配置模板，不要把整套安装逻辑写进 unit。
-- User 和 Group 优先使用 {{ .Global.user }} 和 {{ .Global.group }}。
-- 如果 unit 文件需要引用脚本或目录，优先使用全局目录和实例变量拼接。
-- 涉及 /etc/systemd/system 这类固定系统路径时，要在说明里标记为系统目录约束。`),
+鐢ㄤ簬 systemd unit 妯℃澘锛?- 浼樺厛浣跨敤 {{ .Global.user }} 涓?{{ .Global.group }}銆?- unit 鏂囦欢淇濇寔鑱氱劍锛屼笉瑕佸祵鍏ュ畬鏁村畨瑁呴€昏緫銆?`),
 		},
 		{
 			RelativePath: "task/cluster_service.md",
 			Scope:        "task",
-			Title:        "集群模板规则",
+			Title:        "Cluster Rules",
 			Tags:         []string{"cluster"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-集群模板规则：
-- 不允许新增节点；serviceTop.nodes 只能从当前已配置节点别名中选择，或使用 ["*"]。
-- 需要节点列表时，优先使用模板函数和当前上下文，不要手工硬编码节点集合。
-- 如果用户要求 3 节点或多节点，但当前配置节点数量不足，必须在 followUpQuestions 里要求确认，不要编造节点。
-- 如果需要实例唯一标识，优先考虑 {{ .Instance.AutoID }}。`),
+鐢ㄤ簬闆嗙兢鏈嶅姟妯℃澘锛?- 涓嶈缂栭€犻厤缃鐨?node aliases銆?- 鎷撴墤绾︽潫涓嶆槑纭椂鍏堟彁 follow-up questions銆?`),
 		},
 		{
 			RelativePath: "task/image_rewrite.md",
 			Scope:        "task",
-			Title:        "图片改写规则",
+			Title:        "Image Rewrite Rules",
 			Tags:         []string{"image", "ocr"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-图片改写规则：
-- 图片只用于识别文字截图、脚本截图、配置截图、文档拍照。
-- 先提取可见文字，再按本项目规则改写成模板草稿。
-- 对识别不清、被裁切、被遮挡、低分辨率、含糊字段，必须写入 warnings。
-- 图片来源的草稿要保守处理，宁可提示人工补齐，也不要伪造细节。`),
+褰撴彁渚涘浘鐗囪緭鍏ユ椂锛?- 鍏堟彁鍙栧彲瑙佹枃瀛楋紝鍐嶉噸鍐欎负妯℃澘鑽夌鏍煎紡銆?- OCR 涓嶇‘瀹氭€ф垨鎴柇椋庨櫓鍐欏叆 warnings銆?`),
 		},
 		{
 			RelativePath: "task/config_patch.md",
 			Scope:        "task",
-			Title:        "配置同步规则",
+			Title:        "Config Patch Rules",
 			Tags:         []string{"configPatch"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-配置同步规则：
-- 新服务模板通常需要同时给出 configPatch.serviceTop 和 configPatch.serverConfig。
-- 如果模板引用了 .Instance.Vars.xxx，就必须补对应的 serverConfig.vars.xxx。
-- 不要把与模板无关的变量塞进 vars。
-- 已有服务如果只是补模板，优先补齐缺失项，不要无理由覆盖现有配置。`),
+褰撴ā鏉垮紩鍏ユ柊 vars 鏃讹細
+- 杩斿洖鍖归厤鐨?configPatch.serverConfig vars 寤鸿銆?- 鏃犲厖鍒嗙悊鐢辨椂涓嶈瑕嗙洊鏃犲叧鐜版湁閰嶇疆銆?`),
 		},
 		{
 			RelativePath: "service/docker.md",
 			Scope:        "service",
-			Title:        "DOCKER 特殊规则",
+			Title:        "Docker Rules",
 			Tags:         []string{"docker"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-Docker 特殊规则：
-- 允许涉及 /etc/docker、/usr/lib/systemd/system、docker.service 这类系统路径。
-- 但仍需优先复用全局用户、组和软件目录，并明确说明哪些路径是 Docker 的固定系统约束。`),
+Docker 妯℃澘鍙秹鍙婄郴缁熺洰褰曡矾寰勶紙濡?/etc/docker锛夈€?浣?user/group/path 浠嶅簲浼樺厛澶嶇敤鍏ㄥ眬鍙橀噺 (.Global)銆?`),
 		},
 		{
 			RelativePath: "service/mysql.md",
 			Scope:        "service",
-			Title:        "MYSQL 特殊规则",
+			Title:        "MySQL Rules",
 			Tags:         []string{"mysql"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-MySQL 特殊规则：
-- 配置文件通常命名为 my.cnf.tmpl。
-- 数据目录、日志目录优先参数化为 .Instance.Vars，再与 .Global.data_base_dir 拼接。
-- 如果需要初始化库或用户，优先拆分成额外脚本模板，不要把所有逻辑塞进一个大脚本。`),
+MySQL 妯℃澘搴斾繚鎸佺洰褰曞弬鏁板寲骞朵繚鎸佺粨鏋勬竻鏅般€?`),
 		},
 		{
 			RelativePath: "service/kerberos.md",
 			Scope:        "service",
-			Title:        "KERBEROS 特殊规则",
+			Title:        "Kerberos Rules",
 			Tags:         []string{"kerberos"},
 			Required:     false,
 			DefaultBody: strings.TrimSpace(`
-Kerberos 特殊规则：
-- krb5.conf、kdc.conf 等配置项较多时，优先保持结构清晰，减少无关注释。
-- realm、域名、主机名这类值不要编造，信息不足时必须追问。`),
+Kerberos 妯℃澘涓殑 realm/hostname 蹇呴』娓呮櫚銆佸彲瀹¤銆?`),
+		},
+		{
+			RelativePath: "service/elasticsearch.md",
+			Scope:        "service",
+			Title:        "Elasticsearch Contract",
+			Tags:         []string{"elasticsearch", "hostname", "output-layout"},
+			Required:     false,
+			DefaultBody: strings.TrimSpace(`
+Elasticsearch 涓撻」绾︽潫锛?- 鑺傜偣鍗犱綅绗﹀繀椤绘槸 {{ .Instance.Node.Hostname }}銆?- 绂佹 .Instance.NodeAlias / .Instance.Node.HostName銆?- 榛樿浣跨敤 templates/elasticsearch/*.tmpl 骞抽摵缁撴瀯銆?- 鏈槑纭姹傛椂锛屼笉瑕佹斁鍒?templates/elasticsearch/config/銆?- 鑻ョ敤鎴疯姹傗€滀慨鏀瑰叏閮ㄦā鏉库€濓紝蹇呴』鏇存柊鐩稿叧鍏ㄩ儴 draft files锛屼笉鍙敼涓€涓€?`),
 		},
 	}
 }
@@ -308,18 +303,18 @@ func normalizeAISkillRelativePath(raw string) (string, error) {
 	value := filepath.ToSlash(strings.TrimSpace(raw))
 	value = strings.TrimPrefix(value, "/")
 	if value == "" {
-		return "", errors.New("skill path 不能为空")
+		return "", errors.New("skill path 涓嶈兘涓虹┖")
 	}
 
 	clean := filepath.ToSlash(filepath.Clean(value))
 	if clean == "." || clean == "" {
-		return "", errors.New("skill path 无效")
+		return "", errors.New("skill path 鏃犳晥")
 	}
 	if strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") {
-		return "", errors.New("skill path 超出允许范围")
+		return "", errors.New("skill path 瓒呭嚭鍏佽鑼冨洿")
 	}
 	if strings.ToLower(filepath.Ext(clean)) != ".md" {
-		return "", errors.New("skill 文件必须是 .md")
+		return "", errors.New("skill 鏂囦欢蹇呴』鏄?.md")
 	}
 	return clean, nil
 }
@@ -356,7 +351,7 @@ func (s *Server) loadAISkillCatalogItem(relativePath string) (aiSkillCatalogItem
 	cleanRoot := filepath.Clean(s.aiSkillsDir)
 	cleanPath := filepath.Clean(fullPath)
 	if cleanPath != cleanRoot && !strings.HasPrefix(cleanPath, cleanRoot+string(os.PathSeparator)) {
-		return aiSkillCatalogItem{}, errors.New("skill path 超出允许范围")
+		return aiSkillCatalogItem{}, errors.New("skill path 瓒呭嚭鍏佽鑼冨洿")
 	}
 
 	data, err := os.ReadFile(fullPath)
@@ -411,7 +406,7 @@ func (s *Server) saveAISkillContent(relativePath string, content string) (aiSkil
 	cleanRoot := filepath.Clean(s.aiSkillsDir)
 	cleanPath := filepath.Clean(fullPath)
 	if cleanPath != cleanRoot && !strings.HasPrefix(cleanPath, cleanRoot+string(os.PathSeparator)) {
-		return aiSkillCatalogItem{}, errors.New("skill path 超出允许范围")
+		return aiSkillCatalogItem{}, errors.New("skill path 瓒呭嚭鍏佽鑼冨洿")
 	}
 	if _, err := os.Stat(fullPath); err != nil {
 		return aiSkillCatalogItem{}, err
@@ -522,29 +517,241 @@ func containsAny(text string, keywords ...string) bool {
 	return false
 }
 
-func (s *Server) detectPromptKinds(message string, selectedDrafts []aiDraftFile, attachmentIDs []string, session *aiSession) map[string]bool {
+var templateIntentKeywords = []string{
+	"模板", "生成模板", "改模板", "改写模板", "template", ".tmpl", "生成草稿", "draft",
+}
+
+func (s *Server) listTemplateServiceNames() []string {
+	entries, err := os.ReadDir(s.templatesDir)
+	if err != nil {
+		return []string{}
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(entry.Name()))
+		if name == "" || strings.HasPrefix(name, ".") {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func detectTemplateIntent(message string, selectedDrafts []aiDraftFile, serviceNames []string) (bool, []string) {
+	reasons := make([]string, 0)
+	lower := strings.ToLower(message)
+	for _, keyword := range templateIntentKeywords {
+		if strings.Contains(lower, strings.ToLower(keyword)) {
+			reasons = append(reasons, "keyword:"+keyword)
+		}
+	}
+	for _, serviceName := range serviceNames {
+		if strings.Contains(lower, serviceName) {
+			reasons = append(reasons, "service:"+serviceName)
+		}
+	}
+	if len(selectedDrafts) > 0 {
+		reasons = append(reasons, "selectedDrafts")
+	}
+	if len(reasons) == 0 {
+		return false, []string{}
+	}
+	return true, uniqueSortedStrings(reasons)
+}
+
+func normalizePromptSkillToken(raw string) string {
+	token := strings.TrimSpace(strings.ToLower(raw))
+	if token == "" {
+		return ""
+	}
+	token = strings.Trim(token, " \t\r\n\"'`[](){}<>.,;")
+	token = strings.ReplaceAll(token, "\\", "/")
+	token = strings.TrimPrefix(token, "./")
+	token = strings.TrimPrefix(token, "/")
+	token = strings.TrimPrefix(token, "data/ai/skills/")
+	token = strings.TrimPrefix(token, "skills/")
+	token = strings.TrimPrefix(token, "builtin/")
+	return strings.TrimSpace(token)
+}
+
+func extractInlineSkillIDs(message string) []string {
+	if strings.TrimSpace(message) == "" {
+		return []string{}
+	}
+	collected := make([]string, 0)
+
+	for _, token := range strings.Fields(message) {
+		lowerToken := strings.ToLower(strings.TrimSpace(token))
+		if strings.HasPrefix(lowerToken, "#skill:") {
+			collected = append(collected, token[len("#skill:"):])
+		}
+	}
+
+	lowerMessage := strings.ToLower(message)
+	for offset := 0; offset < len(lowerMessage); {
+		idx := strings.Index(lowerMessage[offset:], "@skill(")
+		if idx < 0 {
+			break
+		}
+		start := offset + idx + len("@skill(")
+		endRel := strings.Index(lowerMessage[start:], ")")
+		if endRel < 0 {
+			break
+		}
+		segment := message[start : start+endRel]
+		for _, part := range strings.Split(segment, ",") {
+			collected = append(collected, part)
+		}
+		offset = start + endRel + 1
+	}
+
+	normalized := make([]string, 0, len(collected))
+	seen := make(map[string]struct{}, len(collected))
+	for _, skillID := range collected {
+		id := normalizePromptSkillToken(skillID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalized = append(normalized, id)
+	}
+	return normalized
+}
+
+func resolveBuiltinPromptSkillSpec(skillID string) (aiPromptSkillSpec, bool) {
+	specMap := defaultAISkillSpecMap()
+	normalized := normalizePromptSkillToken(skillID)
+	if normalized == "" || strings.HasPrefix(normalized, "custom/") {
+		return aiPromptSkillSpec{}, false
+	}
+	candidates := []string{normalized}
+	if strings.HasSuffix(normalized, ".md") {
+		candidates = append(candidates, strings.TrimSuffix(normalized, ".md"))
+	} else {
+		candidates = append(candidates, normalized+".md")
+	}
+	for _, candidate := range candidates {
+		clean := filepath.ToSlash(strings.TrimSpace(candidate))
+		if clean == "" {
+			continue
+		}
+		if !strings.HasSuffix(clean, ".md") {
+			clean += ".md"
+		}
+		if spec, ok := specMap[clean]; ok {
+			return spec, true
+		}
+	}
+	return aiPromptSkillSpec{}, false
+}
+
+func (s *Server) selectExplicitPromptSkills(skillIDs []string) ([]aiPromptSkill, error) {
+	normalized := make([]string, 0, len(skillIDs))
+	seen := make(map[string]struct{}, len(skillIDs))
+	for _, raw := range skillIDs {
+		id := normalizePromptSkillToken(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalized = append(normalized, id)
+	}
+
+	selected := make([]aiPromptSkill, 0, len(normalized))
+	for _, skillID := range normalized {
+		if spec, ok := resolveBuiltinPromptSkillSpec(skillID); ok {
+			skill, err := s.loadPromptSkill(spec)
+			if err != nil {
+				return nil, err
+			}
+			selected = append(selected, skill)
+			continue
+		}
+
+		customID := strings.TrimPrefix(skillID, "custom/")
+		customID = normalizeCustomSkillID(customID)
+		if customID == "" || strings.Contains(customID, "/") {
+			fmt.Printf("[AI] explicit skill ignored id=%s reason=unknown-skill\n", skillID)
+			continue
+		}
+		if err := validateCustomSkillID(customID); err != nil {
+			fmt.Printf("[AI] explicit skill ignored id=%s reason=invalid-custom-id err=%v\n", skillID, err)
+			continue
+		}
+
+		custom, err := s.loadCustomSkill(customID)
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Printf("[AI] explicit skill ignored id=%s reason=not-found\n", skillID)
+				continue
+			}
+			return nil, err
+		}
+		selected = append(selected, aiPromptSkill{
+			Ref: aiSkillRef{
+				ID:       "custom/" + custom.ID,
+				Scope:    custom.Scope,
+				Title:    custom.Title,
+				Tags:     append([]string(nil), custom.Tags...),
+				Required: false,
+			},
+			Path:    filepath.Join(s.customSkillsDir(), custom.ID+".md"),
+			Content: custom.Content,
+		})
+	}
+
+	sort.SliceStable(selected, func(i, j int) bool {
+		if selected[i].Ref.Scope == selected[j].Ref.Scope {
+			return selected[i].Ref.ID < selected[j].Ref.ID
+		}
+		return selected[i].Ref.Scope < selected[j].Ref.Scope
+	})
+	return selected, nil
+}
+
+func (s *Server) detectPromptKinds(message string, selectedDrafts []aiDraftFile, attachmentIDs []string, session *aiSession, templateIntent bool) map[string]bool {
 	kinds := map[string]bool{
 		"install_script":  false,
 		"config_file":     false,
 		"systemd_service": false,
 		"cluster_service": false,
 		"image_rewrite":   false,
-		"config_patch":    true,
+		"config_patch":    false,
 	}
 
 	messageLower := strings.ToLower(message)
-	if containsAny(messageLower, "install", "setup", "deploy", "start", "stop", "check", ".sh.tmpl", "安装", "部署", "启动", "停止", "检查") {
+	if containsAny(messageLower, "install", "setup", "deploy", "start", "stop", "check", ".sh.tmpl", "脚本", "安装", "启动", "停止", "检查") {
 		kinds["install_script"] = true
+		kinds["config_patch"] = true
 	}
-	if containsAny(messageLower, ".conf", ".yaml", ".yml", ".xml", ".json", ".properties", ".service", "配置", "config", "service 文件") {
+	if containsAny(messageLower, ".conf", ".yaml", ".yml", ".xml", ".json", ".properties", ".service", "配置", "config", "service file") {
 		kinds["config_file"] = true
+		kinds["config_patch"] = true
 	}
-	if containsAny(messageLower, "systemd", ".service", "unit 文件", "服务单元") {
+	if containsAny(messageLower, "systemd", ".service", "unit file", "服务单元") {
 		kinds["systemd_service"] = true
 		kinds["config_file"] = true
+		kinds["config_patch"] = true
 	}
-	if containsAny(messageLower, "cluster", "集群", "ha", "多节点", "3节点", "三节点", "多副本") {
+	if containsAny(messageLower, "cluster", "ha", "多节点", "3节点", "三节点", "副本") {
 		kinds["cluster_service"] = true
+		kinds["config_patch"] = true
+	}
+	if containsAny(messageLower, "vars", "变量", "patch", "同步", "servicetop", "serverconfig") {
+		kinds["config_patch"] = true
+	}
+	if templateIntent {
+		kinds["config_patch"] = true
 	}
 
 	for _, draft := range selectedDrafts {
@@ -552,14 +759,18 @@ func (s *Server) detectPromptKinds(message string, selectedDrafts []aiDraftFile,
 		switch detectExampleKind(lowerPath) {
 		case "shell_script":
 			kinds["install_script"] = true
+			kinds["config_patch"] = true
 		case "config_file":
 			kinds["config_file"] = true
+			kinds["config_patch"] = true
 		case "systemd_service":
 			kinds["systemd_service"] = true
 			kinds["config_file"] = true
+			kinds["config_patch"] = true
 		}
 		if looksClusterTemplate(draft.Content, lowerPath) {
 			kinds["cluster_service"] = true
+			kinds["config_patch"] = true
 		}
 	}
 
@@ -575,13 +786,12 @@ func (s *Server) detectPromptKinds(message string, selectedDrafts []aiDraftFile,
 
 	return kinds
 }
-
-func detectSpecialServices(message string, selectedDrafts []aiDraftFile) map[string]bool {
+func (s *Server) detectSpecialServices(message string, selectedDrafts []aiDraftFile) map[string]bool {
 	services := make(map[string]bool)
 	messageLower := strings.ToLower(message)
-	for _, special := range []string{"docker", "mysql", "kerberos"} {
-		if strings.Contains(messageLower, special) {
-			services[special] = true
+	for _, serviceName := range s.listTemplateServiceNames() {
+		if strings.Contains(messageLower, serviceName) {
+			services[serviceName] = true
 		}
 	}
 	for _, draft := range selectedDrafts {
@@ -589,46 +799,60 @@ func detectSpecialServices(message string, selectedDrafts []aiDraftFile) map[str
 		if serviceName == "" {
 			continue
 		}
-		if serviceName == "docker" || serviceName == "mysql" || serviceName == "kerberos" {
-			services[serviceName] = true
-		}
+		services[serviceName] = true
 	}
 	return services
 }
-
 func (s *Server) selectPromptSkills(session *aiSession, req aiSessionMessageRequest, selectedDrafts []aiDraftFile, attachmentIDs []string) ([]aiPromptSkill, error) {
 	if err := s.ensureAIDirs(); err != nil {
 		return nil, err
 	}
 
-	selectedSpecs := []aiPromptSkillSpec{
-		defaultAISkillSpecMap()["core/base.md"],
-		defaultAISkillSpecMap()["core/output_json.md"],
-		defaultAISkillSpecMap()["core/path_guard.md"],
-	}
+	inlineSkillIDs := extractInlineSkillIDs(req.Message)
+	explicitSkillIDs := make([]string, 0, len(req.SelectedSkillIDs)+len(inlineSkillIDs))
+	explicitSkillIDs = append(explicitSkillIDs, req.SelectedSkillIDs...)
+	explicitSkillIDs = append(explicitSkillIDs, inlineSkillIDs...)
 
-	kinds := s.detectPromptKinds(req.Message, selectedDrafts, attachmentIDs, session)
+	templateIntent, intentReasons := detectTemplateIntent(req.Message, selectedDrafts, s.listTemplateServiceNames())
+	hasExplicitSkill := len(explicitSkillIDs) > 0
+
+	specMap := defaultAISkillSpecMap()
+	selectedSpecs := []aiPromptSkillSpec{
+		specMap["core/output_json.md"],
+	}
+	if templateIntent || hasExplicitSkill {
+		selectedSpecs = append(selectedSpecs,
+			specMap["core/base.md"],
+			specMap["core/path_guard.md"],
+			specMap["core/template_contract.md"],
+			specMap["core/variable_contract.md"],
+		)
+	}
+	fmt.Printf("[AI] skill trigger templateIntent=%t explicit=%t reasons=%s\n",
+		templateIntent, hasExplicitSkill, summarizePathsForLog(intentReasons, 12))
+
+	kinds := s.detectPromptKinds(req.Message, selectedDrafts, attachmentIDs, session, templateIntent)
 	if kinds["install_script"] {
-		selectedSpecs = append(selectedSpecs, defaultAISkillSpecMap()["task/install_script.md"])
+		selectedSpecs = append(selectedSpecs, specMap["task/install_script.md"])
 	}
 	if kinds["config_file"] {
-		selectedSpecs = append(selectedSpecs, defaultAISkillSpecMap()["task/config_file.md"])
+		selectedSpecs = append(selectedSpecs, specMap["task/config_file.md"])
 	}
 	if kinds["systemd_service"] {
-		selectedSpecs = append(selectedSpecs, defaultAISkillSpecMap()["task/systemd_service.md"])
+		selectedSpecs = append(selectedSpecs, specMap["task/systemd_service.md"])
 	}
 	if kinds["cluster_service"] {
-		selectedSpecs = append(selectedSpecs, defaultAISkillSpecMap()["task/cluster_service.md"])
+		selectedSpecs = append(selectedSpecs, specMap["task/cluster_service.md"])
 	}
 	if kinds["image_rewrite"] {
-		selectedSpecs = append(selectedSpecs, defaultAISkillSpecMap()["task/image_rewrite.md"])
+		selectedSpecs = append(selectedSpecs, specMap["task/image_rewrite.md"])
 	}
 	if kinds["config_patch"] {
-		selectedSpecs = append(selectedSpecs, defaultAISkillSpecMap()["task/config_patch.md"])
+		selectedSpecs = append(selectedSpecs, specMap["task/config_patch.md"])
 	}
 
-	for serviceName := range detectSpecialServices(req.Message, selectedDrafts) {
-		if spec, exists := defaultAISkillSpecMap()["service/"+serviceName+".md"]; exists {
+	for serviceName := range s.detectSpecialServices(req.Message, selectedDrafts) {
+		if spec, exists := specMap["service/"+serviceName+".md"]; exists {
 			selectedSpecs = append(selectedSpecs, spec)
 		}
 	}
@@ -673,20 +897,20 @@ func (s *Server) selectPromptSkills(session *aiSession, req aiSessionMessageRequ
 		}
 	}
 
-	explicitSkills, err := s.selectExplicitCustomPromptSkills(req.SelectedSkillIDs)
+	explicitSkills, err := s.selectExplicitPromptSkills(explicitSkillIDs)
 	if err != nil {
 		return nil, err
 	}
-	for _, customSkill := range explicitSkills {
+	for _, explicitSkill := range explicitSkills {
 		duplicate := false
 		for _, existing := range skills {
-			if existing.Ref.ID == customSkill.Ref.ID {
+			if existing.Ref.ID == explicitSkill.Ref.ID {
 				duplicate = true
 				break
 			}
 		}
 		if !duplicate {
-			skills = append(skills, customSkill)
+			skills = append(skills, explicitSkill)
 		}
 	}
 
@@ -696,6 +920,14 @@ func (s *Server) selectPromptSkills(session *aiSession, req aiSessionMessageRequ
 		}
 		return skills[i].Ref.Scope < skills[j].Ref.Scope
 	})
+	finalIDs := make([]string, 0, len(skills))
+	for _, skill := range skills {
+		finalIDs = append(finalIDs, skill.Ref.ID)
+	}
+	fmt.Printf("[AI] prompt skills resolved autoMatched=%d explicitRequested=%s final=%s\n",
+		len(skills)-len(explicitSkills),
+		summarizePathsForLog(explicitSkillIDs, 12),
+		summarizePathsForLog(finalIDs, 24))
 	return skills, nil
 }
 
@@ -710,18 +942,13 @@ func (s *Server) buildAIPromptBundle(session *aiSession, req aiSessionMessageReq
 		return "", aiPromptTrace{}, err
 	}
 
-	examples, err := s.selectPromptExamples(req.Message, selectedDrafts, skills)
-	if err != nil {
-		return "", aiPromptTrace{}, err
-	}
-
 	trace := emptyAIPromptTrace()
 	builder := strings.Builder{}
-	builder.WriteString("请同时遵守以下规则模块，生成适合本项目的模板草稿。\n")
+	builder.WriteString("Follow the selected skill modules and produce one valid JSON response.\n")
 
 	for _, skill := range skills {
 		trace.SkillRefs = append(trace.SkillRefs, skill.Ref)
-		builder.WriteString("\n[规则模块] ")
+		builder.WriteString("\n[Skill] ")
 		builder.WriteString(skill.Ref.Title)
 		builder.WriteString(" (")
 		builder.WriteString(skill.Ref.ID)
@@ -731,44 +958,52 @@ func (s *Server) buildAIPromptBundle(session *aiSession, req aiSessionMessageReq
 	}
 
 	if strings.TrimSpace(customRules) != "" {
-		builder.WriteString("\n[自定义全局补充规则]\n")
+		builder.WriteString("\n[Global Extra Rules]\n")
 		builder.WriteString(strings.TrimSpace(customRules))
 		builder.WriteString("\n")
 	}
 	if strings.TrimSpace(req.SessionRules) != "" {
-		builder.WriteString("\n[当前会话补充规则]\n")
+		builder.WriteString("\n[Session Extra Rules]\n")
 		builder.WriteString(strings.TrimSpace(req.SessionRules))
 		builder.WriteString("\n")
 	}
 
 	if configContext := buildConfigPromptContext(s.cfg); strings.TrimSpace(configContext) != "" {
-		builder.WriteString("\n[当前配置上下文]\n")
+		builder.WriteString("\n[Current Config Context]\n")
 		builder.WriteString(configContext)
 		builder.WriteString("\n")
 	}
 
-	if len(examples) > 0 {
-		builder.WriteString("\n[参考模板示例]\n以下示例只用于结构、风格和变量组织参考，不要机械复制；上面的规则优先级更高。\n")
-		for _, example := range examples {
-			trace.ExampleRefs = append(trace.ExampleRefs, example.Ref)
-			builder.WriteString("\n示例路径: ")
-			builder.WriteString(example.Ref.Path)
-			if example.Ref.Reason != "" {
-				builder.WriteString("\n选择原因: ")
-				builder.WriteString(example.Ref.Reason)
+	inlineSkillIDs := extractInlineSkillIDs(req.Message)
+	templateIntent, _ := detectTemplateIntent(req.Message, selectedDrafts, s.listTemplateServiceNames())
+	includeExamples := len(req.SelectedSkillIDs) > 0 || len(inlineSkillIDs) > 0 || templateIntent
+	if includeExamples {
+		examples, selectErr := s.selectPromptExamples(req.Message, selectedDrafts, skills)
+		if selectErr != nil {
+			return "", aiPromptTrace{}, selectErr
+		}
+		if len(examples) > 0 {
+			builder.WriteString("\n[Reference Examples]\nUse style/structure for reference only, do not copy blindly.\n")
+			for _, example := range examples {
+				trace.ExampleRefs = append(trace.ExampleRefs, example.Ref)
+				builder.WriteString("\nExample Path: ")
+				builder.WriteString(example.Ref.Path)
+				if example.Ref.Reason != "" {
+					builder.WriteString("\nReason: ")
+					builder.WriteString(example.Ref.Reason)
+				}
+				builder.WriteString("\nSnippet:\n")
+				builder.WriteString(example.Snippet)
+				builder.WriteString("\n")
 			}
-			builder.WriteString("\n示例片段:\n")
-			builder.WriteString(example.Snippet)
-			builder.WriteString("\n")
 		}
 	}
 
-	builder.WriteString("\n[模板函数白名单]\n")
-	builder.WriteString("请仅使用项目已注册函数：")
+	builder.WriteString("\n[Template Function Whitelist]\nUse project-registered helpers only: ")
 	builder.WriteString(templateFunctionWhitelistSummary())
-	builder.WriteString("。除此之外，只允许使用 Go Template 内建函数（如 and/or/not/len/index/printf 等）。若需要白名单外函数，请改写实现并在 warnings 中说明。\n")
+	builder.WriteString(". Go-template builtins are allowed. If extra helper is needed, rewrite and explain in warnings.\n")
 
-	builder.WriteString("\n[输出要求补充]\n请尽量返回 configPatch，用于同步 serviceTop 和 serverConfig.vars；如果信息不足，请在 followUpQuestions 里明确提出。")
+	builder.WriteString("\n[Output Requirement]\nReturn configPatch for serviceTop/serverConfig when possible; if info is missing, ask in followUpQuestions.\n")
 	return strings.TrimSpace(builder.String()), normalizeAIPromptTrace(trace), nil
 }
 
@@ -780,14 +1015,14 @@ func formatPromptTraceSummary(trace aiPromptTrace) string {
 		for _, skill := range trace.SkillRefs {
 			skillIDs = append(skillIDs, skill.ID)
 		}
-		parts = append(parts, "命中规则: "+strings.Join(skillIDs, ", "))
+		parts = append(parts, "Skills: "+strings.Join(skillIDs, ", "))
 	}
 	if len(trace.ExampleRefs) > 0 {
 		paths := make([]string, 0, len(trace.ExampleRefs))
 		for _, example := range trace.ExampleRefs {
 			paths = append(paths, example.Path)
 		}
-		parts = append(parts, "参考示例: "+strings.Join(paths, ", "))
+		parts = append(parts, "Examples: "+strings.Join(paths, ", "))
 	}
 	return strings.Join(parts, "\n")
 }

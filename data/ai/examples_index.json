@@ -152,7 +152,7 @@
       "shell"
     ],
     "isCluster": false,
-    "snippet": "# =============================================================================\n# Elasticsearch 服务检查脚本模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.Node.NameNode }}\n# =============================================================================\n# 用途：检查 elasticsearch 服务运行状态、端口、进程、集群健康等\n# 执行用户：{{ .Global.user }}（部分检查需要 root 权限）\n# =============================================================================\n\nset -e\n\n# -----------------------------------------------------------------------------\n# 变量定义（优先使用 .Global 和 .Instance.Vars）\n# -----------------------------------------------------------------------------\nES_VERSION=\"{{ .Instance.Vars.version }}\"\nES_INSTALL_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nES_DATA_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}\"\nES_LOG_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\"\nES_CONF_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config\"\nES_HTTP_PORT=\"{{ .Instance.Vars.http_port }}\"\nES_TRANSPORT_PORT=\"{{ .Instance.Vars.transport_port }}\"\nES_CLUSTER_NAME=\"{{ .Instance.Vars.cluster_name }}\"\nES_USER=\"{{ .Global.user }}\"\nES_GROUP=\"{{ .Global.group }}\"\n\n# 健康检查参数\nES_HEALTH_TIMEOUT=\"${ES_HEALTH_TIMEOUT:-30}\"\nES_CHECK_USER=\"${ES_CHECK_USER:-elastic}\"\nES_CHECK_PASS=\"${ES_CHECK_PASS:-{{ .Instance.Vars.default_password }}}\"\n\n# 颜色定义\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m' # No Color\n\n# -----------------------------------------------------------------------------\n# 日志函数\n# -----------------------------------------------------------------------------"
+    "snippet": "# =============================================================================\n# Elasticsearch 服务检查脚本模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.Node.Hostname }}\n# =============================================================================\n# 用途：检查 elasticsearch 服务运行状态、端口、进程、集群健康等\n# 执行用户：{{ .Global.user }}（部分检查需要 root 权限）\n# =============================================================================\n\nset -e\n\n# -----------------------------------------------------------------------------\n# 变量定义（优先使用 .Global 和 .Instance.Vars）\n# -----------------------------------------------------------------------------\nES_VERSION=\"{{ .Instance.Vars.version }}\"\nES_INSTALL_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nES_DATA_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}\"\nES_LOG_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\"\nES_CONF_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config\"\nES_HTTP_PORT=\"{{ .Instance.Vars.http_port }}\"\nES_TRANSPORT_PORT=\"{{ .Instance.Vars.transport_port }}\"\nES_CLUSTER_NAME=\"{{ .Instance.Vars.cluster_name }}\"\nES_USER=\"{{ .Global.user }}\"\nES_GROUP=\"{{ .Global.group }}\"\nES_NODE_NAME=\"{{ .Instance.Node.Hostname }}\"\n\n# 健康检查参数\nES_HEALTH_TIMEOUT=\"${ES_HEALTH_TIMEOUT:-30}\"\nES_CHECK_USER=\"${ES_CHECK_USER:-elastic}\"\nES_CHECK_PASS=\"${ES_CHECK_PASS:-{{ .Instance.Vars.default_password }}}\"\n\n# 颜色定义\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m' # No Color\n\n# -----------------------------------------------------------------------------\n# 日志函数"
   },
   {
     "path": "templates/elasticsearch/elasticsearch.service.tmpl",
@@ -164,7 +164,7 @@
       "systemd"
     ],
     "isCluster": false,
-    "snippet": "# =============================================================================\n# Elasticsearch systemd 服务文件模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.NodeAlias }}\n# =============================================================================\n# 注意：此文件将部署到 /etc/systemd/system/elasticsearch.service\n# 系统目录约束：systemd 服务文件必须位于 /etc/systemd/system/\n# =============================================================================\n\n[Unit]\nDescription=Elasticsearch ({{ .Instance.Vars.version }})\nDocumentation=https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html\nWants=network-online.target\nAfter=network-online.target\n\n# 依赖检查（可选）\n# After=zookeeper.service\n# Wants=zookeeper.service\n\n[Service]\n# -----------------------------------------------------------------------------\n# 用户与组（优先使用 .Global 变量）\n# -----------------------------------------------------------------------------\nUser={{ .Global.user }}\nGroup={{ .Global.group }}\n\n# -----------------------------------------------------------------------------\n# 环境变量\n# -----------------------------------------------------------------------------\nEnvironment=JAVA_HOME={{ .Global.java_home }}\nEnvironment=ES_HOME={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\nEnvironment=ES_DATA={{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}\nEnvironment=ES_LOGS={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\nEnvironment=ES_CONF={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config\n\n# -----------------------------------------------------------------------------\n# 工作目录\n# -----------------------------------------------------------------------------\nWorkingDirectory={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
+    "snippet": "# =============================================================================\n# Elasticsearch systemd 服务模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.Node.Hostname }}\n# =============================================================================\n# 部署路径：/etc/systemd/system/elasticsearch.service\n# 需要 root 权限部署\n# =============================================================================\n\n[Unit]\nDescription=Elasticsearch ({{ .Instance.Vars.version }})\nDocumentation=https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=notify\n\n# 运行用户（复用 .Global 变量）\nUser={{ .Global.user }}\nGroup={{ .Global.group }}\n\n# 环境变量\nEnvironment=\"JAVA_HOME={{ .Global.java_home }}\"\nEnvironment=\"ES_HOME={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nEnvironment=\"ES_DATA={{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}\"\nEnvironment=\"ES_LOGS={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\"\nEnvironment=\"ES_CONF={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config\"\n\n# 工作目录\nWorkingDirectory={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\n\n# 启动命令\nExecStart={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/bin/elasticsearch\n\n# 优雅停止\nExecStop=/bin/kill -SIGTERM $MAINPID\nTimeoutStopSec=300"
   },
   {
     "path": "templates/elasticsearch/elasticsearch.yml.tmpl",
@@ -176,7 +176,7 @@
       "config"
     ],
     "isCluster": true,
-    "snippet": "# =============================================================================\n# Elasticsearch 配置文件模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.NodeAlias }}\n# =============================================================================\n\n# -----------------------------------------------------------------------------\n# 集群配置\n# -----------------------------------------------------------------------------\ncluster.name: {{ .Instance.Vars.cluster_name }}\nnode.name: {{ .Instance.NodeAlias }}\n\n# -----------------------------------------------------------------------------\n# 路径配置（使用全局变量拼接）\n# -----------------------------------------------------------------------------\npath.data: {{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}\npath.logs: {{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\npath.repo: [\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.backup_subdir }}\"]\n\n# -----------------------------------------------------------------------------\n# 网络配置\n# -----------------------------------------------------------------------------\nnetwork.host: {{ .Instance.Node.IP }}\nhttp.port: {{ .Instance.Vars.http_port }}\ntransport.port: {{ .Instance.Vars.transport_port }}\n\n# -----------------------------------------------------------------------------\n# 集群发现配置（3 节点）\n# 使用模板函数动态生成节点列表，避免硬编码\n# -----------------------------------------------------------------------------\ndiscovery.seed_hosts:\n{{- $endpoints := serviceEndpoints \"elasticsearch\" }}\n{{- range $endpoints }}\n  - {{ . }}\n{{- end }}\n\ncluster.initial_master_nodes:\n{{- $hostnames := serviceHostnames \"elasticsearch\" }}\n{{- range $hostnames }}"
+    "snippet": "# =============================================================================\n# Elasticsearch 配置文件模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.Node.Hostname }}\n# =============================================================================\n\n# -----------------------------------------------------------------------------\n# 集群配置\n# -----------------------------------------------------------------------------\ncluster.name: {{ .Instance.Vars.cluster_name }}\nnode.name: {{ .Instance.Node.Hostname }}\n\n# -----------------------------------------------------------------------------\n# 路径配置（使用全局变量拼接）\n# -----------------------------------------------------------------------------\npath.data: {{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}\npath.logs: {{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\npath.repo: [\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.backup_subdir }}\"]\n\n# -----------------------------------------------------------------------------\n# 网络配置\n# -----------------------------------------------------------------------------\nnetwork.host: {{ .Instance.Node.IP }}\nhttp.port: {{ .Instance.Vars.http_port }}\ntransport.port: {{ .Instance.Vars.transport_port }}\n\n# -----------------------------------------------------------------------------\n# 集群发现配置（3 节点）\n# serviceEndpoints 需要 2 个参数：服务名 + 实例标识\n# serviceHostnames 需要 1 个参数：服务名\n# -----------------------------------------------------------------------------\ndiscovery.seed_hosts:\n{{- $endpoints := serviceEndpoints \"elasticsearch\" .Instance.Node.NodeName }}\n{{- range $endpoints }}\n  - {{ . }}\n{{- end }}\n\ncluster.initial_master_nodes:\n{{- $hostnames := serviceHostnames \"elasticsearch\" }}"
   },
   {
     "path": "templates/elasticsearch/install.sh.tmpl",
@@ -188,7 +188,7 @@
       "shell"
     ],
     "isCluster": false,
-    "snippet": "#!/bin/bash\n# =============================================================================\n# Elasticsearch 安装脚本模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.NodeAlias }}\n# =============================================================================\n\nset -e\n\n# -----------------------------------------------------------------------------\n# 变量定义区\n# -----------------------------------------------------------------------------\nES_VERSION=\"{{ .Instance.Vars.version }}\"\nES_PACKAGE_NAME=\"elasticsearch-${ES_VERSION}-linux-x86_64.tar.gz\"\nES_PACKAGE_URL=\"{{ .Instance.Vars.package_url }}\"\nES_INSTALL_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nES_DATA_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}\"\nES_LOG_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\"\nES_USER=\"{{ .Global.user }}\"\nES_GROUP=\"{{ .Global.group }}\"\nJAVA_HOME=\"{{ .Global.java_home }}\"\n\n# -----------------------------------------------------------------------------\n# 日志函数\n# -----------------------------------------------------------------------------\nlog_info() {\n    echo \"[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $*\"\n}\n\nlog_warn() {\n    echo \"[WARN] $(date '+%Y-%m-%d %H:%M:%S') - $*\"\n}\n\nlog_error() {\n    echo \"[ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $*\" \u003e\u00262\n}\n\nlog_success() {\n    echo \"[SUCCESS] $(date '+%Y-%m-%d %H:%M:%S') - $*\""
+    "snippet": "#!/bin/bash\n# =============================================================================\n# Elasticsearch 安装脚本模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.Node.Hostname }}\n# =============================================================================\n\nset -e\n\n# -----------------------------------------------------------------------------\n# 变量定义区\n# -----------------------------------------------------------------------------\nES_VERSION=\"{{ .Instance.Vars.version }}\"\nES_PACKAGE_NAME=\"elasticsearch-${ES_VERSION}-linux-x86_64.tar.gz\"\nES_PACKAGE_URL=\"{{ .Instance.Vars.package_url }}\"\nES_INSTALL_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nES_DATA_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}\"\nES_LOG_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\"\nES_CONF_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config\"\nES_USER=\"{{ .Global.user }}\"\nES_GROUP=\"{{ .Global.group }}\"\nJAVA_HOME=\"{{ .Global.java_home }}\"\n\n# 配置文件目录（部署工具渲染后放置位置）\n# 优先级：环境变量 ES_CONFIG_DIR \u003e 脚本所在目录（同级）\u003e 默认值\nES_CONFIG_DIR=\"${ES_CONFIG_DIR:-$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" \u0026\u0026 pwd)}\"\n\n# -----------------------------------------------------------------------------\n# 日志函数\n# -----------------------------------------------------------------------------\nlog_info() {\n    echo \"[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $*\"\n}\n\nlog_warn() {\n    echo \"[WARN] $(date '+%Y-%m-%d %H:%M:%S') - $*\"\n}\n\nlog_error() {"
   },
   {
     "path": "templates/elasticsearch/jvm.options.tmpl",
@@ -199,7 +199,7 @@
       "config"
     ],
     "isCluster": false,
-    "snippet": "## =============================================================================\n## Elasticsearch JVM 配置模板\n## 服务：elasticsearch\n## 版本：{{ .Instance.Vars.version }}\n## 节点：{{ .Instance.NodeAlias }}\n## =============================================================================\n\n# -----------------------------------------------------------------------------\n# 堆内存配置（默认 4G，可通过 .Instance.Vars 覆盖）\n# -----------------------------------------------------------------------------\n-Xms{{ .Instance.Vars.jvm_heap_size }}\n-Xmx{{ .Instance.Vars.jvm_heap_size }}\n\n# -----------------------------------------------------------------------------\n# 堆转储配置\n# -----------------------------------------------------------------------------\n-XX:+HeapDumpOnOutOfMemoryError\n-XX:HeapDumpPath={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\n-XX:ErrorFile={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}/hs_err_pid%p.log\n\n# -----------------------------------------------------------------------------\n# GC 配置（G1 GC）\n# -----------------------------------------------------------------------------\n-XX:+UseG1GC\n-XX:G1ReservePercent=25\n-XX:InitiatingHeapOccupancyPercent=30\n\n# -----------------------------------------------------------------------------\n# 本地代码库路径\n# -----------------------------------------------------------------------------\n-Djava.library.path={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/modules/jdk/lib\n\n# -----------------------------------------------------------------------------\n# 临时目录\n# -----------------------------------------------------------------------------\n-Djava.io.tmpdir={{ .Global.temp_dir }}\n\n# -----------------------------------------------------------------------------\n# 区域设置\n# ---------------------------------------------------------\n# ...truncated..."
+    "snippet": "# =============================================================================\n# Elasticsearch JVM 参数配置模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.Node.Hostname }}\n# =============================================================================\n\n# -----------------------------------------------------------------------------\n# 堆内存配置（默认 4G，生产环境需根据物理内存调整）\n# -----------------------------------------------------------------------------\n-Xms{{ .Instance.Vars.jvm_heap_size }}\n-Xmx{{ .Instance.Vars.jvm_heap_size }}\n\n# -----------------------------------------------------------------------------\n# 使用 G1 GC\n# -----------------------------------------------------------------------------\n-XX:+UseG1GC\n\n# -----------------------------------------------------------------------------\n# 堆转储配置\n# -----------------------------------------------------------------------------\n-XX:+HeapDumpOnOutOfMemoryError\n-XX:HeapDumpPath={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\n-XX:ErrorFile={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}/hs_err_pid%p.log\n\n# -----------------------------------------------------------------------------\n# 日志配置\n# -----------------------------------------------------------------------------\n-Xlog:gc*,gc+age=trace,safepoint:file={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}/gc.log:utctime,pid,tags:filecount=32,filesize=64m\n\n# -----------------------------------------------------------------------------\n# 性能优化\n# -----------------------------------------------------------------------------\n-XX:+AlwaysPreTouch\n-Xss1m\n-Djava.awt.headless=true\n-Dfile.encoding=UTF-8\n-Djna.nosys=true\n-XX:-OmitStackTraceInFastThrow\n-Dio.netty.noUnsafe=true"
   },
   {
     "path": "templates/elasticsearch/logrotate.conf.tmpl",
@@ -210,7 +210,7 @@
       "config"
     ],
     "isCluster": false,
-    "snippet": "# =============================================================================\n# Elasticsearch 日志轮转配置模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.NodeAlias }}\n# =============================================================================\n\n# -----------------------------------------------------------------------------\n# 日志轮转配置\n# -----------------------------------------------------------------------------\n{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}/*.log {\n    # 轮转频率\n    daily\n    \n    # 保留最近 14 个日志文件\n    rotate 14\n    \n    # 当日志文件大小超过此值时触发轮转（可选，与 daily 同时生效）\n    maxsize 100M\n    \n    # 最小文件大小，小于此值不轮转\n    minsize 10M\n    \n    # 压缩旧日志\n    compress\n    \n    # 延迟压缩（下一轮转周期再压缩）\n    delaycompress\n    \n    # 如果日志文件不存在，不报错\n    missingok\n    \n    # 如果日志文件为空，不轮转\n    notifempty\n    \n    # 创建新日志文件的权限和所有者\n    create 0640 {{ .Global.user }} {{ .Global.group }}\n    \n    # 使用日期作为轮转文件后缀\n    dateext"
+    "snippet": "# =============================================================================\n# Elasticsearch 日志轮转配置模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.Node.Hostname }}\n# =============================================================================\n\n# -----------------------------------------------------------------------------\n# 日志轮转配置\n# -----------------------------------------------------------------------------\n{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}/*.log {\n    # 轮转频率\n    daily\n    \n    # 保留最近 14 个日志文件\n    rotate 14\n    \n    # 当日志文件大小超过此值时触发轮转（可选，与 daily 同时生效）\n    maxsize 100M\n    \n    # 最小文件大小，小于此值不轮转\n    minsize 10M\n    \n    # 压缩旧日志\n    compress\n    \n    # 延迟压缩（下一轮转周期再压缩）\n    delaycompress\n    \n    # 如果日志文件不存在，不报错\n    missingok\n    \n    # 如果日志文件为空，不轮转\n    notifempty\n    \n    # 创建新日志文件的权限和所有者\n    create 0640 {{ .Global.user }} {{ .Global.group }}\n    \n    # 使用日期作为轮转文件后缀\n    dateext"
   },
   {
     "path": "templates/elasticsearch/setup_dirs.sh.tmpl",
@@ -222,7 +222,7 @@
       "shell"
     ],
     "isCluster": false,
-    "snippet": "# 目录初始化脚本草稿 - 待生成"
+    "snippet": "#!/bin/bash\n# =============================================================================\n# Elasticsearch 目录初始化脚本模板\n# 服务：elasticsearch\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.Node.Hostname }}\n# =============================================================================\n# 用途：创建 Elasticsearch 所需的目录结构，设置权限\n# 执行用户：{{ .Global.user }}（部分操作需要 root 权限）\n# =============================================================================\n\nset -e\n\n# -----------------------------------------------------------------------------\n# 变量定义\n# -----------------------------------------------------------------------------\nES_VERSION=\"{{ .Instance.Vars.version }}\"\nES_INSTALL_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nES_DATA_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}\"\nES_LOG_DIR=\"{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}\"\nES_CONF_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config\"\nES_USER=\"{{ .Global.user }}\"\nES_GROUP=\"{{ .Global.group }}\"\n\n# -----------------------------------------------------------------------------\n# 日志函数\n# -----------------------------------------------------------------------------\nlog_info() {\n    echo \"[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $*\"\n}\n\nlog_warn() {\n    echo \"[WARN] $(date '+%Y-%m-%d %H:%M:%S') - $*\"\n}\n\nlog_error() {\n    echo \"[ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $*\" \u003e\u00262\n}\n\nlog_success() {"
   },
   {
     "path": "templates/hadoop3/README.md.tmpl",
@@ -548,40 +548,6 @@
     "snippet": "#!/bin/bash\r\n# ============================================================\r\n# MySQL容器启动脚本\r\n# 服务: mysql\r\n# 节点: {{ .Instance.Node.NodeName }} ({{ .Instance.Node.IP }})\r\n# ============================================================\r\n\r\ndocker run --restart=always -d --name {{ .Instance.Vars.container_name }} \\\r\n     -e MYSQL_USER={{ .Instance.Vars.mysql_user }} \\\r\n     -e MYSQL_PASSWORD={{ .Instance.Vars.mysql_password }} \\\r\n     -e MYSQL_ROOT_PASSWORD={{ .Instance.Vars.mysql_root_password }} \\\r\n     -v {{ .Global.install_base_dir }}/{{ .Instance.Vars.mysql_config_subdir }}/my.cnf:/etc/mysql/conf.d/my.cnf \\\r\n     -v {{ .Global.install_base_dir }}/{{ .Instance.Vars.mysql_data_subdir }}:/var/lib/mysql \\\r\n     -e MYSQL_DATABASE={{ .Instance.Vars.mysql_database }} \\\r\n     -p {{ .Instance.Vars.container_port }}:{{ .Instance.Vars.mysql_port }} \\\r\n     {{ .Instance.Vars.mysql_image }}"
   },
   {
-    "path": "templates/nginx/diagnose_502.sh.tmpl",
-    "service": "nginx",
-    "fileName": "diagnose_502.sh.tmpl",
-    "kind": "shell_script",
-    "tags": [
-      "shell"
-    ],
-    "isCluster": false,
-    "snippet": "#!/bin/bash\n# =============================================================================\n# Nginx/OpenResty 502 错误诊断脚本模板\n# 服务：nginx/openresty\n# 节点：{{ .Instance.Name }}\n# =============================================================================\n# 用途：诊断 502 Bad Gateway 错误，检查上游服务连通性、端口、进程等\n# 执行用户：{{ .Global.user }}（部分检查需要 root 权限）\n# =============================================================================\n\nset -e\n\n# -----------------------------------------------------------------------------\n# 变量定义（优先使用 .Global 和 .Instance.Vars）\n# -----------------------------------------------------------------------------\nNGINX_NODE_NAME=\"{{ .Instance.Name }}\"\nNGINX_USER=\"{{ .Global.user }}\"\nNGINX_GROUP=\"{{ .Global.group }}\"\n\n# 上游服务配置（需人工补齐，此处为示例）\n# 请根据实际 nginx 配置中的 proxy_pass 修改以下变量\nUPSTREAM_HOST=\"${UPSTREAM_HOST:-localhost}\"\nUPSTREAM_PORT=\"${UPSTREAM_PORT:-9200}\"\nUPSTREAM_NAME=\"${UPSTREAM_NAME:-elasticsearch}\"\n\n# 颜色定义\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m'\n\n# -----------------------------------------------------------------------------\n# 日志函数\n# -----------------------------------------------------------------------------\nlog_info() {\n    echo -e \"${GREEN}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1\"\n}\n\nlog_warn() {\n    echo -e \"${YELLOW}[WARN]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1\""
-  },
-  {
-    "path": "templates/nginx/redisadmin_auth_setup.sh.tmpl",
-    "service": "nginx",
-    "fileName": "redisadmin_auth_setup.sh.tmpl",
-    "kind": "shell_script",
-    "tags": [
-      "setup",
-      "shell"
-    ],
-    "isCluster": false,
-    "snippet": "#!/bin/bash\n# =============================================================================\n# Nginx RedisAdmin Basic Auth 用户管理脚本模板\n# 用途：管理 /etc/nginx/.redisadmin_htpasswd 文件\n# 依赖：htpasswd (apache2-utils)\n# =============================================================================\n\nset -e\n\n# -----------------------------------------------------------------------------\n# 变量定义\n# -----------------------------------------------------------------------------\nAUTH_FILE=\"{{ .Instance.Vars.redisadmin_auth_file | default \"/etc/nginx/.redisadmin_htpasswd\" }}\"\nAUTH_USER=\"{{ .Instance.Vars.redisadmin_auth_user | default \"admin\" }}\"\nNGINX_USER=\"{{ .Global.user }}\"\nNGINX_GROUP=\"{{ .Global.group }}\"\n\n# 颜色定义\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m'\n\n# -----------------------------------------------------------------------------\n# 日志函数\n# -----------------------------------------------------------------------------\nlog_info() {\n    echo -e \"${GREEN}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $*\"\n}\n\nlog_warn() {\n    echo -e \"${YELLOW}[WARN]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $*\"\n}\n\nlog_error() {\n    echo -e \"${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $*\" \u003e\u00262\n}\n\nlog_success() {\n    echo -e \"${GREEN}[SUCCESS]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $*\""
-  },
-  {
-    "path": "templates/nginx/redisadmin_basic_auth.conf.tmpl",
-    "service": "nginx",
-    "fileName": "redisadmin_basic_auth.conf.tmpl",
-    "kind": "config_file",
-    "tags": [
-      "config"
-    ],
-    "isCluster": false,
-    "snippet": "# =============================================================================\n# Nginx RedisAdmin Basic Auth 配置片段模板\n# 用途：为 redisadmin location 添加 basic auth 认证\n# 注意：本模板为通用片段，需根据实际 location 路径和密码文件路径调整\n# =============================================================================\n\n# 前置条件：\n# 1. 已安装 apache2-utils (含 htpasswd 命令)\n# 2. 已生成密码文件：{{ .Global.install_base_dir }}/nginx/auth/redisadmin.passwd\n# 3. 用户名：{{ .Instance.Vars.redisadmin_auth_user }}\n\nlocation {{ .Instance.Vars.redisadmin_location_path }} {\n    auth_basic \"RedisAdmin Authentication\";\n    auth_basic_user_file {{ .Global.install_base_dir }}/nginx/auth/redisadmin.passwd;\n\n    # 原有 proxy 配置（需根据实际后端地址补充）\n    # proxy_pass http://redisadmin_backend;\n    # proxy_set_header Host $host;\n    # proxy_set_header X-Real-IP $remote_addr;\n    # proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\n    # 超时配置（参考图片中的片段）\n    proxy_send_timeout 60s;\n    proxy_read_timeout 60s;\n}"
-  },
-  {
     "path": "templates/ntp_master/install.sh.tmpl",
     "service": "ntp_master",
     "fileName": "install.sh.tmpl",
@@ -678,6 +644,88 @@
     ],
     "isCluster": false,
     "snippet": "#!/bin/bash\r\n# ============================================================\r\n# 服务器初始化脚本\r\n# 节点: {{.Instance.NodeName}}\r\n# IP: {{.Instance.Node.IP}}\r\n# Hostname: {{.Instance.Node.Hostname}}\r\n# 兼容系统: CentOS 7/8/9, 麒麟, 统信UOS等RedHat系列\r\n# ============================================================\r\n\r\nset -o pipefail\r\n\r\n# ============================================================\r\n# 全局变量\r\n# ============================================================\r\nSCRIPT_NAME=\"server_init\"\r\nLOG_FILE=\"/var/log/server_init.log\"\r\nMARKER_FILE=\"/etc/.server_init_done\"\r\n\r\n# 颜色输出\r\nRED='\\033[0;31m'\r\nGREEN='\\033[0;32m'\r\nYELLOW='\\033[1;33m'\r\nNC='\\033[0m' # No Color\r\n\r\n# ============================================================\r\n# 权限辅助函数\r\n# ============================================================\r\nrun_as_root() {\r\n    if [ \"$(id -u)\" -ne 0 ]; then\r\n        sudo \"$@\"\r\n    else\r\n        \"$@\"\r\n    fi\r\n}\r\n\r\n# ============================================================\r\n# 工具函数\r\n# ============================================================\r\n\r\nlog() {"
+  },
+  {
+    "path": "templates/spark3/check.sh.tmpl",
+    "service": "spark3",
+    "fileName": "check.sh.tmpl",
+    "kind": "shell_script",
+    "tags": [
+      "check",
+      "shell"
+    ],
+    "isCluster": false,
+    "snippet": "#!/bin/bash\n# ============================================================\n# Spark3 健康检查脚本\n# 服务：spark3\n# 角色：{{ .Instance.Vars.role }}\n# ============================================================\n\nset -e\n\n# ==================== 变量定义 ====================\nSPARK_ROLE=\"{{ .Instance.Vars.role }}\"\nMASTER_HOST=\"{{ .Instance.Vars.spark_master_addr }}\"\nMASTER_PORT=\"{{ .Instance.Vars.master_port }}\"\nMASTER_WEBUI_PORT=\"{{ .Instance.Vars.master_webui_port }}\"\nSPARK_HOME=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\n\n# ==================== 日志函数 ====================\nlog_info() {\n    echo \"[INFO] $1\"\n}\n\nlog_error() {\n    echo \"[ERROR] $1\"\n}\n\nlog_success() {\n    echo \"[SUCCESS] $1\"\n}\n\n# ==================== 主流程 ====================\nmain() {\n    log_info \"检查 Spark3 健康状态...\"\n    \n    # 1. 检查进程\n    if jps | grep -q \"{{ if eq .Instance.Vars.role \"master\" }}Master{{ else }}Worker{{ end }}\"; then\n        log_success \"进程检查通过\"\n    else\n        log_error \"进程未运行\"\n        exit 1\n    fi"
+  },
+  {
+    "path": "templates/spark3/install.sh.tmpl",
+    "service": "spark3",
+    "fileName": "install.sh.tmpl",
+    "kind": "shell_script",
+    "tags": [
+      "install",
+      "shell"
+    ],
+    "isCluster": false,
+    "snippet": "#!/bin/bash\n# ============================================================\n# Spark3 安装脚本（含 HDFS 初始化）\n# 服务：spark3\n# 版本：{{ .Instance.Vars.version }}\n# 节点：{{ .Instance.Node.NodeName }} ({{ .Instance.Node.IP }})\n# 角色：{{ .Instance.Vars.role }}\n# ============================================================\n\nset -e\n\n# ==================== 颜色定义 ====================\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m'\n\n# ==================== 变量定义 ====================\nSPARK_VERSION=\"{{ .Instance.Vars.version }}\"\nHADOOP_VERSION=\"{{ .Instance.Vars.hadoop_version }}\"\nSPARK_INSTALL_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nSPARK_PACKAGE=\"{{ .Global.software_dir }}/{{ .Instance.Vars.package_subdir }}/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz\"\nSPARK_CONF_DIR=\"${SPARK_INSTALL_DIR}/conf\"\nSYSTEM_USER=\"{{ .Global.user }}\"\nSYSTEM_GROUP=\"{{ .Global.group }}\"\nJAVA_HOME=\"{{ .Global.java_home }}\"\n\n# HDFS 相关\nHDFS_SPARK_LOGS=\"/sparklogs\"\nHDFS_SPARK_JARS=\"/spark3jars\"\nSPARK_JARS_DIR=\"${SPARK_INSTALL_DIR}/jars\"\n\n# 单节点执行标识（仅 master 节点执行 HDFS 初始化）\nHDFS_INIT_NODE=\"{{ .Instance.Vars.hdfs_init_node }}\"\nCURRENT_NODE=\"{{ .Instance.Node.Hostname }}\"\n\n# ==================== 权限辅助函数 ====================\nrun_as_root() {\n    if [ \"$(id -u)\" -ne 0 ]; then\n        sudo \"$@\""
+  },
+  {
+    "path": "templates/spark3/setup_hdfs.sh.tmpl",
+    "service": "spark3",
+    "fileName": "setup_hdfs.sh.tmpl",
+    "kind": "shell_script",
+    "tags": [
+      "setup",
+      "shell"
+    ],
+    "isCluster": false,
+    "snippet": "#!/bin/bash\n# ============================================================\n# Spark3 HDFS 目录初始化脚本\n# 服务：spark3\n# 说明：仅在单台机器上执行一次，创建 HDFS 目录并上传 jars\n# ============================================================\n\nset -e\n\n# ==================== 颜色定义 ====================\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m'\n\n# ==================== 变量定义 ====================\nSPARK_VERSION=\"{{ .Instance.Vars.version }}\"\nSPARK_INSTALL_DIR=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nSPARK_JARS_DIR=\"${SPARK_INSTALL_DIR}/jars\"\nHDFS_SPARK_LOGS=\"/sparklogs\"\nHDFS_SPARK_JARS=\"/spark3jars\"\n\n# ==================== 日志函数 ====================\nlog_info() {\n    echo -e \"${GREEN}[INFO]${NC} $1\"\n}\n\nlog_warn() {\n    echo -e \"${YELLOW}[WARN]${NC} $1\"\n}\n\nlog_error() {\n    echo -e \"${RED}[ERROR]${NC} $1\"\n}\n\nlog_success() {\n    echo -e \"${GREEN}[SUCCESS]${NC} $1\"\n}\n\n# ==================== 主流程 ===================="
+  },
+  {
+    "path": "templates/spark3/slaves.tmpl",
+    "service": "spark3",
+    "fileName": "slaves.tmpl",
+    "kind": "config_file",
+    "tags": [
+      "cluster",
+      "config"
+    ],
+    "isCluster": true,
+    "snippet": "# =============================================================================\n# Spark Slaves Configuration\n# 服务：spark3\n# 说明：列出所有 Worker 节点主机名\n# =============================================================================\n{{- $workerNodes := serviceNodes \"spark3/worker\" }}\n{{- range $workerNodes }}\n{{ .Hostname }}\n{{- end }}"
+  },
+  {
+    "path": "templates/spark3/spark-defaults.conf.tmpl",
+    "service": "spark3",
+    "fileName": "spark-defaults.conf.tmpl",
+    "kind": "config_file",
+    "tags": [
+      "config"
+    ],
+    "isCluster": false,
+    "snippet": "# =============================================================================\n# Spark Defaults Configuration\n# 服务：spark3\n# 版本：{{ .Instance.Vars.version }}\n# =============================================================================\n\n# -----------------------------------------------------------------------------\n# Master 地址\n# -----------------------------------------------------------------------------\nspark.master                                spark://{{ .Instance.Vars.spark_master_addr }}:{{ .Instance.Vars.master_port }}\n\n# -----------------------------------------------------------------------------\n# 事件日志配置\n# -----------------------------------------------------------------------------\nspark.eventLog.enabled                      true\nspark.eventLog.dir                          {{ .Instance.Vars.spark_eventlog_dir }}\nspark.history.fs.logDirectory               {{ .Instance.Vars.spark_eventlog_dir }}\n\n# -----------------------------------------------------------------------------\n# YARN 配置（如使用 YARN 模式）\n# -----------------------------------------------------------------------------\n{{- if .Instance.Vars.spark_yarn_jars }}\nspark.yarn.jars                             {{ .Instance.Vars.spark_yarn_jars }}\n{{- end }}\n\n# -----------------------------------------------------------------------------\n# 序列化配置\n# -----------------------------------------------------------------------------\nspark.serializer                            org.apache.spark.serializer.KryoSerializer\n\n# -----------------------------------------------------------------------------\n# 内存配置\n# -----------------------------------------------------------------------------\nspark.driver.memory                         {{ .Instance.Vars.driver_memory }}\nspark.executor.memory                       {{ .Instance.Va\n# ...truncated..."
+  },
+  {
+    "path": "templates/spark3/spark-env.sh.tmpl",
+    "service": "spark3",
+    "fileName": "spark-env.sh.tmpl",
+    "kind": "shell_script",
+    "tags": [
+      "shell"
+    ],
+    "isCluster": false,
+    "snippet": "#!/bin/bash\n# =============================================================================\n# Spark Environment Configuration\n# 服务：spark3\n# 节点：{{ .Instance.Node.Hostname }}\n# 角色：{{ .Instance.Vars.role }}\n# =============================================================================\n\n# -----------------------------------------------------------------------------\n# Java 环境\n# -----------------------------------------------------------------------------\nexport JAVA_HOME=\"{{ .Global.java_home }}\"\n\n# -----------------------------------------------------------------------------\n# Scala 环境（如已安装）\n# -----------------------------------------------------------------------------\n{{- if .Instance.Vars.scala_home }}\nexport SCALA_HOME=\"{{ .Instance.Vars.scala_home }}\"\n{{- end }}\n\n# -----------------------------------------------------------------------------\n# Hadoop 环境\n# -----------------------------------------------------------------------------\n{{- if .Instance.Vars.hadoop_home }}\nexport HADOOP_HOME=\"{{ .Instance.Vars.hadoop_home }}\"\n{{- end }}\n{{- if .Instance.Vars.hadoop_conf_dir }}\nexport HADOOP_CONF_DIR=\"{{ .Instance.Vars.hadoop_conf_dir }}\"\n{{- end }}\n\n# -----------------------------------------------------------------------------\n# Spark 基础配置\n# -----------------------------------------------------------------------------\nexport SPARK_HOME=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nexport SPARK_CONF_DIR=\"${SPARK_HOME}/conf\"\n\n# -----------------------------------------------------------------------------\n# Master/Worker 角色配置\n# -----------------------------------------------------------------------------\n{{- if eq .Instance.Vars.role \"master\" }}"
+  },
+  {
+    "path": "templates/spark3/stop.sh.tmpl",
+    "service": "spark3",
+    "fileName": "stop.sh.tmpl",
+    "kind": "shell_script",
+    "tags": [
+      "shell",
+      "stop"
+    ],
+    "isCluster": false,
+    "snippet": "#!/bin/bash\n# ============================================================\n# Spark3 停止脚本\n# 服务：spark3\n# 角色：{{ .Instance.Vars.role }}\n# ============================================================\n\nset -e\n\n# ==================== 变量定义 ====================\nSPARK_HOME=\"{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}\"\nSPARK_ROLE=\"{{ .Instance.Vars.role }}\"\n\n# ==================== 日志函数 ====================\nlog_info() {\n    echo \"[INFO] $1\"\n}\n\nlog_success() {\n    echo \"[SUCCESS] $1\"\n}\n\n# ==================== 主流程 ====================\nmain() {\n    log_info \"停止 Spark3 ${SPARK_ROLE}...\"\n    \n    case \"${SPARK_ROLE}\" in\n        master)\n            ${SPARK_HOME}/sbin/stop-master.sh\n            ;;\n        worker)\n            ${SPARK_HOME}/sbin/stop-worker.sh\n            ;;\n        *)\n            ${SPARK_HOME}/sbin/stop-all.sh\n            ;;\n    esac\n    \n    sleep 2\n    log_success \"Spark {{ .Instance.Vars.role }} 已停止\""
   },
   {
     "path": "templates/ssdb/install.sh.tmpl",

@@ -2,7 +2,7 @@
 # Elasticsearch 服务检查脚本模板
 # 服务：elasticsearch
 # 版本：{{ .Instance.Vars.version }}
-# 节点：{{ .Instance.Node.NameNode }}
+# 节点：{{ .Instance.Node.Hostname }}
 # =============================================================================
 # 用途：检查 elasticsearch 服务运行状态、端口、进程、集群健康等
 # 执行用户：{{ .Global.user }}（部分检查需要 root 权限）
@@ -23,6 +23,7 @@ ES_TRANSPORT_PORT="{{ .Instance.Vars.transport_port }}"
 ES_CLUSTER_NAME="{{ .Instance.Vars.cluster_name }}"
 ES_USER="{{ .Global.user }}"
 ES_GROUP="{{ .Global.group }}"
+ES_NODE_NAME="{{ .Instance.Node.Hostname }}"
 
 # 健康检查参数
 ES_HEALTH_TIMEOUT="${ES_HEALTH_TIMEOUT:-30}"
@@ -256,7 +257,7 @@ main() {
     
     echo "========================================"
     echo "Elasticsearch 服务检查"
-    echo "节点：{{ .Instance.Name }}"
+    echo "节点：${ES_NODE_NAME}"
     echo "版本：${ES_VERSION}"
     echo "检查类型：${check_type}"
     echo "========================================"

@@ -1,0 +1,91 @@
+#!/bin/bash
+# ============================================================
+# Spark3 HDFS 目录初始化脚本
+# 服务：spark3
+# 说明：仅在单台机器上执行一次，创建 HDFS 目录并上传 jars
+# ============================================================
+
+set -e
+
+# ==================== 颜色定义 ====================
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# ==================== 变量定义 ====================
+SPARK_VERSION="{{ .Instance.Vars.version }}"
+SPARK_INSTALL_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
+SPARK_JARS_DIR="${SPARK_INSTALL_DIR}/jars"
+HDFS_SPARK_LOGS="/sparklogs"
+HDFS_SPARK_JARS="/spark3jars"
+
+# ==================== 日志函数 ====================
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+# ==================== 主流程 ====================
+main() {
+    log_info "开始初始化 Spark3 HDFS 目录..."
+    
+    # 1. 检查 HDFS 命令是否可用
+    if ! command -v hdfs &> /dev/null; then
+        log_error "hdfs 命令不可用，请确保 Hadoop 已正确安装"
+        exit 1
+    fi
+    
+    # 2. 创建 HDFS 日志目录（幂等）
+    log_info "创建 HDFS 目录：${HDFS_SPARK_LOGS}"
+    if hdfs dfs -test -d "${HDFS_SPARK_LOGS}"; then
+        log_warn "目录已存在：${HDFS_SPARK_LOGS}"
+    else
+        hdfs dfs -mkdir -p "${HDFS_SPARK_LOGS}"
+        log_success "已创建：${HDFS_SPARK_LOGS}"
+    fi
+    
+    # 3. 创建 HDFS Jars 目录（幂等）
+    log_info "创建 HDFS 目录：${HDFS_SPARK_JARS}"
+    if hdfs dfs -test -d "${HDFS_SPARK_JARS}"; then
+        log_warn "目录已存在：${HDFS_SPARK_JARS}"
+    else
+        hdfs dfs -mkdir -p "${HDFS_SPARK_JARS}"
+        log_success "已创建：${HDFS_SPARK_JARS}"
+    fi
+    
+    # 4. 上传 Spark Jars 到 HDFS（幂等：先检查是否存在）
+    log_info "检查并上传 Spark Jars 到 HDFS..."
+    if [ -d "${SPARK_JARS_DIR}" ]; then
+        # 检查 HDFS 上是否已有 jars
+        if hdfs dfs -test -d "${HDFS_SPARK_JARS}/spark-${SPARK_VERSION}"; then
+            log_warn "HDFS 上已存在 Spark Jars，跳过上传"
+        else
+            log_info "上传 Jars 到 HDFS：${HDFS_SPARK_JARS}/spark-${SPARK_VERSION}"
+            hdfs dfs -put "${SPARK_JARS_DIR}" "${HDFS_SPARK_JARS}/spark-${SPARK_VERSION}"
+            log_success "Jars 上传完成"
+        fi
+    else
+        log_warn "本地 Jars 目录不存在：${SPARK_JARS_DIR}"
+    fi
+    
+    # 5. 设置 HDFS 权限
+    log_info "设置 HDFS 目录权限..."
+    hdfs dfs -chmod 755 "${HDFS_SPARK_LOGS}"
+    hdfs dfs -chmod 755 "${HDFS_SPARK_JARS}"
+    
+    log_success "Spark3 HDFS 目录初始化完成！"
+}
+
+main "$@"

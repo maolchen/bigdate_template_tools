@@ -1,5 +1,4 @@
-图片改写规则：
-- 图片只用于识别文字截图、脚本截图、配置截图、文档拍照。
-- 先提取可见文字，再按本项目规则改写成模板草稿。
-- 对识别不清、被裁切、被遮挡、低分辨率、含糊字段，必须写入 warnings。
-- 图片来源的草稿要保守处理，宁可提示人工补齐，也不要伪造细节。
+﻿当包含图片输入时 (when image input exists)：
+- 先提取可见文字 (extract visible text first)
+- 再转换成模板草稿结构 (rewrite into template draft format)
+- OCR 不确定性、截断风险写入 `warnings`

@@ -1,1 +1,148 @@
-# 目录初始化脚本草稿 - 待生成
+#!/bin/bash
+# =============================================================================
+# Elasticsearch 目录初始化脚本模板
+# 服务：elasticsearch
+# 版本：{{ .Instance.Vars.version }}
+# 节点：{{ .Instance.Node.Hostname }}
+# =============================================================================
+# 用途：创建 Elasticsearch 所需的目录结构，设置权限
+# 执行用户：{{ .Global.user }}（部分操作需要 root 权限）
+# =============================================================================
+
+set -e
+
+# -----------------------------------------------------------------------------
+# 变量定义
+# -----------------------------------------------------------------------------
+ES_VERSION="{{ .Instance.Vars.version }}"
+ES_INSTALL_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
+ES_DATA_DIR="{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}"
+ES_LOG_DIR="{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}"
+ES_CONF_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config"
+ES_USER="{{ .Global.user }}"
+ES_GROUP="{{ .Global.group }}"
+
+# -----------------------------------------------------------------------------
+# 日志函数
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $*"
+}
+
+log_warn() {
+    echo "[WARN] $(date '+%Y-%m-%d %H:%M:%S') - $*"
+}
+
+log_error() {
+    echo "[ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $*" >&2
+}
+
+log_success() {
+    echo "[SUCCESS] $(date '+%Y-%m-%d %H:%M:%S') - $*"
+}
+
+# -----------------------------------------------------------------------------
+# Root 权限包装函数
+# -----------------------------------------------------------------------------
+run_as_root() {
+    if [ "$(whoami)" != "root" ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# 创建目录结构（幂等）
+# -----------------------------------------------------------------------------
+setup_directories() {
+    log_info "创建 Elasticsearch 目录结构..."
+    log_info "节点：{{ .Instance.Node.Hostname }}"
+    
+    # 创建安装目录
+    mkdir -p "${ES_INSTALL_DIR}"
+    log_info "创建安装目录：${ES_INSTALL_DIR}"
+    
+    # 创建数据目录
+    mkdir -p "${ES_DATA_DIR}"
+    log_info "创建数据目录：${ES_DATA_DIR}"
+    
+    # 创建日志目录
+    mkdir -p "${ES_LOG_DIR}"
+    log_info "创建日志目录：${ES_LOG_DIR}"
+    
+    # 创建配置目录
+    mkdir -p "${ES_CONF_DIR}"
+    log_info "创建配置目录：${ES_CONF_DIR}"
+    
+    # 创建备份目录
+    local backup_dir="{{ .Global.data_base_dir }}/{{ .Instance.Vars.backup_subdir }}"
+    mkdir -p "${backup_dir}"
+    log_info "创建备份目录：${backup_dir}"
+    
+    log_success "目录创建完成"
+}
+
+# -----------------------------------------------------------------------------
+# 设置目录权限
+# -----------------------------------------------------------------------------
+set_permissions() {
+    log_info "设置目录权限..."
+    
+    # 设置所有者
+    run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_INSTALL_DIR}"
+    run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_DATA_DIR}"
+    run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_LOG_DIR}"
+    run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_CONF_DIR}"
+    
+    # 设置目录权限
+    run_as_root chmod 750 "${ES_INSTALL_DIR}"
+    run_as_root chmod 750 "${ES_DATA_DIR}"
+    run_as_root chmod 750 "${ES_LOG_DIR}"
+    run_as_root chmod 750 "${ES_CONF_DIR}"
+    
+    log_success "权限设置完成"
+}
+
+# -----------------------------------------------------------------------------
+# 验证目录
+# -----------------------------------------------------------------------------
+verify_directories() {
+    log_info "验证目录结构..."
+    
+    local verify_ok=1
+    
+    for dir in "${ES_INSTALL_DIR}" "${ES_DATA_DIR}" "${ES_LOG_DIR}" "${ES_CONF_DIR}"; do
+        if [ -d "$dir" ]; then
+            log_success "目录存在：$dir"
+        else
+            log_error "目录不存在：$dir"
+            verify_ok=0
+        fi
+    done
+    
+    if [ $verify_ok -eq 1 ]; then
+        log_success "目录验证通过"
+        return 0
+    else
+        log_error "目录验证失败"
+        return 1
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# 主流程
+# -----------------------------------------------------------------------------
+main() {
+    log_info "========== Elasticsearch 目录初始化开始 =========="
+    log_info "版本：${ES_VERSION}"
+    log_info "节点：{{ .Instance.Node.Hostname }}"
+    
+    setup_directories
+    set_permissions
+    verify_directories
+    
+    log_success "========== Elasticsearch 目录初始化完成 =========="
+}
+
+main "$@"

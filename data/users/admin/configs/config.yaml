@@ -7,6 +7,8 @@ global:
     pkg_pro_dir: /data/20251027-yuwq-cdtest
     software_dir: /data/softwares
     temp_dir: /data/tmp_install_dir
+    test: test
+    test2: test2
     timezone: Asia/Shanghai
     user: appuser
 nodes:
@@ -174,9 +176,17 @@ serviceTop:
             - dw-worker2
             - dw-worker3
         id_auto_derive: false
+    spark3:
+        nodes:
+            - '*'
+        id_auto_derive: false
     ssdb:
         nodes:
             - etl-ssdb
+        id_auto_derive: false
+    test:
+        nodes:
+            - dw-master1
         id_auto_derive: false
     zookeeper:
         nodes:
@@ -536,6 +546,40 @@ serverConfig:
             memory: 4g
             version: 3.5.0
             webui_port: 8081
+    spark3:
+        type: ""
+        description: Spark3 分布式计算框架
+        id_field: ""
+        id_format: ""
+        vars:
+            adaptive_execution: "true"
+            driver_memory: 2g
+            dynamic_allocation: "false"
+            event_log_subdir: spark/eventlog
+            executor_cores: "2"
+            executor_memory: 4g
+            hadoop_conf_dir: '{{ .Global.install_base_dir }}/hadoop3/etc/hadoop'
+            hadoop_home: '{{ .Global.install_base_dir }}/hadoop3'
+            hadoop_version: 3.3.6
+            hdfs_init_node: dw-master1
+            install_subdir: spark
+            log_subdir: spark/logs
+            master_port: "7077"
+            master_webui_port: "8080"
+            max_executors: "10"
+            min_executors: "1"
+            package_subdir: spark-3.3.1-bin-hadoop3.3
+            role: '{{ .Instance.ServiceName | split "/" | last }}'
+            scala_home: ""
+            shuffle_partitions: "200"
+            spark_eventlog_dir: hdfs://{{ .Instance.Node.Hostname }}:9000/sparklogs
+            spark_master_addr: '{{ .Instance.Node.Hostname }}'
+            spark_yarn_jars: hdfs://{{ .Instance.Node.Hostname }}:9000/spark3jars/spark-3.3.1/jars/*
+            version: 3.3.1
+            worker_cores: "4"
+            worker_memory: 8g
+            worker_port: "7078"
+            worker_webui_port: "8081"
     ssdb:
         type: ""
         description: SSDB高性能存储（编译安装，多实例）

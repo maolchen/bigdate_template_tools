@@ -1,62 +1,48 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { FileCode, Copy, Check, AlertCircle, AlertTriangle } from 'lucide-react';
 import type { AppConfig } from '../api/config';
 
 interface PreviewPageProps {
   config: AppConfig;
+  hidePageTitle?: boolean;
 }
 
-// 辅助函数：将任意值转换为 YAML 格式的字符串
 function yamlValueToString(value: any, indent: number = 0): string {
   const prefix = '  '.repeat(indent);
 
   if (value === null || value === undefined) {
     return 'null';
-  } else if (typeof value === 'string') {
-    // 如果字符串包含特殊字符，使用引号
+  }
+  if (typeof value === 'string') {
     if (/[:{}\[\],\n\r\t]/.test(value)) {
       return `"${value.replace(/"/g, '\\"')}"`;
     }
     return value;
-  } else if (typeof value === 'boolean') {
+  }
+  if (typeof value === 'boolean' || typeof value === 'number') {
     return String(value);
-  } else if (typeof value === 'number') {
-    return String(value);
-  } else if (Array.isArray(value)) {
+  }
+  if (Array.isArray(value)) {
     if (value.length === 0) {
       return '[]';
     }
-    // 如果数组元素都是简单类型，用单行格式
-    if (value.every(item =>
-      typeof item === 'string' ||
-      typeof item === 'number' ||
-      typeof item === 'boolean'
-    )) {
-      return `[${value.map(item =>
-        typeof item === 'string' ? `"${item}"` : String(item)
-      ).join(', ')}]`;
+    if (value.every((item) => typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean')) {
+      return `[${value.map((item) => (typeof item === 'string' ? `"${item}"` : String(item))).join(', ')}]`;
     }
-    // 复杂数组用多行格式
-    const items = value.map(item => {
-      const itemStr = yamlValueToString(item, indent + 1);
-      return `${prefix}  - ${itemStr}`;
-    });
+    const items = value.map((item) => `${prefix}  - ${yamlValueToString(item, indent + 1)}`);
     return `\n${items.join('\n')}`;
-  } else if (typeof value === 'object') {
+  }
+  if (typeof value === 'object') {
     const keys = Object.keys(value);
     if (keys.length === 0) {
       return '{}';
     }
-    const entries = keys.map(key => {
+    const entries = keys.map((key) => {
       const valStr = yamlValueToString(value[key], indent + 1);
-      // 如果值是多行格式（包含换行），说明是嵌套对象或数组
-      // valStr已经包含了完整的缩进（从下一行开始）
-      // 所以应该格式为：${prefix}  ${key}:\n${valStr}
       if (valStr.includes('\n')) {
         return `${prefix}  ${key}:\n${valStr}`;
       }
-      // 简单值，放在同一行
       return `${prefix}  ${key}: ${valStr}`;
     });
     return `\n${entries.join('\n')}`;
@@ -65,11 +51,9 @@ function yamlValueToString(value: any, indent: number = 0): string {
   return String(value);
 }
 
-// 简单的 YAML 导出函数
 function configToYaml(config: AppConfig): string {
   const lines: string[] = [];
-  
-  // global
+
   lines.push('# ============================================================');
   lines.push('# 全局配置');
   lines.push('# ============================================================');
@@ -77,8 +61,7 @@ function configToYaml(config: AppConfig): string {
   Object.entries(config.global).forEach(([key, value]) => {
     lines.push(`  ${key}: ${typeof value === 'string' ? `"${value}"` : value}`);
   });
-  
-  // nodes
+
   lines.push('');
   lines.push('# ============================================================');
   lines.push('# 节点配置');
@@ -89,26 +72,23 @@ function configToYaml(config: AppConfig): string {
     lines.push(`    ip: "${node.ip}"`);
     lines.push(`    hostname: "${node.hostname}"`);
   });
-  
-  // serviceTop
+
   lines.push('');
   lines.push('# ============================================================');
   lines.push('# 服务拓扑（部署位置）');
   lines.push('# ============================================================');
   lines.push('serviceTop:');
   Object.entries(config.serviceTop).forEach(([name, service]) => {
-    const nodes = service.nodes || [];
     lines.push(`  ${name}:`);
-    lines.push(`    nodes: [${nodes.join(', ')}]`);
+    lines.push(`    nodes: [${(service.nodes || []).join(', ')}]`);
     if (service.description) {
       lines.push(`    description: "${service.description}"`);
     }
     if (service.id_auto_derive) {
-      lines.push(`    id_auto_derive: true`);
+      lines.push('    id_auto_derive: true');
     }
   });
-  
-  // serverConfig
+
   lines.push('');
   lines.push('# ============================================================');
   lines.push('# 服务配置');
@@ -126,9 +106,7 @@ function configToYaml(config: AppConfig): string {
       lines.push('    vars:');
       Object.entries(cfg.vars).forEach(([k, v]) => {
         const valStr = yamlValueToString(v, 3);
-        // 如果值是多行格式，直接使用，不做后处理
         if (valStr.includes('\n')) {
-          // valStr已经包含了正确的缩进，直接追加即可
           lines.push(`      ${k}:${valStr}`);
         } else {
           lines.push(`      ${k}: ${valStr}`);
@@ -136,63 +114,61 @@ function configToYaml(config: AppConfig): string {
       });
     }
   });
-  
+
   return lines.join('\n');
 }
 
-export function PreviewPage({ config }: PreviewPageProps) {
+export function PreviewPage({ config, hidePageTitle = false }: PreviewPageProps) {
   const [yamlContent, setYamlContent] = useState('');
   const [copied, setCopied] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
-  
+
   useEffect(() => {
     const yaml = configToYaml(config);
     setYamlContent(yaml);
-    
-    // 验证配置
+
     const errors: string[] = [];
     const warnings: string[] = [];
-    
-    // 检查全局配置
+
     if (!config.global.user) errors.push('全局配置：运行用户不能为空');
     if (!config.global.install_base_dir) errors.push('全局配置：安装基础目录不能为空');
     if (!config.global.java_home) errors.push('全局配置：JAVA_HOME 不能为空');
-    
-    // 检查节点
+
     if (Object.keys(config.nodes).length === 0) {
       errors.push('节点配置：至少需要一个节点');
     }
-    
+
     Object.entries(config.nodes).forEach(([name, node]) => {
       if (!node.ip) errors.push(`节点 ${name}：IP 地址不能为空`);
       if (!node.hostname) errors.push(`节点 ${name}：主机名不能为空`);
     });
-    
-    // 检查服务拓扑中的节点引用
+
     const allNodeNames = Object.keys(config.nodes);
     Object.entries(config.serviceTop).forEach(([serviceName, service]) => {
-      const nodes = service.nodes || [];
-      nodes.forEach(node => {
+      (service.nodes || []).forEach((node) => {
         if (node !== '*' && !allNodeNames.includes(node)) {
           errors.push(`服务拓扑 ${serviceName}：引用了不存在的节点 "${node}"`);
         }
       });
     });
-    
-    // 警告
+
     if (Object.keys(config.serviceTop).length === 0) {
       warnings.push('服务拓扑：没有配置任何服务');
     }
-    
     if (Object.keys(config.serverConfig).length === 0) {
       warnings.push('服务配置：没有配置任何服务参数');
     }
-    
+
     setValidationErrors(errors);
     setValidationWarnings(warnings);
   }, [config]);
-  
+
+  const editorHeight = useMemo(() => {
+    const lineCount = Math.max(1, yamlContent.split('\n').length);
+    return Math.max(320, lineCount * 22 + 36);
+  }, [yamlContent]);
+
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(yamlContent);
@@ -202,14 +178,16 @@ export function PreviewPage({ config }: PreviewPageProps) {
       console.error('Failed to copy:', err);
     }
   };
-  
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800">YAML 预览</h2>
-          <p className="text-gray-500 mt-1">预览生成的 config.yaml 配置文件内容</p>
-        </div>
+        {!hidePageTitle && (
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">YAML 预览</h2>
+            <p className="text-gray-500 mt-1">预览生成的 config.yaml 配置文件内容</p>
+          </div>
+        )}
         <button className="btn btn-primary" onClick={handleCopy}>
           {copied ? (
             <>
@@ -224,8 +202,7 @@ export function PreviewPage({ config }: PreviewPageProps) {
           )}
         </button>
       </div>
-      
-      {/* 验证结果 */}
+
       {(validationErrors.length > 0 || validationWarnings.length > 0) && (
         <div className="mb-6 space-y-3">
           {validationErrors.length > 0 && (
@@ -248,7 +225,7 @@ export function PreviewPage({ config }: PreviewPageProps) {
               </div>
             </div>
           )}
-          
+
           {validationWarnings.length > 0 && (
             <div className="card" style={{ borderColor: 'var(--warning)', borderWidth: '1px' }}>
               <div className="card-header" style={{ background: 'rgba(245,158,11,0.05)' }}>
@@ -271,7 +248,7 @@ export function PreviewPage({ config }: PreviewPageProps) {
           )}
         </div>
       )}
-      
+
       {validationErrors.length === 0 && validationWarnings.length === 0 && (
         <div className="card mb-6" style={{ borderColor: 'var(--success)', borderWidth: '1px' }}>
           <div className="card-body">
@@ -282,8 +259,7 @@ export function PreviewPage({ config }: PreviewPageProps) {
           </div>
         </div>
       )}
-      
-      {/* 编辑器 */}
+
       <div className="card">
         <div className="card-header">
           <div className="flex items-center gap-2">
@@ -294,7 +270,7 @@ export function PreviewPage({ config }: PreviewPageProps) {
             {yamlContent.split('\n').length} 行 · {yamlContent.length} 字符
           </span>
         </div>
-        <div className="editor-container" style={{ height: '600px' }}>
+        <div className="editor-container preview-editor-auto" style={{ height: `${editorHeight}px` }}>
           <Editor
             height="100%"
             defaultLanguage="yaml"
@@ -306,7 +282,11 @@ export function PreviewPage({ config }: PreviewPageProps) {
               lineNumbers: 'on',
               scrollBeyondLastLine: false,
               wordWrap: 'on',
-              theme: 'vs'
+              theme: 'vs',
+              automaticLayout: true,
+              scrollbar: {
+                alwaysConsumeMouseWheel: false,
+              },
             }}
           />
         </div>

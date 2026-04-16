@@ -3,9 +3,10 @@
     {
       "id": "config",
       "fileName": "config.yaml",
+      "kind": "main",
       "remark": "",
-      "nodeSummary": "14节点/23服务",
-      "updatedAt": "2026-04-13T14:10:10+08:00",
+      "nodeSummary": "14 nodes / 25 services",
+      "updatedAt": "2026-04-15T14:13:36+08:00",
       "isActive": true
     }
   ]

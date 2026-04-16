@@ -1,0 +1,43 @@
+#!/bin/bash
+# ============================================================
+# Spark3 停止脚本
+# 服务：spark3
+# 角色：{{ .Instance.Vars.role }}
+# ============================================================
+
+set -e
+
+# ==================== 变量定义 ====================
+SPARK_HOME="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
+SPARK_ROLE="{{ .Instance.Vars.role }}"
+
+# ==================== 日志函数 ====================
+log_info() {
+    echo "[INFO] $1"
+}
+
+log_success() {
+    echo "[SUCCESS] $1"
+}
+
+# ==================== 主流程 ====================
+main() {
+    log_info "停止 Spark3 ${SPARK_ROLE}..."
+    
+    case "${SPARK_ROLE}" in
+        master)
+            ${SPARK_HOME}/sbin/stop-master.sh
+            ;;
+        worker)
+            ${SPARK_HOME}/sbin/stop-worker.sh
+            ;;
+        *)
+            ${SPARK_HOME}/sbin/stop-all.sh
+            ;;
+    esac
+    
+    sleep 2
+    log_success "Spark {{ .Instance.Vars.role }} 已停止"
+}
+
+main "$@"

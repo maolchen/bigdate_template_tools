@@ -152,7 +152,11 @@ function formatGeneratedAt(value: string | null): string | null {
   }).format(date);
 }
 
-export function GeneratePage() {
+interface GeneratePageProps {
+  hidePageTitle?: boolean;
+}
+
+export function GeneratePage({ hidePageTitle = false }: GeneratePageProps) {
   const [generating, setGenerating] = useState(false);
   const [cacheState, setCacheState] = useState<PersistedGenerateState>(() => readPersistedGenerateState());
   const [error, setError] = useState<string | null>(null);
@@ -231,7 +235,7 @@ export function GeneratePage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <div>
+        {!hidePageTitle && <div>
           <h2 className="text-2xl font-bold text-gray-800">生成配置</h2>
           <p className="text-gray-500 mt-1">根据 config.yaml 配置生成部署脚本</p>
           {formattedGeneratedAt && (
@@ -239,7 +243,7 @@ export function GeneratePage() {
               已保留最近一次生成结果 · {formattedGeneratedAt}
             </p>
           )}
-        </div>
+        </div>}
         <div className="flex gap-2">
           <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
             {generating ? (
@@ -372,7 +376,7 @@ export function GeneratePage() {
             <span className="text-sm text-gray-500">output/</span>
           </div>
           <div className="card-body p-0">
-            <div className="max-h-96 overflow-y-auto">
+            <div>
               {Object.entries(output.files).map(([ip, files]) => (
                 <div key={ip} className="border-b last:border-b-0">
                   <button

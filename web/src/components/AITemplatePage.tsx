@@ -1,10 +1,12 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import {
+  ArrowUp,
   Bot,
   Check,
   CopyPlus,
   Cpu,
+  ChevronsUp,
   FileText,
   FolderPlus,
   History,
@@ -19,9 +21,12 @@ import {
   Sparkles,
   Trash2,
   Upload,
-  Wand2,
   X,
+  XCircle,
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { createPortal } from 'react-dom';
 import {
   createAISession,
   deleteAISession,
@@ -41,6 +46,8 @@ import {
   testAISettings,
   updateAISessionMeta,
   uploadAISessionAttachment,
+  type AIConfigIssue,
+  type AIConfigNextAction,
   type AIDraftFile,
   type AIExampleCatalogItem,
   type AIProviderModel,
@@ -118,6 +125,110 @@ function appendUniqueStatus(lines: string[] | undefined, next: string): string[]
   const current = Array.isArray(lines) ? lines : [];
   if (current[current.length - 1] === text) return current;
   return [...current, text];
+}
+
+function getIssueSeverityRank(severity: string): number {
+  if (severity === 'error') return 0;
+  if (severity === 'warning') return 1;
+  return 2;
+}
+
+function buildConfigSyncFailureMessage(
+  issues: AIConfigIssue[],
+  nextActions: AIConfigNextAction[],
+  backendMessage?: string,
+): string {
+  const normalizedIssues = Array.isArray(issues) ? issues : [];
+  const normalizedActions = Array.isArray(nextActions) ? nextActions : [];
+  if (normalizedIssues.length === 0 && normalizedActions.length === 0) {
+    return backendMessage || '模板已保存，但配置同步未执行。请检查服务拓扑和服务配置后重试。';
+  }
+
+  const errorCount = normalizedIssues.filter((issue) => issue.severity === 'error').length;
+  const warningCount = normalizedIssues.filter((issue) => issue.severity === 'warning').length;
+  const infoCount = normalizedIssues.filter((issue) => issue.severity === 'info').length;
+  const serviceNames = [...new Set(normalizedIssues.map((issue) => issue.service).filter((name) => name && name.trim() !== ''))];
+
+  const actionLines = (normalizedActions.length > 0
+    ? normalizedActions
+    : normalizedIssues.map((issue) => {
+      const serviceName = issue.service?.trim() || '当前服务';
+      if (issue.field === 'serviceTop') {
+        return {
+          severity: issue.severity,
+          service: issue.service,
+          field: issue.field,
+          action: '补齐 serviceTop 节点拓扑',
+          detail: `服务 ${serviceName} 缺少 serviceTop，请先让 AI 生成 nodes、description、id_auto_derive。`,
+        };
+      }
+      if (issue.field === 'serverConfig') {
+        return {
+          severity: issue.severity,
+          service: issue.service,
+          field: issue.field,
+          action: '确认 serverConfig 骨架',
+          detail: `服务 ${serviceName} 将创建 serverConfig 骨架，建议到“配置管理 > 服务配置”补齐 vars。`,
+        };
+      }
+      if (issue.field.startsWith('vars.')) {
+        const varName = issue.field.slice('vars.'.length) || '变量';
+        return {
+          severity: issue.severity,
+          service: issue.service,
+          field: issue.field,
+          action: '补齐 vars 变量值',
+          detail: `服务 ${serviceName} 的变量 ${varName} 需要补值。`,
+        };
+      }
+      return {
+        severity: issue.severity,
+        service: issue.service,
+        field: issue.field,
+        action: issue.severity === 'error' ? '处理阻塞项' : '确认配置建议',
+        detail: issue.message || '请根据当前提示修正后重试。',
+      };
+    }))
+    .sort((a, b) => getIssueSeverityRank(a.severity) - getIssueSeverityRank(b.severity))
+    .map((action, index) => `${index + 1}) [${action.service || '当前服务'}] ${action.action}：${action.detail}`);
+
+  const parts: string[] = [];
+  parts.push(`配置同步未执行：阻塞 ${errorCount} 项，警告 ${warningCount} 项，提示 ${infoCount} 项。`);
+  if (serviceNames.length > 0) {
+    parts.push(`涉及服务：${serviceNames.join('、')}。`);
+  }
+  parts.push(`处理建议：${actionLines.join('；')}`);
+  if (backendMessage && backendMessage.trim() !== '') {
+    parts.push(`服务端说明：${backendMessage}`);
+  }
+  return parts.join(' ');
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(',')}}`;
+}
+
+function buildDraftSignature(drafts: AIDraftFile[]): string {
+  if (!Array.isArray(drafts) || drafts.length === 0) return '';
+  return drafts
+    .map((draft) => `${draft.path}\n${draft.content}`)
+    .sort()
+    .join('\n---\n');
+}
+
+function buildConfigPatchSignature(patch: { serviceTop?: Record<string, unknown> | null; serverConfig?: Record<string, unknown> | null } | null | undefined): string {
+  if (!patch) return '';
+  return stableStringify({
+    serviceTop: patch.serviceTop ?? {},
+    serverConfig: patch.serverConfig ?? {},
+  });
 }
 
 function mergePromptTrace(base: AIPromptTrace | undefined, incoming: AIPromptTrace | undefined): AIPromptTrace | undefined {
@@ -227,10 +338,112 @@ function createSkillDraftFromItem(skill: AISkillCatalogItem): SkillDraft {
   };
 }
 
+interface SkillMentionState {
+  open: boolean;
+  query: string;
+  start: number;
+  end: number;
+  items: AISkillCatalogItem[];
+}
+
+function resolveSkillMentionState(
+  text: string,
+  cursor: number,
+  catalog: AISkillCatalogItem[],
+  suppressed: boolean,
+): SkillMentionState {
+  if (suppressed || catalog.length === 0) {
+    return { open: false, query: '', start: -1, end: -1, items: [] };
+  }
+
+  const safeCursor = Number.isFinite(cursor) ? Math.max(0, Math.min(cursor, text.length)) : text.length;
+  const prefix = text.slice(0, safeCursor);
+  const hashIndex = prefix.lastIndexOf('#');
+  if (hashIndex < 0) {
+    return { open: false, query: '', start: -1, end: -1, items: [] };
+  }
+
+  const beforeHash = hashIndex > 0 ? prefix[hashIndex - 1] : ' ';
+  if (!/[\s()[\]{}]/.test(beforeHash)) {
+    return { open: false, query: '', start: -1, end: -1, items: [] };
+  }
+
+  const token = prefix.slice(hashIndex + 1);
+  if (token.includes('\n') || token.includes('\r') || token.includes(' ')) {
+    return { open: false, query: '', start: -1, end: -1, items: [] };
+  }
+
+  let normalized = token.trim().toLowerCase();
+  if (normalized.startsWith('skill:')) {
+    normalized = normalized.slice('skill:'.length);
+  }
+
+  const items = catalog
+    .filter((skill) => {
+      if (!normalized) return true;
+      const id = (skill.id || '').toLowerCase();
+      const path = (skill.path || '').toLowerCase();
+      const title = (skill.title || '').toLowerCase();
+      return id.includes(normalized) || path.includes(normalized) || title.includes(normalized);
+    })
+    .slice(0, 8);
+
+  if (items.length === 0) {
+    return { open: false, query: normalized, start: hashIndex, end: safeCursor, items: [] };
+  }
+  return {
+    open: true,
+    query: normalized,
+    start: hashIndex,
+    end: safeCursor,
+    items,
+  };
+}
+
 const AI_CHAT_SPLIT_MIN = 24;
 const AI_CHAT_SPLIT_MAX = 78;
-const AI_CHAT_SCROLL_THRESHOLD = 120;
+const AI_CHAT_SCROLL_THRESHOLD = 260;
 const AI_MODEL_SUGGESTIONS = ['gpt-4.1', 'gpt-4o', 'qwen-max', 'qwen-plus'];
+const AI_FIRST_ROUND_PROMPT_EXAMPLE = `我要新建服务模板：<serviceName>。
+
+按现有项目 skill 规则直接生成草稿，不要重复解释通用规范。请重点根据以下业务信息生成：
+
+1. 部署方式
+- 形态：单机 / 多节点集群
+- 启动方式：systemd / 非 systemd
+- 是否需要开机自启：是/否
+
+2. 安装包与版本
+- 版本：<version>
+- 安装包来源：<package_url 或 software_dir/package_subdir/package_name>
+- 安装包格式：tar.gz / rpm / deb / 其他
+
+3. 路径规划
+- 安装目录：<install_subdir 或绝对路径约束>
+- 数据目录：<data_subdir>
+- 日志目录：<log_subdir>
+- 备份目录（如需要）：<backup_subdir>
+
+4. 配置文件与下发规则
+- 需要生成的配置文件：<例如 xxx.yml, xxx.conf>
+- 安装脚本中需要把“生成后的配置文件”部署到哪些目标路径：<source -> target>
+- 是否需要备份旧配置：是/否（如是，按时间戳备份）
+
+5. 运行与端口
+- 运行用户/组：优先用全局变量（如有特殊要求写明）
+- 关键端口：<port list>
+- 健康检查要求：<进程/端口/http接口/集群状态>
+
+6. 服务特有要求
+- 安全认证：开启/关闭，默认账号密码变量名
+- JVM/内存/副本等关键参数默认值
+- 其他必须满足的交付约束
+
+输出要求：
+- 只返回一个 JSON 对象
+- 生成该服务“实际需要”的模板文件（不要假设固定文件清单）
+- 同时给出最小 configPatch（serviceTop + serverConfig.vars）
+- 若信息不足，只提关键 followUpQuestions`;
 
 function SettingsModal({
   open,
@@ -826,9 +1039,12 @@ function SessionHistoryModal({
 
 interface AITemplatePageProps {
   canSaveTemplate?: boolean;
+  onEditorModeChange?: (editing: boolean) => void;
+  username?: string;
+  activeTemplateId?: string;
 }
 
-export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) {
+export function AITemplatePage({ canSaveTemplate = true, onEditorModeChange, username, activeTemplateId }: AITemplatePageProps) {
   const [settings, setSettings] = useState<AISettings | null>(null);
   const [rules, setRules] = useState('');
   const [session, setSession] = useState<AITemplateSession | null>(null);
@@ -842,7 +1058,6 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
   const [pageError, setPageError] = useState<string | null>(null);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [message, setMessage] = useState('');
-  const [sessionRules, setSessionRules] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedDraftPath, setSelectedDraftPath] = useState<string | null>(null);
   const [editorMode, setEditorMode] = useState(false);
@@ -852,6 +1067,12 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
     const parsed = stored ? Number(stored) : 62;
     return Number.isFinite(parsed) ? Math.min(AI_CHAT_SPLIT_MAX, Math.max(AI_CHAT_SPLIT_MIN, parsed)) : 62;
   });
+  useEffect(() => {
+    onEditorModeChange?.(editorMode);
+    return () => {
+      onEditorModeChange?.(false);
+    };
+  }, [editorMode, onEditorModeChange]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
@@ -870,21 +1091,54 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
   const [uploading, setUploading] = useState(false);
   const [inflightAttachmentIds, setInflightAttachmentIds] = useState<string[]>([]);
   const [composerDragging, setComposerDragging] = useState(false);
+  const [composerCursor, setComposerCursor] = useState(0);
+  const [skillMentionIndex, setSkillMentionIndex] = useState(0);
+  const [skillMentionSuppressed, setSkillMentionSuppressed] = useState(false);
   const [savingDrafts, setSavingDrafts] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [savedDraftSignatures, setSavedDraftSignatures] = useState<Record<string, string>>({});
+  const [savedConfigSignatures, setSavedConfigSignatures] = useState<Record<string, string>>({});
   const latestSessionRef = useRef<AITemplateSession | null>(null);
   const textUploadRef = useRef<HTMLInputElement | null>(null);
   const imageUploadRef = useRef<HTMLInputElement | null>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const messageListEndRef = useRef<HTMLDivElement | null>(null);
+  const chatFeedRef = useRef<HTMLDivElement | null>(null);
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const resizeSessionRef = useRef<{ startX: number; startRatio: number; width: number } | null>(null);
   const sendingGuardRef = useRef(false);
   const shouldAutoScrollRef = useRef(true);
   const previousMessageCountRef = useRef(0);
+  const initialSessionScrolledRef = useRef<string | null>(null);
+
+  const useWindowFeedScroll = false;
+
+  function scrollChatFeedToBottom(behavior: ScrollBehavior = 'auto') {
+    if (useWindowFeedScroll) {
+      window.scrollTo({
+        top: document.documentElement.scrollHeight,
+        behavior,
+      });
+      return;
+    }
+    const feed = chatFeedRef.current;
+    if (!feed) {
+      return;
+    }
+    feed.scrollTo({
+      top: feed.scrollHeight,
+      behavior,
+    });
+  }
 
   useEffect(() => { void bootstrap(); }, []);
   useEffect(() => { latestSessionRef.current = session; }, [session]);
-  useEffect(() => { setSessionRules(session?.sessionRules || ''); }, [session?.id, session?.sessionRules]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
   useEffect(() => {
     if (!session) return;
     if (!selectedDraftPath && session.draftFiles.length > 0) {
@@ -896,32 +1150,68 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
     }
   }, [session, selectedDraftPath]);
   const threadMessages = useMemo(() => [...(session?.messages ?? []), ...optimisticMessages], [session?.messages, optimisticMessages]);
+  const latestMessageSignature = useMemo(() => {
+    const latest = threadMessages[threadMessages.length - 1];
+    if (!latest) return '';
+    return `${latest.id}|${latest.pending ? '1' : '0'}|${latest.content || ''}|${(latest.streamStatus || []).join('\n')}`;
+  }, [threadMessages]);
+  const aiHeaderHost = typeof document !== 'undefined' ? document.getElementById('ai-header-extra') : null;
   useEffect(() => {
+    const feed = chatFeedRef.current;
+    const scrollTarget: Window | HTMLDivElement | null = useWindowFeedScroll ? window : feed;
+    if (!scrollTarget) {
+      shouldAutoScrollRef.current = true;
+      setShowBackToTop(false);
+      return;
+    }
+
     const updateScrollPreference = () => {
-      const scrollRoot = document.scrollingElement ?? document.documentElement;
-      const distanceToBottom = scrollRoot.scrollHeight - scrollRoot.scrollTop - window.innerHeight;
+      if (useWindowFeedScroll) {
+        const top = window.scrollY || document.documentElement.scrollTop || 0;
+        const viewportHeight = window.innerHeight;
+        const scrollHeight = document.documentElement.scrollHeight;
+        const distanceToBottom = scrollHeight - top - viewportHeight;
+        shouldAutoScrollRef.current = distanceToBottom <= AI_CHAT_SCROLL_THRESHOLD;
+        setShowBackToTop(top > 320);
+        return;
+      }
+      if (!feed) return;
+      const distanceToBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
       shouldAutoScrollRef.current = distanceToBottom <= AI_CHAT_SCROLL_THRESHOLD;
+      setShowBackToTop(feed.scrollTop > 320);
     };
 
     updateScrollPreference();
-    window.addEventListener('scroll', updateScrollPreference, { passive: true });
-    return () => window.removeEventListener('scroll', updateScrollPreference);
-  }, [session?.id]);
-  useEffect(() => {
+    scrollTarget.addEventListener('scroll', updateScrollPreference, { passive: true });
+    return () => scrollTarget.removeEventListener('scroll', updateScrollPreference);
+  }, [session?.id, useWindowFeedScroll]);
+  useLayoutEffect(() => {
     const nextMessageCount = threadMessages.length;
     const isNewMessage = nextMessageCount > previousMessageCountRef.current;
     previousMessageCountRef.current = nextMessageCount;
     if (!shouldAutoScrollRef.current && !isNewMessage) {
       return;
     }
+    scrollChatFeedToBottom('auto');
+  }, [threadMessages]);
+  useLayoutEffect(() => {
+    if (!shouldAutoScrollRef.current) return;
+    if (!latestMessageSignature) return;
     window.requestAnimationFrame(() => {
-      const scrollRoot = document.scrollingElement ?? document.documentElement;
-      window.scrollTo({
-        top: scrollRoot.scrollHeight,
-        behavior: isNewMessage ? 'smooth' : 'auto',
+      scrollChatFeedToBottom('auto');
+    });
+  }, [latestMessageSignature]);
+  useLayoutEffect(() => {
+    if (!session?.id) return;
+    if (initialSessionScrolledRef.current === session.id) return;
+    initialSessionScrolledRef.current = session.id;
+    shouldAutoScrollRef.current = true;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        scrollChatFeedToBottom('auto');
       });
     });
-  }, [threadMessages]);
+  }, [session?.id, threadMessages.length]);
   useEffect(() => {
     const handleResize = () => {
       setIsCompactViewport(window.innerWidth <= 1180);
@@ -1058,6 +1348,12 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
   const selectedServiceHasConfigPatch = selectedDraftService
     ? Boolean(session?.configPatch?.serviceTop?.[selectedDraftService] || session?.configPatch?.serverConfig?.[selectedDraftService])
     : false;
+  const currentDraftSignature = useMemo(() => buildDraftSignature(session?.draftFiles ?? []), [session?.draftFiles]);
+  const currentConfigSignature = useMemo(() => buildConfigPatchSignature(session?.configPatch), [session?.configPatch]);
+  const savedDraftSignature = session ? (savedDraftSignatures[session.id] ?? '') : '';
+  const savedConfigSignature = session ? (savedConfigSignatures[session.id] ?? '') : '';
+  const hasTemplateSavePending = (session?.draftFiles.length ?? 0) > 0 && currentDraftSignature !== savedDraftSignature;
+  const hasConfigSavePending = hasAnyConfigPatch && currentConfigSignature !== savedConfigSignature;
   const modelSuggestions = useMemo(() => {
     const merged = new Set<string>();
     AI_MODEL_SUGGESTIONS.forEach((item) => merged.add(item));
@@ -1066,16 +1362,41 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
     if (session?.selectedModel) merged.add(session.selectedModel);
     return [...merged].filter(Boolean);
   }, [availableModels, settings?.model, session?.selectedModel]);
+  function resolveMessageModelLabel(item: AITemplateMessage): string {
+    if (item.model && item.model.trim()) return item.model.trim();
+    if (item.pending) return (selectedModel || session?.selectedModel || settings?.model || 'AI').trim() || 'AI';
+    return '未知模型';
+  }
+  const skillMention = useMemo(
+    () => resolveSkillMentionState(message, composerCursor, skillCatalog, skillMentionSuppressed),
+    [message, composerCursor, skillCatalog, skillMentionSuppressed],
+  );
+  const activeMentionItem = skillMention.open
+    ? skillMention.items[Math.max(0, Math.min(skillMentionIndex, skillMention.items.length - 1))]
+    : null;
 
-  async function refreshSession(currentSessionId?: string) {
+  useEffect(() => {
+    if (!skillMention.open) {
+      setSkillMentionIndex(0);
+      return;
+    }
+    if (skillMentionIndex >= skillMention.items.length) {
+      setSkillMentionIndex(0);
+    }
+  }, [skillMention.open, skillMention.items.length, skillMentionIndex]);
+
+  async function refreshSession(currentSessionId?: string, clearOptimistic = true): Promise<AITemplateSession | null> {
     const targetSessionId = currentSessionId ?? session?.id;
-    if (!targetSessionId) return;
+    if (!targetSessionId) return null;
     const currentSession = await fetchAISession(targetSessionId);
     setSession(currentSession);
     setInflightAttachmentIds([]);
     setSelectedModel((currentSession.selectedModel || settings?.model || '').trim());
-    setOptimisticMessages([]);
+    if (clearOptimistic) {
+      setOptimisticMessages([]);
+    }
     shouldAutoScrollRef.current = true;
+    return currentSession;
   }
 
   async function handleCreateSession() {
@@ -1088,8 +1409,9 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
       setSelectedDraftPath(null);
       setEditorMode(false);
       setMessage('');
-      setSessionRules('');
       setSelectedModel((nextSession.selectedModel || settings?.model || '').trim());
+      setSavedDraftSignatures((previous) => ({ ...previous, [nextSession.id]: '' }));
+      setSavedConfigSignatures((previous) => ({ ...previous, [nextSession.id]: '' }));
       setHistorySessions((previous) => [ {
         id: nextSession.id,
         title: nextSession.title,
@@ -1105,12 +1427,62 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
     }
   }
 
+  function applySkillMention(skill: AISkillCatalogItem) {
+    if (!skillMention.open) return;
+    const replacement = `#skill:${skill.id} `;
+    const nextMessage = `${message.slice(0, skillMention.start)}${replacement}${message.slice(skillMention.end)}`;
+    const nextCursor = skillMention.start + replacement.length;
+    setMessage(nextMessage);
+    setComposerCursor(nextCursor);
+    setSkillMentionSuppressed(false);
+    window.requestAnimationFrame(() => {
+      if (!messageInputRef.current) return;
+      messageInputRef.current.focus();
+      messageInputRef.current.setSelectionRange(nextCursor, nextCursor);
+    });
+  }
+
+  async function handleCopyPromptExample() {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(AI_FIRST_ROUND_PROMPT_EXAMPLE);
+      } else {
+        const temp = document.createElement('textarea');
+        temp.value = AI_FIRST_ROUND_PROMPT_EXAMPLE;
+        temp.style.position = 'fixed';
+        temp.style.left = '-9999px';
+        document.body.appendChild(temp);
+        temp.focus();
+        temp.select();
+        document.execCommand('copy');
+        document.body.removeChild(temp);
+      }
+      setToast('示例提示词已复制');
+    } catch {
+      setPageError('复制示例提示词失败，请手动选中文本复制');
+    }
+  }
+
+  function handleInsertPromptExample() {
+    setMessage(AI_FIRST_ROUND_PROMPT_EXAMPLE);
+    setComposerCursor(AI_FIRST_ROUND_PROMPT_EXAMPLE.length);
+    setSkillMentionSuppressed(false);
+    window.requestAnimationFrame(() => {
+      if (!messageInputRef.current) return;
+      messageInputRef.current.focus();
+      messageInputRef.current.setSelectionRange(AI_FIRST_ROUND_PROMPT_EXAMPLE.length, AI_FIRST_ROUND_PROMPT_EXAMPLE.length);
+    });
+    setToast('示例提示词已插入输入框');
+  }
+
   async function handleSendMessage() {
     if (!session) return;
     if (sendingGuardRef.current) return;
     if (uploading) return;
     if (!message.trim() && pendingAttachments.length === 0) return;
     const outgoingMessage = message;
+    // 默认不限制草稿范围，避免仅因当前选中文件导致 AI 只修改单个模板。
+    const selectedDraftPathsForMessage: string[] = [];
     const modelForMessage = selectedModel.trim() || settings?.model?.trim() || '';
     const createdAt = new Date().toISOString();
     const optimisticUserId = `local-user-${Date.now()}`;
@@ -1136,6 +1508,7 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
           id: optimisticAssistantId,
           role: 'assistant',
           content: '',
+          model: modelForMessage || session.selectedModel || settings?.model || 'AI',
           createdAt,
           pending: true,
           streamStatus: ['正在等待服务端开始生成'],
@@ -1144,8 +1517,8 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
       setMessage('');
       const updated = await sendAISessionMessageStream(session.id, {
         message: outgoingMessage,
-        sessionRules,
-        selectedDraftPaths: selectedDraftPath ? [selectedDraftPath] : [],
+        selectedDraftPaths: selectedDraftPathsForMessage,
+        selectedSkillIds: session.selectedSkillIds,
         model: modelForMessage || undefined,
       }, {
         onAccepted: (event) => {
@@ -1183,6 +1556,9 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
               }
               : item
           )));
+          if (shouldAutoScrollRef.current) {
+            window.requestAnimationFrame(() => scrollChatFeedToBottom('auto'));
+          }
         },
       });
       setSession(updated);
@@ -1206,10 +1582,12 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '发送消息失败';
-      setPageError(errorMessage);
+      const failedModel = modelForMessage || selectedModel || session.selectedModel || settings?.model || 'unknown';
+      const displayError = `模型 ${failedModel} 请求失败：${errorMessage}`;
+      setPageError(displayError);
       setOptimisticMessages((previous) => previous.map((item) => (
         item.id === optimisticAssistantId
-          ? { ...item, content: `请求失败：${errorMessage}`, pending: false, failed: true }
+          ? { ...item, content: displayError, pending: false, failed: true }
           : item
       )));
     } finally {
@@ -1335,6 +1713,10 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
         messageCount: result.session.messages.length,
         draftCount: result.session.draftFiles.length,
       } : item));
+      setSavedDraftSignatures((previous) => ({
+        ...previous,
+        [result.session.id]: buildDraftSignature(result.session.draftFiles),
+      }));
       if (selectedDraftPath === path) {
         setSelectedDraftPath(result.session.draftFiles[0]?.path ?? null);
       }
@@ -1349,6 +1731,10 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
   async function handleSaveDrafts(files: AIDraftFile[], applyConfigPatch = false) {
     const currentSession = latestSessionRef.current;
     if (!currentSession || files.length === 0) return;
+    if (sending) {
+      setPageError('当前消息仍在生成中，请等待生成完成后再保存。');
+      return;
+    }
     const latestDraftByPath = new Map(currentSession.draftFiles.map((draft) => [draft.path, draft]));
     const latestFiles = files
       .map((draft) => latestDraftByPath.get(draft.path) ?? draft)
@@ -1361,12 +1747,44 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
       setSavingDrafts(true);
       setPageError(null);
       const result = await saveAISessionDrafts(currentSession.id, { files: latestFiles, applyConfigPatch });
-      await refreshSession(currentSession.id);
-      void loadHistorySessions();
+      let persistedSession: AITemplateSession | null = null;
+      if (result.session) {
+        setSession(result.session);
+        persistedSession = result.session;
+        setHistorySessions((previous) => [
+          {
+            id: result.session!.id,
+            title: result.session!.title,
+            createdAt: result.session!.createdAt,
+            updatedAt: result.session!.updatedAt,
+            messageCount: result.session!.messages.length,
+            draftCount: result.session!.draftFiles.length,
+          },
+          ...previous.filter((item) => item.id !== result.session!.id),
+        ]);
+      } else {
+        persistedSession = await refreshSession(currentSession.id, false);
+        void loadHistorySessions();
+      }
+      if (persistedSession) {
+        setSavedDraftSignatures((previous) => ({
+          ...previous,
+          [persistedSession.id]: buildDraftSignature(persistedSession.draftFiles),
+        }));
+        if (applyConfigPatch && result.configApplied) {
+          setSavedConfigSignatures((previous) => ({
+            ...previous,
+            [persistedSession.id]: buildConfigPatchSignature(persistedSession.configPatch),
+          }));
+        }
+      }
       if (applyConfigPatch) {
-        setToast(result.configApplied
-          ? `已保存 ${result.savedFiles.length} 个模板文件，并同步 ${result.appliedServices.length} 个服务配置`
-          : `模板已保存，但配置未同步，请先处理 ${result.configIssues.length} 个配置问题`);
+        if (result.configApplied) {
+          setToast(`已保存 ${result.savedFiles.length} 个模板文件，并同步 ${result.appliedServices.length} 个服务配置`);
+        } else {
+          setToast(`已保存 ${result.savedFiles.length} 个模板文件，但配置同步未执行`);
+          setPageError(buildConfigSyncFailureMessage(result.configIssues, result.nextActions, result.message));
+        }
       } else {
         setToast(`已保存 ${result.savedFiles.length} 个模板文件`);
       }
@@ -1481,6 +1899,16 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
     try {
       setSavingSessionId(sessionId);
       await deleteAISession(sessionId);
+      setSavedDraftSignatures((previous) => {
+        const next = { ...previous };
+        delete next[sessionId];
+        return next;
+      });
+      setSavedConfigSignatures((previous) => {
+        const next = { ...previous };
+        delete next[sessionId];
+        return next;
+      });
       const remaining = historySessions.filter((item) => item.id !== sessionId);
       setHistorySessions(remaining);
 
@@ -1542,23 +1970,29 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
 
   return (
     <div className={`ai-chat-shell ${editorMode ? 'ai-chat-shell-editor' : ''}`}>
-      <div className="ai-chat-topbar">
-        <div className="ai-chat-topbar-main">
-          <div className="ai-chat-topbar-mark">AI 模板</div>
-          <div className="ai-chat-topbar-copy">
-            <h2 className="m-0">对话生成模板草稿，确认后再写入 templates/</h2>
+      {aiHeaderHost && createPortal(
+        <div className="ai-header-toolbar">
+          <div className="ai-header-toolbar-main">
+            <div className="ai-header-title-row">
+              <h2 className="m-0">模板草稿会话</h2>
+              <div className="ai-header-badges">
+                {username && <span className="badge badge-gray">用户: {username}</span>}
+                {activeTemplateId && <span className="badge badge-gray">主模板: {activeTemplateId}</span>}
+              </div>
+            </div>
             <p className="m-0">当前会话 {session.title || '新会话'} · {session.id} · {session.messages.length} 条消息 · {session.attachments.length} 个附件</p>
           </div>
-        </div>
-        <div className="ai-chat-topbar-actions">
-          <button className="btn btn-secondary btn-sm ai-toolbar-btn" onClick={() => { setSettingsError(null); setSettingsTestSucceeded(false); setSettingsOpen(true); }}><Settings2 className="w-4 h-4" />AI 设置</button>
-          <button className="btn btn-secondary btn-sm ai-toolbar-btn" onClick={() => setRulesOpen(true)}><ShieldCheck className="w-4 h-4" />全局规则</button>
-          <button className="btn btn-secondary btn-sm ai-toolbar-btn" onClick={() => void loadSkillCatalog(true)}><Sparkles className="w-4 h-4" />Skill 管理</button>
-          <button className="btn btn-secondary btn-sm ai-toolbar-btn" onClick={() => { void loadHistorySessions(); setHistoryOpen(true); }}><History className="w-4 h-4" />历史会话</button>
-          <button className="btn btn-secondary btn-sm ai-toolbar-btn" onClick={() => void refreshSession()}><RefreshCw className="w-4 h-4" />刷新</button>
-          <button className="btn btn-primary btn-sm ai-toolbar-btn" onClick={() => void handleCreateSession()}><CopyPlus className="w-4 h-4" />新建会话</button>
-        </div>
-      </div>
+          <div className="ai-header-toolbar-actions">
+            <button className="btn btn-secondary btn-sm ai-toolbar-btn" onClick={() => { setSettingsError(null); setSettingsTestSucceeded(false); setSettingsOpen(true); }}><Settings2 className="w-4 h-4" />AI 设置</button>
+            <button className="btn btn-secondary btn-sm ai-toolbar-btn" onClick={() => setRulesOpen(true)}><ShieldCheck className="w-4 h-4" />全局规则</button>
+            <button className="btn btn-secondary btn-sm ai-toolbar-btn" onClick={() => void loadSkillCatalog(true)}><Sparkles className="w-4 h-4" />Skill 管理</button>
+            <button className="btn btn-secondary btn-sm ai-toolbar-btn" onClick={() => { void loadHistorySessions(); setHistoryOpen(true); }}><History className="w-4 h-4" />历史会话</button>
+            <button className="btn btn-secondary btn-sm ai-toolbar-btn" onClick={() => void refreshSession()}><RefreshCw className="w-4 h-4" />刷新</button>
+            <button className="btn btn-primary btn-sm ai-toolbar-btn" onClick={() => void handleCreateSession()}><CopyPlus className="w-4 h-4" />新建会话</button>
+          </div>
+        </div>,
+        aiHeaderHost,
+      )}
 
       <input ref={textUploadRef} type="file" multiple accept=".sh,.tmpl,.conf,.yaml,.yml,.xml,.properties,.json,.md,.txt" style={{ display: 'none' }} onChange={(event) => void handleUpload(event.target.files)} />
       <input ref={imageUploadRef} type="file" multiple accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={(event) => void handleUpload(event.target.files)} />
@@ -1572,7 +2006,7 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
           {pageError && <div className="ai-inline-alert ai-inline-alert-danger"><span>{pageError}</span><button className="modal-close" onClick={() => setPageError(null)} aria-label="关闭错误提示"><X className="w-4 h-4" /></button></div>}
           {toast && <div className="ai-inline-alert ai-inline-alert-success"><div className="flex items-center gap-2"><Check className="w-4 h-4" /><span>{toast}</span></div><button className="modal-close" onClick={() => setToast(null)} aria-label="关闭提示"><X className="w-4 h-4" /></button></div>}
 
-          <div className="ai-chat-feed">
+          <div ref={chatFeedRef} className="ai-chat-feed">
             {threadMessages.length === 0 ? (
               <div className="card ai-thread-empty-card"><div className="card-body empty-state ai-chat-empty"><Bot className="empty-state-icon" /><p>可以直接描述目标服务和输出文件，例如“生成 elasticsearch 3 节点集群安装脚本模板，目标是 templates/elasticsearch/install.sh.tmpl”。</p></div></div>
             ) : threadMessages.map((item) => {
@@ -1584,9 +2018,23 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
               const messageAttachments = getMessageAttachments(session, item);
               return (
                 <article key={item.id} className={`ai-thread-message ${item.role === 'assistant' ? 'ai-thread-message-assistant' : 'ai-thread-message-user'}`}>
-                  <div className="ai-thread-meta"><div className="ai-thread-meta-main"><div className={`ai-thread-avatar ${item.role === 'assistant' ? 'assistant' : 'user'}`}>{item.role === 'assistant' ? <Sparkles className="w-4 h-4" /> : <Wand2 className="w-4 h-4" />}</div><div><div className="ai-thread-author">{item.role === 'assistant' ? 'AI 模板助手' : '你'}</div><div className={`ai-thread-time ${item.failed ? 'text-danger' : ''}`}>{item.pending ? '处理中...' : item.failed ? '发送失败' : formatTime(item.createdAt)}</div></div></div></div>
-                  {item.role === 'assistant' && (item.promptTrace || (item.streamStatus && item.streamStatus.length > 0)) && <details className="ai-thread-thinking" open><summary>{item.pending ? '生成中' : '查看生成过程'}</summary><div className="ai-thread-thinking-content">{item.streamStatus?.map((status) => <div key={`${item.id}-${status}`} className="ai-thread-thinking-line">{status}</div>)}{item.promptTrace && <><div className="ai-thread-thinking-line">已命中 {item.promptTrace.skillRefs.length} 条规则，参考 {item.promptTrace.exampleRefs.length} 个模板示例。</div><div className="ai-thread-thinking-line">模式: {item.promptTrace.mode} · 协议: {item.promptTrace.provider}</div></>}{item.attachmentIds && item.attachmentIds.length > 0 && <div className="ai-thread-thinking-line">本轮引用了 {item.attachmentIds.length} 个附件材料。</div>}</div></details>}
-                  <div className="ai-thread-content">{item.pending ? <span className="flex items-start gap-2"><LoaderCircle className="w-4 h-4 animate-spin mt-0.5" /><span>{item.content || '正在思考并整理回复...'}</span></span> : (item.content || '(空消息)')}</div>
+                  {item.role === 'assistant' && <div className="ai-thread-model-label">{resolveMessageModelLabel(item)}</div>}
+                  {item.role === 'assistant' && (item.promptTrace || (item.streamStatus && item.streamStatus.length > 0)) && <details className="ai-thread-thinking" open={Boolean(item.pending)}><summary>{item.pending ? '生成中' : '查看生成过程'}</summary><div className="ai-thread-thinking-content">{item.streamStatus?.map((status) => <div key={`${item.id}-${status}`} className="ai-thread-thinking-line">{status}</div>)}{item.promptTrace && <><div className="ai-thread-thinking-line">已命中 {item.promptTrace.skillRefs.length} 条规则，参考 {item.promptTrace.exampleRefs.length} 个模板示例。</div><div className="ai-thread-thinking-line">模式: {item.promptTrace.mode} · 协议: {item.promptTrace.provider}</div></>}{item.attachmentIds && item.attachmentIds.length > 0 && <div className="ai-thread-thinking-line">本轮引用了 {item.attachmentIds.length} 个附件材料。</div>}</div></details>}
+                  <div className="ai-thread-content">
+                    {item.pending && !item.content ? (
+                      <span className="flex items-start gap-2">
+                        <LoaderCircle className="w-4 h-4 animate-spin mt-0.5" />
+                        <span>正在思考并整理回复...</span>
+                      </span>
+                    ) : (
+                      <div className="ai-thread-markdown">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {item.content || '(空消息)'}
+                        </ReactMarkdown>
+                      </div>
+                    )}
+                  </div>
+                  <div className={`ai-thread-time-inline ${item.failed ? 'text-danger' : ''}`}>{item.pending ? '处理中...' : item.failed ? '发送失败' : formatTime(item.createdAt)}</div>
                   {messageAttachments.length > 0 && (
                     item.role === 'user'
                       ? <div className="ai-user-attachment-grid">{messageAttachments.map((attachment) => attachment.kind === 'image'
@@ -1595,7 +2043,7 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
                       : <div className="ai-context-badges">{messageAttachments.map((attachment) => <div key={`${item.id}-${attachment.id}`} className="ai-context-chip">{attachment.kind === 'image' ? <img src={attachment.downloadUrl} alt={attachment.name} className="ai-context-chip-thumb" /> : <FileText className="w-4 h-4 text-primary" />}<div className="ai-context-chip-copy"><span className="ai-context-chip-name">{attachment.name}</span><span className="ai-context-chip-meta">{attachment.kind === 'image' ? '图片识别已发送' : '文本附件已发送'} · {formatBytes(attachment.size)}</span></div></div>)}</div>
                   )}
                   {item.warnings && item.warnings.length > 0 && <div className="ai-thread-warning-block"><div className="ai-thread-warning-title">人工复核提示</div><div className="ai-thread-warning-list">{item.warnings.map((warning) => <div key={warning}>{warning}</div>)}</div></div>}
-                  {messagePlans.length > 0 && <div className="ai-inline-plan-list">{messagePlans.map((action) => <div key={`${item.id}-${action.type}-${action.path}`} className="ai-inline-plan-item"><div className="ai-inline-plan-type">{action.type === 'mkdir' ? '创建目录' : '写入文件'}</div><div className="ai-inline-plan-path">{action.path}</div><div className="ai-inline-plan-reason">{action.reason}</div></div>)}</div>}
+                  {messagePlans.length > 0 && <div className="ai-inline-plan-list">{messagePlans.map((action) => <div key={`${item.id}-${action.type}-${action.path}`} className="ai-inline-plan-item"><div className="ai-inline-plan-type">{action.type === 'mkdir' ? '创建目录' : action.type === 'remove' ? '删除文件' : '写入文件'}</div><div className="ai-inline-plan-path">{action.path}</div><div className="ai-inline-plan-reason">{action.reason}</div></div>)}</div>}
                   {patchServiceNames.length > 0 && <div className="ai-inline-patch-card"><div className="ai-inline-patch-header"><div><div className="ai-inline-patch-title">配置同步建议</div><div className="ai-inline-patch-subtitle">保存模板时可以一并同步到 serviceTop 和 serverConfig.vars。</div></div><div className="flex items-center gap-2"><span className="badge badge-gray">{patchServiceNames.length} 个服务</span>{messageIssues.some((issue) => issue.severity === 'error') && <span className="badge badge-danger">{messageIssues.filter((issue) => issue.severity === 'error').length} 个阻塞项</span>}</div></div><div className="ai-inline-patch-list">{patchServiceNames.map((serviceName) => { const topo = item.configPatch?.serviceTop?.[serviceName]; const serviceCfg = item.configPatch?.serverConfig?.[serviceName]; const serviceIssues = messageIssues.filter((issue) => issue.service === serviceName); return <div key={`${item.id}-${serviceName}`} className="ai-inline-patch-item"><div className="flex items-center justify-between gap-2"><div className="font-medium text-gray-800">{serviceName}</div><div className="flex items-center gap-2">{topo && <span className="badge badge-blue">serviceTop</span>}{serviceCfg && <span className="badge badge-gray">vars {Object.keys(serviceCfg.vars || {}).length}</span>}</div></div>{topo && <div className="text-sm text-gray-600">节点: {topo.nodes?.join(', ') || '未设置'} · id_auto_derive: {String(Boolean(topo.id_auto_derive))}</div>}{serviceCfg && Object.keys(serviceCfg.vars || {}).length > 0 && <div className="text-sm text-gray-600">变量: {Object.keys(serviceCfg.vars || {}).join(', ')}</div>}{serviceIssues.length > 0 && <div className="ai-inline-patch-issues">{serviceIssues.map((issue) => <div key={`${item.id}-${issue.service}-${issue.field}-${issue.message}`} className={issue.severity === 'error' ? 'text-danger' : issue.severity === 'warning' ? 'text-warning' : 'text-gray-600'}>{issue.severity === 'error' ? '阻塞' : issue.severity === 'warning' ? '注意' : '提示'}: {issue.message}</div>)}</div>}</div>; })}</div></div>}
                   {messageDrafts.length > 0 && <div className="ai-inline-draft-list">{messageDrafts.map((draft) => <div key={`${item.id}-${draft.path}`} className="ai-inline-draft-card"><div className="ai-inline-draft-header"><div className="ai-inline-draft-title-block"><div className="ai-inline-draft-title"><FileText className="w-4 h-4 text-primary" /><span>{draft.path}</span></div><div className="ai-inline-draft-meta">{draft.reason || 'AI 生成的模板草稿'}</div></div><div className="ai-inline-draft-actions">{draft.source === 'image' && <span className="badge badge-danger">图片识别</span>}<span className={`badge ${draft.needsReview ? 'badge-blue' : 'badge-green'}`}>{draft.needsReview ? '待审核' : '已保存'}</span><button className="btn btn-sm btn-secondary" onClick={() => openDraftEditor(draft.path)}>编辑</button><button className="btn btn-sm btn-secondary btn-danger-soft" onClick={() => void handleDeleteDraft(draft.path)} disabled={savingDrafts}><Trash2 className="w-4 h-4" />删除</button></div></div><pre className="ai-inline-code-block">{draft.content}</pre></div>)}</div>}
                   {item.followUpQuestions && item.followUpQuestions.length > 0 && <div className="ai-follow-up-list">{item.followUpQuestions.map((question) => <div key={question} className="ai-follow-up-chip">{question}</div>)}</div>}
@@ -1603,19 +2051,19 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
                     <div className="ai-answer-actions">
                       {canSaveTemplate ? (
                         <>
-                          <button className="btn btn-primary" onClick={() => void handleSaveDrafts(session.draftFiles)} disabled={savingDrafts || session.draftFiles.length === 0}>
-                            {savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                          <button className={`${hasTemplateSavePending ? 'btn btn-primary' : 'btn btn-secondary'} ai-answer-btn-sm`} onClick={() => void handleSaveDrafts(session.draftFiles)} disabled={savingDrafts || sending || session.draftFiles.length === 0 || !hasTemplateSavePending}>
+                            {savingDrafts ? <LoaderCircle className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
                             保存全部
                           </button>
-                          <button className="btn btn-secondary" onClick={() => void handleSaveDrafts(session.draftFiles, true)} disabled={savingDrafts || session.draftFiles.length === 0 || !hasAnyConfigPatch}>
-                            {savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                          <button className="btn btn-secondary ai-answer-btn-sm" onClick={() => void handleSaveDrafts(session.draftFiles, true)} disabled={savingDrafts || sending || session.draftFiles.length === 0 || !hasAnyConfigPatch || !hasConfigSavePending}>
+                            {savingDrafts ? <LoaderCircle className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
                             保存并同步配置
                           </button>
                         </>
                       ) : (
                         <span className="text-sm text-amber-700">普通用户仅可生成草稿，保存模板仅管理员可用。</span>
                       )}
-                      <button className="btn btn-secondary" onClick={() => latestAssistantDrafts[0] && openDraftEditor(latestAssistantDrafts[0].path)} disabled={latestAssistantDrafts.length === 0}>编辑模板</button>
+                      <button className="btn btn-secondary ai-answer-btn-sm" onClick={() => latestAssistantDrafts[0] && openDraftEditor(latestAssistantDrafts[0].path)} disabled={latestAssistantDrafts.length === 0}>编辑模板</button>
                     </div>
                   )}
                 </article>
@@ -1631,13 +2079,99 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
               onDragLeave={handleComposerDragLeave}
               onDrop={handleComposerDrop}
             >
-              <div className="ai-chat-context-row">
-                <div className="ai-chat-context-label">附件与上下文</div>
-                <div className="ai-chat-context-actions">
-                  <div className="ai-chat-model-switch">
-                    <Cpu className="w-4 h-4 text-primary" />
+              {uploading && <div className="ai-context-badges"><span className="badge badge-blue"><LoaderCircle className="w-3 h-3 animate-spin" />正在上传附件</span></div>}
+              {visiblePendingAttachments.length > 0 && <div className="ai-context-badges"><span className="badge badge-blue">{visiblePendingAttachments.length} 个附件待发送</span>{visiblePendingAttachments.map((attachment) => <div key={attachment.id} className="ai-context-chip">{attachment.kind === 'image' ? <img src={attachment.downloadUrl} alt={attachment.name} className="ai-context-chip-thumb" /> : <FileText className="w-4 h-4 text-primary" />}<div className="ai-context-chip-copy"><span className="ai-context-chip-name">{attachment.name}</span><span className="ai-context-chip-meta">{attachment.kind === 'image' ? '图片识别' : '文本'} · {formatBytes(attachment.size)}</span></div><span className="badge badge-blue">待发送</span><button className="modal-close" onClick={() => void handleDeleteAttachment(attachment.id)} aria-label="取消附件"><X className="w-4 h-4" /></button></div>)}</div>}
+              <div className="ai-chat-input-wrap">
+                <textarea
+                  ref={messageInputRef}
+                  className="input ai-chat-input"
+                  value={message}
+                  onPaste={handleComposerPaste}
+                  onChange={(event) => {
+                    setMessage(event.target.value);
+                    setComposerCursor(event.target.selectionStart ?? event.target.value.length);
+                    setSkillMentionSuppressed(false);
+                  }}
+                  onClick={(event) => {
+                    setComposerCursor(event.currentTarget.selectionStart ?? event.currentTarget.value.length);
+                  }}
+                  onKeyUp={(event) => {
+                    setComposerCursor(event.currentTarget.selectionStart ?? event.currentTarget.value.length);
+                  }}
+                  onKeyDown={(event) => {
+                    if (skillMention.open) {
+                      if (event.key === 'ArrowDown') {
+                        event.preventDefault();
+                        setSkillMentionIndex((previous) => (previous + 1) % skillMention.items.length);
+                        return;
+                      }
+                      if (event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        setSkillMentionIndex((previous) => (previous - 1 + skillMention.items.length) % skillMention.items.length);
+                        return;
+                      }
+                      if (event.key === 'Tab' || event.key === 'Enter') {
+                        event.preventDefault();
+                        if (activeMentionItem) {
+                          applySkillMention(activeMentionItem);
+                        }
+                        return;
+                      }
+                      if (event.key === 'Escape') {
+                        event.preventDefault();
+                        setSkillMentionSuppressed(true);
+                        return;
+                      }
+                    }
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault();
+                      void handleSendMessage();
+                    }
+                  }}
+                  placeholder="描述你要生成或改写的模板。输入 # 触发技能提示；回车发送，Shift + Enter 换行。"
+                />
+                {skillMention.open && (
+                  <div className="ai-skill-mention-menu">
+                    {skillMention.items.map((item, index) => (
+                      <button
+                        key={`${item.scope}-${item.id}`}
+                        type="button"
+                        className={`ai-skill-mention-item ${index === skillMentionIndex ? 'active' : ''}`}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          applySkillMention(item);
+                        }}
+                      >
+                        <div className="ai-skill-mention-id">{item.id}</div>
+                        <div className="ai-skill-mention-meta">{item.scope} · {item.title}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="ai-chat-input-tip-shadow">支持上传脚本、配置文件和文本截图，也支持 Ctrl+V 粘贴图片/文档或拖拽文件；AI 先生成草稿，再由你审核保存。</div>
+              </div>
+              <details className="ai-chat-example-panel">
+                <summary className="ai-chat-example-summary">首轮建模板示例提示词（可展开 / 可复制）</summary>
+                <div className="ai-chat-example-body">
+                  <div className="ai-chat-example-actions">
+                    <button className="btn btn-secondary btn-sm ai-chat-mini-btn" onClick={() => void handleCopyPromptExample()}>
+                      <CopyPlus className="w-3 h-3" />
+                      复制示例
+                    </button>
+                    <button className="btn btn-secondary btn-sm ai-chat-mini-btn" onClick={() => handleInsertPromptExample()}>
+                      <PencilLine className="w-3 h-3" />
+                      插入输入框
+                    </button>
+                  </div>
+                  <pre className="ai-chat-example-shadow">{AI_FIRST_ROUND_PROMPT_EXAMPLE}</pre>
+                </div>
+              </details>
+              <div className="ai-chat-bottom-actions">
+                <div className="ai-chat-bottom-left">
+                  <div className="ai-chat-model-switch ai-chat-model-switch-mini">
+                    <Cpu className="w-3 h-3 text-primary" />
                     <select
-                      className="select ai-chat-model-select"
+                      className="select ai-chat-model-select ai-chat-model-select-mini"
                       value={modelSuggestions.includes(selectedModel) ? selectedModel : ''}
                       onChange={(event) => {
                         if (event.target.value) {
@@ -1649,15 +2183,11 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
                       {modelSuggestions.map((item) => <option key={item} value={item}>{item}</option>)}
                     </select>
                   </div>
-                  <button className="btn btn-sm btn-secondary" onClick={() => textUploadRef.current?.click()} disabled={uploading}><Upload className="w-4 h-4" />上传文本</button>
-                  <button className="btn btn-sm btn-secondary" onClick={() => imageUploadRef.current?.click()} disabled={uploading}><ImagePlus className="w-4 h-4" />上传图片</button>
+                  <button className="btn btn-sm btn-secondary ai-chat-mini-btn" onClick={() => textUploadRef.current?.click()} disabled={uploading}><Upload className="w-3 h-3" />上传文本</button>
+                  <button className="btn btn-sm btn-secondary ai-chat-mini-btn" onClick={() => imageUploadRef.current?.click()} disabled={uploading}><ImagePlus className="w-3 h-3" />上传图片</button>
                 </div>
+                <button className="btn btn-primary btn-sm ai-chat-send-btn" onClick={() => void handleSendMessage()} disabled={sending || uploading || (!message.trim() && pendingAttachments.length === 0)}>{sending ? <LoaderCircle className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}发送</button>
               </div>
-              {uploading && <div className="ai-context-badges"><span className="badge badge-blue"><LoaderCircle className="w-3 h-3 animate-spin" />正在上传附件</span></div>}
-              {visiblePendingAttachments.length > 0 && <div className="ai-context-badges"><span className="badge badge-blue">{visiblePendingAttachments.length} 个附件待发送</span>{visiblePendingAttachments.map((attachment) => <div key={attachment.id} className="ai-context-chip">{attachment.kind === 'image' ? <img src={attachment.downloadUrl} alt={attachment.name} className="ai-context-chip-thumb" /> : <FileText className="w-4 h-4 text-primary" />}<div className="ai-context-chip-copy"><span className="ai-context-chip-name">{attachment.name}</span><span className="ai-context-chip-meta">{attachment.kind === 'image' ? '图片识别' : '文本'} · {formatBytes(attachment.size)}</span></div><span className="badge badge-blue">待发送</span><button className="modal-close" onClick={() => void handleDeleteAttachment(attachment.id)} aria-label="取消附件"><X className="w-4 h-4" /></button></div>)}</div>}
-              <details className="ai-session-rules-panel"><summary>本次补充规则</summary><textarea className="input ai-chat-rules-input" value={sessionRules} onChange={(event) => setSessionRules(event.target.value)} placeholder="例如：统一使用 run_as_root，安装脚本必须幂等，优先复用 .Global.user 和 .Global.install_base_dir。" /></details>
-              <textarea className="input ai-chat-input" value={message} onPaste={handleComposerPaste} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSendMessage(); } }} placeholder="描述你要生成或改写的模板。回车发送，Shift + Enter 换行。" />
-              <div className="ai-chat-composer-actions"><div className="ai-chat-composer-hint">支持上传脚本、配置文件和文本截图，也支持 Ctrl+V 粘贴图片/文档或拖拽文件；AI 先生成草稿，再由你审核保存。</div><button className="btn btn-primary" onClick={() => void handleSendMessage()} disabled={sending || uploading || (!message.trim() && pendingAttachments.length === 0)}>{sending ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}发送</button></div>
             </div>
           </div>
         </main>
@@ -1668,31 +2198,23 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
             <div className="ai-chat-editor-header">
               <div>
                 <div className="ai-chat-editor-title">编辑模板</div>
-                <div className="ai-chat-editor-subtitle">{selectedDraft ? selectedDraft.reason || '人工审核并修改草稿内容' : '选择一个草稿开始编辑'}</div>
+                <div className="ai-chat-editor-subtitle">
+                  {selectedDraft
+                    ? `${selectedDraft.reason || '人工审核并修改草稿内容'} · ${selectedDraft.path}`
+                    : '选择一个草稿开始编辑'}
+                </div>
               </div>
-              <button className="btn btn-secondary" onClick={() => setEditorMode(false)}>退出编辑模式</button>
+              <button className="modal-close ai-chat-editor-exit" onClick={() => setEditorMode(false)} aria-label="退出编辑模式">
+                <XCircle className="w-4 h-4" />
+              </button>
             </div>
             {selectedDraft ? (
               <>
-                <div className="ai-chat-editor-pathbar">
-                  <div className="form-group ai-draft-path-group">
-                    <label className="form-label">目标路径</label>
-                    <input
-                      className="input"
-                      value={selectedDraft.path}
-                      onChange={(event) => {
-                        const currentPath = selectedDraft.path;
-                        const nextPath = event.target.value;
-                        updateDraftContent(currentPath, (draft) => ({ ...draft, path: nextPath, needsReview: true }));
-                        setSelectedDraftPath(nextPath);
-                      }}
-                    />
+                {selectedDraft.source === 'image' && (
+                  <div className="ai-chat-editor-toolbar ai-chat-editor-toolbar-inline">
+                    <span className="badge badge-danger">来自图片识别，需重点人工复核</span>
                   </div>
-                  <div className="ai-chat-editor-toolbar">
-                    {selectedDraft.source === 'image' && <span className="badge badge-danger">来自图片识别，需重点人工复核</span>}
-                    <span className="badge badge-gray">{getDraftLanguage(selectedDraft.path)}</span>
-                  </div>
-                </div>
+                )}
                 <div className="ai-chat-editor-monaco">
                   <Editor
                     height="100%"
@@ -1703,17 +2225,17 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
                   />
                 </div>
                 <div className="ai-chat-editor-actions">
-                  <button className="btn btn-secondary btn-danger-soft" onClick={() => void handleDeleteDraft(selectedDraft.path)} disabled={savingDrafts}>
+                  <button className="btn btn-sm btn-secondary btn-danger-soft ai-chat-editor-action-btn" onClick={() => void handleDeleteDraft(selectedDraft.path)} disabled={savingDrafts}>
                     <Trash2 className="w-4 h-4" />
                     删除模板
                   </button>
                   {canSaveTemplate ? (
                     <>
-                      <button className="btn btn-secondary" onClick={() => handleSaveCurrentDraft(true)} disabled={savingDrafts || !selectedServiceHasConfigPatch}>
+                      <button className="btn btn-sm btn-secondary ai-chat-editor-action-btn" onClick={() => handleSaveCurrentDraft(true)} disabled={savingDrafts || !selectedServiceHasConfigPatch || !hasConfigSavePending}>
                         {savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                         保存并同步配置
                       </button>
-                      <button className="btn btn-primary" onClick={() => handleSaveCurrentDraft()} disabled={savingDrafts}>
+                      <button className={`${hasTemplateSavePending ? 'btn btn-primary' : 'btn btn-secondary'} btn-sm ai-chat-editor-action-btn`} onClick={() => handleSaveCurrentDraft()} disabled={savingDrafts || !hasTemplateSavePending}>
                         {savingDrafts ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         保存当前
                       </button>
@@ -1732,6 +2254,32 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
           </aside>
         )}
       </div>
+
+      <button
+        className="ai-back-to-first"
+        onClick={() => {
+          if (useWindowFeedScroll) {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+          }
+          chatFeedRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        aria-label="回到第一条会话"
+        title="回到第一条会话"
+      >
+        <ChevronsUp className="w-4 h-4" />
+      </button>
+
+      {showBackToTop && (
+        <button
+          className="ai-back-to-latest"
+          onClick={() => scrollChatFeedToBottom('smooth')}
+          aria-label="回到最新会话"
+          title="回到最新会话"
+        >
+          <ArrowUp className="w-4 h-4" />
+        </button>
+      )}
 
       <SettingsModal open={settingsOpen} settings={settings} modelOptions={modelSuggestions} modelsLoading={loadingModels} modelsError={modelsError} saving={savingSettings} testing={testingSettings} testSucceeded={settingsTestSucceeded} error={settingsError} onClose={() => { setSettingsOpen(false); setSettingsError(null); setSettingsTestSucceeded(false); }} onRefreshModels={refreshAvailableModels} onSave={handleSaveSettings} onTest={handleTestSettings} />
       <RulesModal open={rulesOpen} content={rules} saving={savingRules} onClose={() => setRulesOpen(false)} onChange={setRules} onSave={handleSaveRules} />
@@ -1764,3 +2312,5 @@ export function AITemplatePage({ canSaveTemplate = true }: AITemplatePageProps) 
     </div>
   );
 }
+
+

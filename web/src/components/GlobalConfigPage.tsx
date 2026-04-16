@@ -14,6 +14,7 @@ import {
 interface GlobalConfigPageProps {
   config: AppConfig;
   onChange: (config: AppConfig) => void;
+  hidePageTitle?: boolean;
 }
 
 interface ConfigItem {
@@ -24,7 +25,7 @@ interface ConfigItem {
   type: 'string' | 'number' | 'boolean';
 }
 
-export function GlobalConfigPage({ config, onChange }: GlobalConfigPageProps) {
+export function GlobalConfigPage({ config, onChange, hidePageTitle = false }: GlobalConfigPageProps) {
   const [configItems, setConfigItems] = useState<ConfigItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ConfigItem | null>(null);
@@ -188,10 +189,10 @@ export function GlobalConfigPage({ config, onChange }: GlobalConfigPageProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <div>
+        {!hidePageTitle && <div>
           <h2 className="text-2xl font-bold text-gray-800">全局配置管理</h2>
           <p className="text-gray-500 mt-1">管理全局配置项，包括目录路径、用户、JDK 等</p>
-        </div>
+        </div>}
         <button className="btn btn-primary" onClick={handleAdd}>
           <Plus className="w-4 h-4" />
           添加配置项

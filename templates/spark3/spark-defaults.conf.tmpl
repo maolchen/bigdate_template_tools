@@ -1,0 +1,49 @@
+# =============================================================================
+# Spark Defaults Configuration
+# 服务：spark3
+# 版本：{{ .Instance.Vars.version }}
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Master 地址
+# -----------------------------------------------------------------------------
+spark.master                                spark://{{ .Instance.Vars.spark_master_addr }}:{{ .Instance.Vars.master_port }}
+
+# -----------------------------------------------------------------------------
+# 事件日志配置
+# -----------------------------------------------------------------------------
+spark.eventLog.enabled                      true
+spark.eventLog.dir                          {{ .Instance.Vars.spark_eventlog_dir }}
+spark.history.fs.logDirectory               {{ .Instance.Vars.spark_eventlog_dir }}
+
+# -----------------------------------------------------------------------------
+# YARN 配置（如使用 YARN 模式）
+# -----------------------------------------------------------------------------
+{{- if .Instance.Vars.spark_yarn_jars }}
+spark.yarn.jars                             {{ .Instance.Vars.spark_yarn_jars }}
+{{- end }}
+
+# -----------------------------------------------------------------------------
+# 序列化配置
+# -----------------------------------------------------------------------------
+spark.serializer                            org.apache.spark.serializer.KryoSerializer
+
+# -----------------------------------------------------------------------------
+# 内存配置
+# -----------------------------------------------------------------------------
+spark.driver.memory                         {{ .Instance.Vars.driver_memory }}
+spark.executor.memory                       {{ .Instance.Vars.executor_memory }}
+spark.executor.cores                        {{ .Instance.Vars.executor_cores }}
+
+# -----------------------------------------------------------------------------
+# 动态资源分配
+# -----------------------------------------------------------------------------
+spark.dynamicAllocation.enabled             {{ .Instance.Vars.dynamic_allocation }}
+spark.dynamicAllocation.minExecutors        {{ .Instance.Vars.min_executors }}
+spark.dynamicAllocation.maxExecutors        {{ .Instance.Vars.max_executors }}
+
+# -----------------------------------------------------------------------------
+# SQL 配置
+# -----------------------------------------------------------------------------
+spark.sql.shuffle.partitions                {{ .Instance.Vars.shuffle_partitions }}
+spark.sql.adaptive.enabled                  {{ .Instance.Vars.adaptive_execution }}

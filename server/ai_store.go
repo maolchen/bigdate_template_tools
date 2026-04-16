@@ -321,12 +321,14 @@ func (s *Server) populateAttachmentURLs(session *aiSession) {
 
 // loadAISession loads a single persisted session and normalizes optional fields for backward compatibility.
 func (s *Server) loadAISession(sessionID string) (*aiSession, error) {
-	data, err := os.ReadFile(s.sessionPath(sessionID))
+	sessionPath := s.sessionPath(sessionID)
+	data, err := os.ReadFile(sessionPath)
 	if err != nil {
 		return nil, err
 	}
 	var session aiSession
 	if err := json.Unmarshal(data, &session); err != nil {
+		fmt.Printf("[AI] session load failed session=%s path=%s bytes=%d err=%v\n", sessionID, sessionPath, len(data), err)
 		return nil, err
 	}
 	session.ConfigPatch = normalizeAIConfigPatch(session.ConfigPatch)
@@ -343,8 +345,11 @@ func (s *Server) loadAISession(sessionID string) (*aiSession, error) {
 	}
 	for idx := range session.Messages {
 		session.Messages[idx].PromptTrace = normalizeAIPromptTrace(session.Messages[idx].PromptTrace)
+		session.Messages[idx].Model = strings.TrimSpace(session.Messages[idx].Model)
 	}
 	s.populateAttachmentURLs(&session)
+	fmt.Printf("[AI] session loaded session=%s path=%s messages=%d drafts=%d attachments=%d bytes=%d\n",
+		session.ID, sessionPath, len(session.Messages), len(session.DraftFiles), len(session.Attachments), len(data))
 	return &session, nil
 }
 
@@ -360,6 +365,9 @@ func (s *Server) saveAISession(session *aiSession) error {
 	session.UpdatedAt = nowRFC3339()
 	session.SelectedSkillIDs = normalizeSelectedSkillIDs(session.SelectedSkillIDs)
 	session.SelectedModel = strings.TrimSpace(session.SelectedModel)
+	for idx := range session.Messages {
+		session.Messages[idx].Model = strings.TrimSpace(session.Messages[idx].Model)
+	}
 	sort.SliceStable(session.Attachments, func(i, j int) bool {
 		return session.Attachments[i].CreatedAt < session.Attachments[j].CreatedAt
 	})
@@ -367,7 +375,13 @@ func (s *Server) saveAISession(session *aiSession) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.sessionPath(session.ID), data, 0644)
+	sessionPath := s.sessionPath(session.ID)
+	if err := os.WriteFile(sessionPath, data, 0644); err != nil {
+		return err
+	}
+	fmt.Printf("[AI] session saved session=%s path=%s messages=%d drafts=%d attachments=%d bytes=%d\n",
+		session.ID, sessionPath, len(session.Messages), len(session.DraftFiles), len(session.Attachments), len(data))
+	return nil
 }
 
 // createAISession allocates a new empty conversation workspace with current default model and timestamps.
@@ -399,6 +413,7 @@ func (s *Server) createAISession() (*aiSession, error) {
 		return nil, err
 	}
 	s.populateAttachmentURLs(session)
+	fmt.Printf("[AI] session initialized id=%s model=%s path=%s\n", session.ID, session.SelectedModel, s.sessionPath(session.ID))
 	return session, nil
 }
 
@@ -538,7 +553,7 @@ func (s *Server) validateDraftTemplate(content string) error {
 	return err
 }
 
-// validatePlannedActions normalizes model-produced actions into the supported mkdir/write_file set.
+// validatePlannedActions normalizes model-produced actions into the supported mkdir/write_file/remove set.
 func validatePlannedActions(actions []aiPlannedAction) ([]aiPlannedAction, error) {
 	validated := make([]aiPlannedAction, 0, len(actions))
 	for _, action := range actions {
@@ -552,8 +567,10 @@ func validatePlannedActions(actions []aiPlannedAction) ([]aiPlannedAction, error
 		switch rawType {
 		case "mkdir", "create_dir", "create_directory", "directory", "dir", "ensure_dir", "ensure_directory", "make_dir", "make_directory", "create_folder", "ensure_folder", "folder":
 			action.Type = "mkdir"
-		case "write_file", "create_file", "file", "write", "save", "save_file", "ensure_file", "template", "template_file", "create_template", "write_template", "save_template", "generate_template", "render_template", "create_script", "write_script":
+		case "write_file", "create_file", "file", "write", "save", "save_file", "ensure_file", "template", "template_file", "create_template", "write_template", "save_template", "generate_template", "render_template", "create_script", "write_script", "update", "update_file", "edit", "edit_file", "modify", "modify_file", "rewrite", "overwrite", "append":
 			action.Type = "write_file"
+		case "remove", "delete", "delete_file", "remove_file", "unlink", "rm", "delete_template", "remove_template", "delete_script", "remove_script", "purge":
+			action.Type = "remove"
 		case "create":
 			if strings.HasSuffix(action.Path, ".tmpl") || filepath.Ext(action.Path) != "" {
 				action.Type = "write_file"
@@ -564,6 +581,8 @@ func validatePlannedActions(actions []aiPlannedAction) ([]aiPlannedAction, error
 			switch {
 			case strings.Contains(rawType, "template"), strings.Contains(rawType, "file"), strings.Contains(rawType, "script"), strings.Contains(rawType, "render"):
 				action.Type = "write_file"
+			case strings.Contains(rawType, "remove"), strings.Contains(rawType, "delete"), strings.Contains(rawType, "unlink"):
+				action.Type = "remove"
 			case strings.Contains(rawType, "dir"), strings.Contains(rawType, "folder"), strings.Contains(rawType, "directory"):
 				action.Type = "mkdir"
 			default:
@@ -574,7 +593,7 @@ func validatePlannedActions(actions []aiPlannedAction) ([]aiPlannedAction, error
 				action.Type = rawType
 			}
 		}
-		if action.Type != "mkdir" && action.Type != "write_file" {
+		if action.Type != "mkdir" && action.Type != "write_file" && action.Type != "remove" {
 			return nil, fmt.Errorf("不支持的计划动作类型: %s", action.Type)
 		}
 		if !strings.HasPrefix(action.Path, "templates/") {
@@ -779,6 +798,16 @@ func (s *Server) buildMessageAttachmentPreview(session *aiSession, attachmentIDs
 	return previews
 }
 
+func validateDraftTemplateContract(path string, content string) error {
+	forbidden := []string{".Instance.NodeAlias", ".Instance.Node.HostName"}
+	for _, token := range forbidden {
+		if strings.Contains(content, token) {
+			return fmt.Errorf("%s 包含禁用占位符 %s，请改为 {{ .Instance.Node.Hostname }}", path, token)
+		}
+	}
+	return nil
+}
+
 // saveDraftFiles validates and writes reviewed drafts into templates/, creating parent directories as needed.
 func (s *Server) saveDraftFiles(files []aiDraftFile) ([]string, []string, error) {
 	savedFiles := make([]string, 0, len(files))
@@ -792,6 +821,10 @@ func (s *Server) saveDraftFiles(files []aiDraftFile) ([]string, []string, error)
 		if err := s.validateDraftTemplate(file.Content); err != nil {
 			return nil, nil, fmt.Errorf("%s 模板语法错误: %w", normalizedPath, err)
 		}
+		if err := validateDraftTemplateContract(normalizedPath, file.Content); err != nil {
+			fmt.Printf("[AI] save reject path=%s reason=%v\n", normalizedPath, err)
+			return nil, nil, err
+		}
 		parentDir := filepath.Dir(fullPath)
 		if err := os.MkdirAll(parentDir, 0755); err != nil {
 			return nil, nil, err
@@ -803,6 +836,9 @@ func (s *Server) saveDraftFiles(files []aiDraftFile) ([]string, []string, error)
 		if err := os.WriteFile(fullPath, []byte(file.Content), 0644); err != nil {
 			return nil, nil, err
 		}
+		hash := sha256.Sum256([]byte(file.Content))
+		fmt.Printf("[AI] save write path=%s abs=%s bytes=%d sha256=%s\n",
+			normalizedPath, filepath.Clean(fullPath), len(file.Content), hex.EncodeToString(hash[:8]))
 		savedFiles = append(savedFiles, normalizedPath)
 	}
 

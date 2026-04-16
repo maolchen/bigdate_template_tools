@@ -1,0 +1,208 @@
+#!/bin/bash
+# ============================================================
+# Spark3 安装脚本（含 HDFS 初始化）
+# 服务：spark3
+# 版本：{{ .Instance.Vars.version }}
+# 节点：{{ .Instance.Node.NodeName }} ({{ .Instance.Node.IP }})
+# 角色：{{ .Instance.Vars.role }}
+# ============================================================
+
+set -e
+
+# ==================== 颜色定义 ====================
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# ==================== 变量定义 ====================
+SPARK_VERSION="{{ .Instance.Vars.version }}"
+HADOOP_VERSION="{{ .Instance.Vars.hadoop_version }}"
+SPARK_INSTALL_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
+SPARK_PACKAGE="{{ .Global.software_dir }}/{{ .Instance.Vars.package_subdir }}/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz"
+SPARK_CONF_DIR="${SPARK_INSTALL_DIR}/conf"
+SYSTEM_USER="{{ .Global.user }}"
+SYSTEM_GROUP="{{ .Global.group }}"
+JAVA_HOME="{{ .Global.java_home }}"
+
+# HDFS 相关
+HDFS_SPARK_LOGS="/sparklogs"
+HDFS_SPARK_JARS="/spark3jars"
+SPARK_JARS_DIR="${SPARK_INSTALL_DIR}/jars"
+
+# 单节点执行标识（仅 master 节点执行 HDFS 初始化）
+HDFS_INIT_NODE="{{ .Instance.Vars.hdfs_init_node }}"
+CURRENT_NODE="{{ .Instance.Node.Hostname }}"
+
+# ==================== 权限辅助函数 ====================
+run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
+# ==================== 日志函数 ====================
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+# ==================== 环境变量配置函数 ====================
+configure_environment() {
+    log_info "配置 Spark 环境变量..."
+    
+    # 1. 系统级环境变量（需要 root 权限）
+    local PROFILE_D_FILE="/etc/profile.d/spark3.sh"
+    cat <<EOF | run_as_root tee "${PROFILE_D_FILE}" > /dev/null
+# Spark3 环境变量
+export SPARK_HOME="${SPARK_INSTALL_DIR}"
+export SPARK_CONF_DIR="${SPARK_CONF_DIR}"
+export JAVA_HOME="${JAVA_HOME}"
+export PATH="\${PATH}:\${SPARK_HOME}/bin:\${SPARK_HOME}/sbin"
+EOF
+    log_info "已配置系统级环境变量：${PROFILE_D_FILE}"
+    
+    # 2. 用户级环境变量（兼容非 root 用户）
+    local USER_PROFILE=""
+    if [ -f "${HOME}/.bashrc" ]; then
+        USER_PROFILE="${HOME}/.bashrc"
+    elif [ -f "${HOME}/.bash_profile" ]; then
+        USER_PROFILE="${HOME}/.bash_profile"
+    fi
+    
+    if [ -n "${USER_PROFILE}" ]; then
+        # 幂等：先检查是否已存在
+        if ! grep -q "SPARK_HOME" "${USER_PROFILE}" 2>/dev/null; then
+            cat <<EOF >> "${USER_PROFILE}"
+
+# Spark3 环境变量
+export SPARK_HOME="${SPARK_INSTALL_DIR}"
+export SPARK_CONF_DIR="${SPARK_CONF_DIR}"
+export PATH="\${PATH}:\${SPARK_HOME}/bin:\${SPARK_HOME}/sbin"
+EOF
+            log_info "已配置用户级环境变量：${USER_PROFILE}"
+        else
+            log_warn "用户环境变量已存在，跳过"
+        fi
+    else
+        log_warn "未找到用户 profile 文件，仅配置了系统级环境变量"
+    fi
+}
+
+# ==================== HDFS 初始化函数（单节点执行）====================
+init_hdfs() {
+    # 仅指定节点执行 HDFS 初始化
+    if [ "${CURRENT_NODE}" != "${HDFS_INIT_NODE}" ]; then
+        log_info "当前节点不是 HDFS 初始化节点 (${HDFS_INIT_NODE})，跳过 HDFS 初始化"
+        return 0
+    fi
+    
+    log_info "开始初始化 Spark3 HDFS 目录（节点：${CURRENT_NODE}）..."
+    
+    # 检查 HDFS 命令是否可用
+    if ! command -v hdfs &> /dev/null; then
+        log_warn "hdfs 命令不可用，跳过 HDFS 初始化（请确保 Hadoop 已正确安装）"
+        return 0
+    fi
+    
+    # 创建 HDFS 日志目录（幂等）
+    log_info "创建 HDFS 目录：${HDFS_SPARK_LOGS}"
+    if hdfs dfs -test -d "${HDFS_SPARK_LOGS}" 2>/dev/null; then
+        log_warn "目录已存在：${HDFS_SPARK_LOGS}"
+    else
+        hdfs dfs -mkdir -p "${HDFS_SPARK_LOGS}"
+        log_success "已创建：${HDFS_SPARK_LOGS}"
+    fi
+    
+    # 创建 HDFS Jars 目录（幂等）
+    log_info "创建 HDFS 目录：${HDFS_SPARK_JARS}"
+    if hdfs dfs -test -d "${HDFS_SPARK_JARS}" 2>/dev/null; then
+        log_warn "目录已存在：${HDFS_SPARK_JARS}"
+    else
+        hdfs dfs -mkdir -p "${HDFS_SPARK_JARS}"
+        log_success "已创建：${HDFS_SPARK_JARS}"
+    fi
+    
+    # 上传 Spark Jars 到 HDFS（幂等）
+    if [ -d "${SPARK_JARS_DIR}" ]; then
+        if hdfs dfs -test -d "${HDFS_SPARK_JARS}/spark-${SPARK_VERSION}" 2>/dev/null; then
+            log_warn "HDFS 上已存在 Spark Jars，跳过上传"
+        else
+            log_info "上传 Jars 到 HDFS：${HDFS_SPARK_JARS}/spark-${SPARK_VERSION}"
+            hdfs dfs -put "${SPARK_JARS_DIR}" "${HDFS_SPARK_JARS}/spark-${SPARK_VERSION}"
+            log_success "Jars 上传完成"
+        fi
+    else
+        log_warn "本地 Jars 目录不存在：${SPARK_JARS_DIR}"
+    fi
+    
+    # 设置 HDFS 权限
+    hdfs dfs -chmod 755 "${HDFS_SPARK_LOGS}" 2>/dev/null || true
+    hdfs dfs -chmod 755 "${HDFS_SPARK_JARS}" 2>/dev/null || true
+    
+    log_success "Spark3 HDFS 目录初始化完成！"
+}
+
+# ==================== 主流程 ====================
+main() {
+    log_info "开始安装 Spark3 ${SPARK_VERSION}..."
+    
+    # 1. 检查安装包是否存在
+    if [ ! -f "${SPARK_PACKAGE}" ]; then
+        log_error "安装包不存在：${SPARK_PACKAGE}"
+        exit 1
+    fi
+    
+    # 2. 创建安装目录（幂等）
+    log_info "创建安装目录：${SPARK_INSTALL_DIR}"
+    run_as_root mkdir -p "${SPARK_INSTALL_DIR}"
+    
+    # 3. 解压安装包（幂等：先检查是否已解压）
+    if [ -f "${SPARK_INSTALL_DIR}/bin/spark-submit" ]; then
+        log_warn "Spark 已安装，跳过解压"
+    else
+        log_info "解压安装包..."
+        run_as_root tar -xzf "${SPARK_PACKAGE}" -C "${SPARK_INSTALL_DIR}" --strip-components=1
+    fi
+    
+    # 4. 设置权限
+    log_info "设置目录权限..."
+    run_as_root chown -R ${SYSTEM_USER}:${SYSTEM_GROUP} "${SPARK_INSTALL_DIR}"
+    run_as_root chmod 755 "${SPARK_INSTALL_DIR}"
+    
+    # 5. 创建配置目录
+    log_info "创建配置目录..."
+    run_as_root mkdir -p "${SPARK_CONF_DIR}"
+    
+    # 6. 创建日志和数据目录
+    log_info "创建本地日志目录..."
+    run_as_root mkdir -p "{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}"
+    run_as_root mkdir -p "{{ .Global.data_base_dir }}/{{ .Instance.Vars.event_log_subdir }}"
+    run_as_root chown -R ${SYSTEM_USER}:${SYSTEM_GROUP} "{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}"
+    run_as_root chown -R ${SYSTEM_USER}:${SYSTEM_GROUP} "{{ .Global.data_base_dir }}/{{ .Instance.Vars.event_log_subdir }}"
+    
+    # 7. 配置环境变量
+    configure_environment
+    
+    # 8. 初始化 HDFS（仅单节点执行）
+    init_hdfs
+    
+    log_success "Spark3 安装完成！"
+    log_info "配置文件位置：${SPARK_CONF_DIR}"
+    log_info "启动命令：${SPARK_INSTALL_DIR}/sbin/start-master.sh 或 start-worker.sh"
+}
+
+main "$@"

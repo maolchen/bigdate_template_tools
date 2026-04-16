@@ -11,6 +11,7 @@ import (
 // handleAuthLogin validates username/password and creates session cookie.
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	fmt.Printf("[Auth] login api method=%s\n", r.Method)
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -24,6 +25,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	principal, err := s.login(req.Username, req.Password)
 	if err != nil {
+		fmt.Printf("[Auth] login api failed username=%s err=%v\n", strings.TrimSpace(req.Username), err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
@@ -47,6 +49,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 // handleAuthLogout clears current auth session.
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	fmt.Printf("[Auth] logout api method=%s\n", r.Method)
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -76,20 +79,17 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	meta, err := s.loadUserMeta(principal.Username)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	fmt.Printf("[Auth] me user=%s role=%s\n", principal.Username, principal.Role)
 	json.NewEncoder(w).Encode(map[string]any{
 		"user":             principal,
-		"activeTemplateId": meta.ActiveTemplateID,
+		"activeTemplateId": userMainTemplateID,
 	})
 }
 
 // handleAuthChangePassword updates current user's password.
 func (s *Server) handleAuthChangePassword(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	fmt.Printf("[Auth] change-password api method=%s\n", r.Method)
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -107,6 +107,7 @@ func (s *Server) handleAuthChangePassword(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := s.changePassword(principal, req); err != nil {
+		fmt.Printf("[Auth] change-password failed user=%s err=%v\n", principal.Username, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -120,6 +121,7 @@ func (s *Server) handleAuthChangePassword(w http.ResponseWriter, r *http.Request
 // handleUsersCollection manages /api/users list/create operations.
 func (s *Server) handleUsersCollection(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	fmt.Printf("[Auth] users collection method=%s\n", r.Method)
 	switch r.Method {
 	case http.MethodGet:
 		json.NewEncoder(w).Encode(s.listUsers())
@@ -147,6 +149,7 @@ func (s *Server) handleUsersCollection(w http.ResponseWriter, r *http.Request) {
 // handleUsersDetail manages /api/users/:username update operation.
 func (s *Server) handleUsersDetail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	fmt.Printf("[Auth] users detail method=%s path=%s\n", r.Method, r.URL.Path)
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return

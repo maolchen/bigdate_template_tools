@@ -37,8 +37,19 @@ func (s *Server) runAISessionMessageWithExecutor(session *aiSession, req aiSessi
 	req.SelectedSkillIDs = normalizeSelectedSkillIDs(req.SelectedSkillIDs)
 
 	attachmentIDs := consumePendingAttachments(session)
-	fmt.Printf("[AI] message session=%s messageLen=%d pendingAttachments=%d draftPaths=%d skills=%d\n",
-		session.ID, len(strings.TrimSpace(req.Message)), len(attachmentIDs), len(req.SelectedDraftPaths), len(req.SelectedSkillIDs))
+	sessionRules := strings.TrimSpace(req.SessionRules)
+	fmt.Printf("[AI] message session=%s model=%s messageLen=%d messagePreview=%q pendingAttachments=%d attachmentIDs=%s draftPaths=%s skills=%s hasSessionRules=%t sessionRulesLen=%d\n",
+		session.ID,
+		strings.TrimSpace(req.Model),
+		len(strings.TrimSpace(req.Message)),
+		previewLogText(req.Message, 160),
+		len(attachmentIDs),
+		summarizePathsForLog(attachmentIDs, 8),
+		summarizePathsForLog(req.SelectedDraftPaths, 8),
+		summarizePathsForLog(req.SelectedSkillIDs, 8),
+		sessionRules != "",
+		len(sessionRules),
+	)
 
 	emitAIProgress(progress, "status", "正在整理本轮附件、草稿与规则上下文", aiPromptTrace{})
 	chatReq, err := s.buildAIChatRequest(session, req, attachmentIDs)
@@ -52,28 +63,30 @@ func (s *Server) runAISessionMessageWithExecutor(session *aiSession, req aiSessi
 
 	emitAIProgress(progress, "trace", "", session.PromptTrace)
 	emitAIProgress(progress, "status",
-		fmt.Sprintf("已装载 %d 条规则，参考 %d 个模板示例",
-			len(session.PromptTrace.SkillRefs), len(session.PromptTrace.ExampleRefs)),
+		fmt.Sprintf("已装载 %d 条规则，参考 %d 个模板示例", len(session.PromptTrace.SkillRefs), len(session.PromptTrace.ExampleRefs)),
 		session.PromptTrace,
 	)
+	resolvedModel := strings.TrimSpace(chatReq.Model)
 
 	apiKey, settings, err := s.getAIAPIKey()
 	if err != nil {
 		return nil, http.StatusBadRequest, err
 	}
 
-	emitAIProgress(progress, "status", "正在调用模型生成结构化模板草稿", session.PromptTrace)
+	emitAIProgress(progress, "status", fmt.Sprintf("正在调用模型 %s 生成结构化结果", resolvedModel), session.PromptTrace)
 	if execute == nil {
 		execute = s.aiClient.ChatCompletion
 	}
+	fmt.Printf("[AI] message invoke model=%s baseUrl=%s session=%s\n", resolvedModel, redactBaseURL(settings.BaseURL), session.ID)
 	rawResponse, err := execute(normalizeBaseURL(settings.BaseURL), apiKey, chatReq)
 	if err != nil {
 		restorePendingAttachments(session, attachmentIDs)
 		if len(attachmentIDs) > 0 {
-			return nil, http.StatusBadRequest, fmt.Errorf("AI 调用失败，当前模型或接口可能不支持图像输入，或请求格式被拒绝: %w", err)
+			return nil, http.StatusBadRequest, fmt.Errorf("模型 %s 调用失败：当前模型或接口可能不支持图片输入，或请求格式被拒绝: %w", resolvedModel, err)
 		}
-		return nil, http.StatusBadRequest, err
+		return nil, http.StatusBadRequest, fmt.Errorf("模型 %s 调用失败: %w", resolvedModel, err)
 	}
+	fmt.Printf("[AI] message raw response session=%s bytes=%d preview=%q\n", session.ID, len(rawResponse), previewLogText(rawResponse, 200))
 
 	emitAIProgress(progress, "status", "正在解析模型结果并校验动作类型", session.PromptTrace)
 	modelResponse, err := parseAIModelResponse(rawResponse)
@@ -114,9 +127,16 @@ func (s *Server) runAISessionMessageWithExecutor(session *aiSession, req aiSessi
 			modelResponse.Warnings = mergeStringLists(modelResponse.Warnings, []string{issue.Message})
 		}
 	}
-	fmt.Printf("[AI] response session=%s drafts=%d actions=%d warnings=%d followUps=%d configIssues=%d\n",
-		session.ID, len(modelResponse.DraftFiles), len(modelResponse.PlannedActions), len(modelResponse.Warnings),
-		len(modelResponse.FollowUpQuestions), len(configIssues))
+	fmt.Printf("[AI] response session=%s drafts=%d draftSummary=%s actions=%d actionSummary=%s warnings=%d followUps=%d configIssues=%d\n",
+		session.ID,
+		len(modelResponse.DraftFiles),
+		summarizeDraftFilesForLog(modelResponse.DraftFiles, 8),
+		len(modelResponse.PlannedActions),
+		summarizeActionsForLog(modelResponse.PlannedActions, 8),
+		len(modelResponse.Warnings),
+		len(modelResponse.FollowUpQuestions),
+		len(configIssues),
+	)
 
 	messageID, err := generateID("msg_")
 	if err != nil {
@@ -143,6 +163,7 @@ func (s *Server) runAISessionMessageWithExecutor(session *aiSession, req aiSessi
 		ID:                assistantMessageID,
 		Role:              "assistant",
 		Content:           strings.TrimSpace(modelResponse.AssistantMessage),
+		Model:             resolvedModel,
 		CreatedAt:         nowRFC3339(),
 		Warnings:          modelResponse.Warnings,
 		FollowUpQuestions: modelResponse.FollowUpQuestions,
@@ -164,6 +185,7 @@ func (s *Server) runAISessionMessageWithExecutor(session *aiSession, req aiSessi
 		fmt.Printf("[AI] save session failed session=%s err=%v\n", session.ID, err)
 		return nil, http.StatusInternalServerError, err
 	}
+	fmt.Printf("[AI] message persisted session=%s messages=%d drafts=%d configIssues=%d\n", session.ID, len(session.Messages), len(session.DraftFiles), len(session.ConfigIssues))
 	s.populateAttachmentURLs(session)
 
 	return &aiMessageRunnerResult{

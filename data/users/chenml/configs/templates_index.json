@@ -3,25 +3,19 @@
     {
       "id": "config",
       "fileName": "config.yaml",
+      "kind": "main",
       "remark": "",
-      "nodeSummary": "4节点/23服务",
-      "updatedAt": "2026-04-11T16:52:09+08:00",
-      "isActive": false
-    },
-    {
-      "id": "1",
-      "fileName": "1_config.yaml",
-      "remark": "4节点",
-      "nodeSummary": "7节点/23服务",
-      "updatedAt": "2026-04-11T16:55:29+08:00",
+      "nodeSummary": "7 nodes / 23 services",
+      "updatedAt": "2026-04-16T13:40:18+08:00",
       "isActive": true
     },
     {
       "id": "2",
       "fileName": "2_config.yaml",
+      "kind": "backup",
       "remark": "7节点服务",
-      "nodeSummary": "7节点/23服务",
-      "updatedAt": "2026-04-11T16:56:02+08:00",
+      "nodeSummary": "4 nodes / 23 services",
+      "updatedAt": "2026-04-16T13:41:04+08:00",
       "isActive": false
     }
   ]

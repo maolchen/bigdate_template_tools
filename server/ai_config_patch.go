@@ -409,6 +409,34 @@ func removeAppliedServicesFromSession(session *aiSession, services map[string]st
 	session.ConfigIssues = filteredIssues
 }
 
+// replaceSessionPatchAndIssuesForServices refreshes session-level patch/issues for selected services
+// so save-time validation always reflects the latest config state instead of stale conversation snapshots.
+func replaceSessionPatchAndIssuesForServices(session *aiSession, services map[string]struct{}, patch aiConfigPatch, issues []aiConfigIssue) {
+	for serviceName := range services {
+		delete(session.ConfigPatch.ServiceTop, serviceName)
+		delete(session.ConfigPatch.ServerConfig, serviceName)
+	}
+	for serviceName, topo := range patch.ServiceTop {
+		if _, exists := services[serviceName]; exists {
+			session.ConfigPatch.ServiceTop[serviceName] = topo
+		}
+	}
+	for serviceName, serviceCfg := range patch.ServerConfig {
+		if _, exists := services[serviceName]; exists {
+			session.ConfigPatch.ServerConfig[serviceName] = serviceCfg
+		}
+	}
+
+	filteredIssues := make([]aiConfigIssue, 0, len(session.ConfigIssues))
+	for _, issue := range session.ConfigIssues {
+		if _, exists := services[issue.Service]; exists {
+			continue
+		}
+		filteredIssues = append(filteredIssues, issue)
+	}
+	session.ConfigIssues = mergeAIConfigIssues(filteredIssues, issues)
+}
+
 func buildConfigPromptContext(cfg *config.Config) string {
 	if cfg == nil {
 		return ""

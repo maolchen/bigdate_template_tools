@@ -1,202 +1,257 @@
-# 大数据平台离线配置生成器
+﻿# 大数据平台脚本生成工具
 
-一个基于 Go Template 的配置生成器，用于在无 SSH 互通的网络环境下自动化交付 Hadoop 生态组件。
+一个面向公司内部交付场景的离线配置与脚本生成工具。
 
-## 功能特性
+项目基于 `config.yaml + templates/` 工作，提供 Web 配置界面、AI 模板工作台、模板在线编辑器，以及按用户隔离的配置与输出目录，适用于 Hadoop 生态及其他大数据服务的标准化交付。
 
-- ✅ **Web 可视化配置界面** - 友好的图形化配置界面
-- ✅ **REST API** - 完整的 API 支持，可集成到其他系统
-- ✅ **命令行模式** - 支持直接生成配置文件
-- ✅ **模板引擎** - 基于 Go Template，支持复杂逻辑
-- ✅ **多节点管理** - 支持节点复用和服务拓扑配置
-- ✅ **配置导出** - 支持单个文件下载和批量打包下载
-- ✅ **AI 模板工作台** - 支持对话生成模板、流式回复、历史会话、Skill 管理
+## 当前能力
+
+- 用户登录与权限控制
+  - 仅支持 `admin` / `user` 两种角色
+  - 管理员同一时间只允许一个有效登录会话
+- 配置管理
+  - 全局配置
+  - 节点管理
+  - 服务拓扑
+  - 服务配置
+- 用户空间隔离
+  - 每个用户拥有自己的 `config.yaml`
+  - 每个用户拥有自己的输出目录
+  - 每个用户可维护多份“配置模板”备份
+- 主配置增量同步
+  - 用户登录后可感知根 `config.yaml` 是否更新
+  - 支持同步新增项
+  - 支持危险操作：按主配置清理删除项
+- 配置模板管理
+  - 当前主模板固定表现为 `config.yaml`
+  - 备份模板以 `<id>_config.yaml` 保存在用户目录
+  - 切换模板采用“主模板/备份模板互换”方式
+- 配置生成
+  - 基于 `config.yaml + templates/` 渲染输出
+  - 输出目录按用户隔离
+- AI 模板工作台
+  - AI 会话、流式回复、附件上传、草稿管理
+  - AI 可生成模板草稿、配置补丁建议、计划动作
+  - 仅管理员允许保存模板到 `templates/`
+- 模板编辑器
+  - 独立页面打开
+  - 管理员可编辑 `templates/`，普通用户只读
+  - 支持黑白模式、目录树操作、右键菜单
+
+## 当前实现边界
+
+- 面向内部单机场景，不引入数据库
+- 认证基于文件存储与 Cookie 会话
+- 正式模板目录仍为 `templates/`
+- AI 生成的模板仍然落盘到 `templates/`，未做模板版本库
+- `config.yaml` 仍然是生成的核心输入，只是在 Web 场景下按用户复制到用户空间使用
+
+## 目录结构
+
+```text
+.
+├── main.go
+├── config.yaml
+├── templates/
+├── output/
+├── data/
+│   ├── auth/
+│   │   └── sessions.json
+│   ├── users/
+│   │   ├── users.json
+│   │   └── <username>/
+│   │       ├── configs/
+│   │       │   ├── config.yaml
+│   │       │   ├── <id>_config.yaml
+│   │       │   └── templates_index.json
+│   │       └── meta.json
+│   └── ai/
+│       ├── settings.json
+│       ├── template_rules.md
+│       ├── examples_index.json
+│       ├── skills/
+│       ├── sessions/
+│       └── uploads/
+├── config/
+├── generator/
+├── checker/
+├── server/
+├── utils/
+└── web/
+```
+
+## 核心架构
+
+### 后端
+
+- `config/`
+  - 配置结构定义与 YAML 读写
+- `generator/`
+  - 构建服务实例
+  - Go Template 函数与渲染
+  - 输出生成
+- `checker/`
+  - 删除前模板引用检查
+- `server/`
+  - 认证与用户管理
+  - 用户配置模板管理
+  - 配置读写与主配置同步
+  - AI 工作台接口
+  - 模板编辑器接口
+- `utils/`
+  - 路径、ID、嵌套变量等通用工具
+
+### 前端
+
+- `App.tsx`
+  - 登录态初始化
+  - 页面切换
+  - 主配置版本轮询
+- `web/src/components/`
+  - 概览、全局配置、配置管理、AI 模板、生成、预览、导出、模板编辑器等页面组件
+- `web/src/api/`
+  - 按模块封装接口调用
+
+## 主要页面
+
+- `概览`
+- `全局配置`
+- `配置管理`
+  - 模板管理
+  - 节点管理
+  - 服务拓扑 / 服务配置
+- `AI模板`
+- `模板编辑器`
+- `生成配置`
+- `YAML预览`
+- `导出配置`
+- `系统设置`
+  - 修改密码
+  - 用户管理（仅管理员）
+  - 退出系统
 
 ## 快速开始
 
-### 1. 命令行模式（生成配置）
-
-```bash
-./server-bin
-```
-
-这会读取 `config.yaml` 并生成配置文件到 `output/` 目录。
-
-### 2. Web 模式（可视化配置）
-
-```bash
-# 默认端口 5000
-./server-bin --web
-
-# 指定端口
-./server-bin --web --port=8080
-```
-
-访问 http://localhost:5000/ 打开配置界面。
-
-## Windows 使用
-
-```powershell
-# 命令行模式
-server.exe
-
-# Web 模式
-server.exe --web
-```
-
-## 文件结构
-
-```
-project/
-├── main.go              # 源代码
-├── config.yaml          # 配置文件
-├── templates/           # 模板目录
-│   ├── hadoop3/
-│   ├── kafka/
-│   └── ...
-├── web/
-│   └── dist/            # 前端构建产物
-├── server-bin           # Linux/Mac 二进制文件
-├── server.exe           # Windows 二进制文件
-├── build.sh             # 构建脚本
-└── output/              # 输出目录（生成后）
-```
-
-## API 接口
-
-### 配置管理
-- `GET /api/config` - 获取当前配置
-- `PUT /api/config` - 保存配置
-- `POST /api/config/reload` - 从文件重新加载配置
-
-### 配置生成
-- `POST /api/generate` - 生成配置文件
-
-### 输出管理
-- `GET /api/output` - 获取生成的文件列表
-- `GET /api/output/download` - 下载配置包（ZIP）
-- `GET /api/output/file?path=xxx` - 获取单个文件内容
-
-### 模板管理
-- `GET /api/templates` - 获取模板列表
-
-### AI 模板工作台
-- `GET /api/ai/settings` / `PUT /api/ai/settings` - AI 接口设置
-- `POST /api/ai/settings/test` - 测试连接
-- `GET /api/ai/template/session` / `POST /api/ai/template/session` - 历史会话与新建会话
-- `POST /api/ai/template/session/:id/message?stream=1` - 流式对话生成模板草稿
-- `POST /api/ai/template/session/:id/upload` - 上传附件（文本/图片）
-- `POST /api/ai/template/session/:id/save` - 审核后落盘到 `templates/`
-
-## 开发
-
-### 构建前端
+### 1. 安装前端依赖
 
 ```bash
 pnpm install
-pnpm run build
 ```
 
-### 编译后端
+### 2. 启动 Web 服务
 
 ```bash
-# Linux
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server-bin main.go
-
-# Windows
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o server.exe main.go
-
-# macOS
-CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o server-darwin main.go
+go run main.go --web
 ```
 
-### 完整构建
+或：
 
 ```bash
-bash build.sh
+./server.exe --web
 ```
 
-## 清理
+默认地址：
+
+- Web: [http://localhost:5000/](http://localhost:5000/)
+- API: [http://localhost:5000/api/config](http://localhost:5000/api/config)
+
+### 3. 默认管理员账号
+
+首次启动会自动初始化：
+
+- 用户名：`admin`
+- 密码：`Admin@123`
+
+## 命令行模式
+
+直接生成输出：
 
 ```bash
-bash clean.sh
+go run main.go
 ```
 
-## 配置文件说明
+命令行模式会直接读取根目录 `config.yaml` 与 `templates/`，输出到 `output/`。
 
-配置文件 `config.yaml` 包含以下部分：
+## 构建
 
-- `global` - 全局配置（用户、组、路径等）
-- `nodes` - 节点定义（IP、主机名）
-- `serviceTop` - 服务拓扑（服务与节点映射）
-- `serverConfig` - 服务配置（变量、端口等）
-- `nodeOverrides` - 节点特化配置（可选）
-
-详细配置说明请参考 [USAGE_GUIDE.md](USAGE_GUIDE.md)。
-AI 工作台说明请参考 [docs/AI_WORKBENCH.md](docs/AI_WORKBENCH.md)。
-
-## 模板开发
-
-模板存放在 `templates/` 目录，按服务名组织：
-
-```
-templates/
-├── hadoop3/
-│   ├── install.sh.tmpl
-│   ├── core-site.xml.tmpl
-│   └── ...
-├── kafka/
-│   ├── install.sh.tmpl
-│   ├── server.properties.tmpl
-│   └── ...
-```
-
-### 模板函数
-
-模板支持以下内置函数：
-
-**基础函数：**
-- `toUpper`, `toLower`, `trim`, `replace`, `default`
-
-**数学函数：**
-- `add`, `sub`, `mul`, `div`
-
-**服务节点函数：**
-- `serviceNodes(serviceName)` - 获取服务的所有节点实例
-- `serviceEndpoints(serviceName, portField)` - 获取服务端点列表
-- `serviceIPs(serviceName)` - 获取服务所有 IP
-- `serviceHostnames(serviceName)` - 获取服务所有主机名
-
-**配置访问函数：**
-- `serviceVars(serviceName)` - 获取服务配置变量
-- `nodeInfo(nodeName)` - 获取节点信息
-
-## 常见问题
-
-### 端口被占用
-
-修改启动端口：
+### 前端构建
 
 ```bash
-./server-bin --web --port=8080
+pnpm --dir web build
 ```
 
-### 前端无法访问
+### 后端构建
 
-1. 确保 `web/dist/index.html` 存在
-2. 运行 `pnpm run build` 构建前端
-3. 检查启动日志中的前端目录路径
+```bash
+go build -o server.exe main.go
+```
 
-### 配置格式错误
+## 测试
 
-1. 使用在线 YAML 验证器检查格式
-2. 查看启动日志中的错误信息
-3. 参考 `config.yaml` 示例
+```bash
+go test ./...
+pnpm --dir web build
+```
 
-## 环境变量
+说明：当前仓库存在部分既有 AI 单测失败时，优先以具体失败日志为准，不代表配置/模板主链路不可用。
 
-- `DEPLOY_RUN_PORT` - 指定服务端口（优先级低于 --port 参数）
+## 配置与渲染模型
 
-## 许可证
+核心配置结构：
 
-MIT
+- `global`
+- `nodes`
+- `serviceTop`
+- `serverConfig`
+- `nodeOverrides`
+
+生成流程：
+
+1. 读取配置
+2. 构建服务实例列表
+3. 扫描 `templates/<service>/*.tmpl`
+4. 渲染到 `output/users/<username>/<nodeIP>/<service>/...`
+
+## 模板变量模型
+
+运行时模板上下文位于 `config.Context`：
+
+- `.Global`
+- `.Nodes`
+- `.Instance.ServiceName`
+- `.Instance.NodeName`
+- `.Instance.Node.IP`
+- `.Instance.Node.Hostname`
+- `.Instance.Node.NodeName`
+- `.Instance.Vars`
+- `.Instance.AutoID`
+- `.AllInstances`
+
+常用内置函数位于 `generator/template.go`，例如：
+
+- `serviceNodes`
+- `serviceEndpoints`
+- `serviceIPs`
+- `serviceHostnames`
+- `serviceVars`
+- `serviceVar`
+- `nodeInfo`
+- `join`
+- `default`
+
+## 文档
+
+- [需求设计文档](docs/REQUIREMENTS_DESIGN.md)
+- [接口文档](docs/API_REFERENCE.md)
+- [调用链图](docs/CALL_CHAIN.md)
+- [AI 工作台说明](docs/AI_WORKBENCH.md)
+- [AI 模板使用规范](docs/AI_TEMPLATE_USAGE_GUIDE.md)
+- [全局变量复用规范](docs/GLOBAL_VARS_GUIDE.md)
+
+## 注意事项
+
+- 所有 `/api/*` 认证接口依赖 Cookie 会话
+- 模板在线编辑与 AI 模板保存均要求管理员权限
+- 普通用户保存配置时只影响自己的用户空间
+- 管理员保存根配置后会同步增量更新到普通用户空间
+- 普通用户看到的“主模板”本质上始终是自己空间下的 `config.yaml`

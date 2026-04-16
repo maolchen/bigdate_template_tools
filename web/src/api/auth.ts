@@ -10,6 +10,8 @@ export interface LoginResponse {
   success: boolean;
   user: AuthUser;
   sync: {
+    addedGlobalKeys: string[];
+    globalAdded: number;
     addedServices: string[];
     serviceTopAdded: number;
     serverConfigAdded: number;
@@ -38,6 +40,7 @@ async function parseError(response: Response, fallback: string): Promise<Error> 
 export async function login(username: string, password: string): Promise<LoginResponse> {
   const response = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   });
@@ -48,12 +51,15 @@ export async function login(username: string, password: string): Promise<LoginRe
 export async function logout(): Promise<void> {
   const response = await fetch(`${API_BASE}/auth/logout`, {
     method: 'POST',
+    credentials: 'include',
   });
   if (!response.ok) throw await parseError(response, '退出登录失败');
 }
 
 export async function fetchMe(): Promise<MeResponse> {
-  const response = await fetch(`${API_BASE}/auth/me`);
+  const response = await fetch(`${API_BASE}/auth/me`, {
+    credentials: 'include',
+  });
   if (!response.ok) throw await parseError(response, '获取用户信息失败');
   return response.json();
 }
@@ -61,6 +67,7 @@ export async function fetchMe(): Promise<MeResponse> {
 export async function changePassword(oldPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
   const response = await fetch(`${API_BASE}/auth/change-password`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ oldPassword, newPassword }),
   });
@@ -69,7 +76,9 @@ export async function changePassword(oldPassword: string, newPassword: string): 
 }
 
 export async function fetchUsers(): Promise<UserSummary[]> {
-  const response = await fetch(`${API_BASE}/users`);
+  const response = await fetch(`${API_BASE}/users`, {
+    credentials: 'include',
+  });
   if (!response.ok) throw await parseError(response, '获取用户列表失败');
   return response.json();
 }
@@ -82,6 +91,7 @@ export async function createUser(payload: {
 }): Promise<UserSummary> {
   const response = await fetch(`${API_BASE}/users`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
@@ -97,6 +107,7 @@ export async function updateUser(username: string, payload: {
 }): Promise<UserSummary> {
   const response = await fetch(`${API_BASE}/users/${encodeURIComponent(username)}`, {
     method: 'PUT',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });

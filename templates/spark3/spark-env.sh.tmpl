@@ -1,0 +1,64 @@
+#!/bin/bash
+# =============================================================================
+# Spark Environment Configuration
+# 服务：spark3
+# 节点：{{ .Instance.Node.Hostname }}
+# 角色：{{ .Instance.Vars.role }}
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Java 环境
+# -----------------------------------------------------------------------------
+export JAVA_HOME="{{ .Global.java_home }}"
+
+# -----------------------------------------------------------------------------
+# Scala 环境（如已安装）
+# -----------------------------------------------------------------------------
+{{- if .Instance.Vars.scala_home }}
+export SCALA_HOME="{{ .Instance.Vars.scala_home }}"
+{{- end }}
+
+# -----------------------------------------------------------------------------
+# Hadoop 环境
+# -----------------------------------------------------------------------------
+{{- if .Instance.Vars.hadoop_home }}
+export HADOOP_HOME="{{ .Instance.Vars.hadoop_home }}"
+{{- end }}
+{{- if .Instance.Vars.hadoop_conf_dir }}
+export HADOOP_CONF_DIR="{{ .Instance.Vars.hadoop_conf_dir }}"
+{{- end }}
+
+# -----------------------------------------------------------------------------
+# Spark 基础配置
+# -----------------------------------------------------------------------------
+export SPARK_HOME="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
+export SPARK_CONF_DIR="${SPARK_HOME}/conf"
+
+# -----------------------------------------------------------------------------
+# Master/Worker 角色配置
+# -----------------------------------------------------------------------------
+{{- if eq .Instance.Vars.role "master" }}
+export SPARK_MASTER_HOST="{{ .Instance.Node.Hostname }}"
+export SPARK_MASTER_PORT="{{ .Instance.Vars.master_port }}"
+export SPARK_MASTER_WEBUI_PORT="{{ .Instance.Vars.master_webui_port }}"
+{{- end }}
+
+{{- if eq .Instance.Vars.role "worker" }}
+export SPARK_WORKER_HOST="{{ .Instance.Node.Hostname }}"
+export SPARK_WORKER_PORT="{{ .Instance.Vars.worker_port }}"
+export SPARK_WORKER_WEBUI_PORT="{{ .Instance.Vars.worker_webui_port }}"
+export SPARK_WORKER_CORES="{{ .Instance.Vars.worker_cores }}"
+export SPARK_WORKER_MEMORY="{{ .Instance.Vars.worker_memory }}"
+{{- end }}
+
+# -----------------------------------------------------------------------------
+# 日志配置
+# -----------------------------------------------------------------------------
+export SPARK_LOG_DIR="{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}"
+export SPARK_EVENT_LOG_DIR="{{ .Global.data_base_dir }}/{{ .Instance.Vars.event_log_subdir }}"
+
+# -----------------------------------------------------------------------------
+# 其他配置
+# -----------------------------------------------------------------------------
+export SPARK_PID_DIR="{{ .Global.temp_dir }}/spark"
+export SPARK_IDENT_STRING="{{ .Global.user }}"

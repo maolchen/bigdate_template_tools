@@ -73,6 +73,14 @@ func generateSessionToken() (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
+func shortToken(token string) string {
+	token = strings.TrimSpace(token)
+	if len(token) <= 8 {
+		return token
+	}
+	return token[:8] + "..."
+}
+
 func (s *Server) initAuthStore() error {
 	if err := os.MkdirAll(s.usersRootDir, 0755); err != nil {
 		return err
@@ -98,6 +106,8 @@ func (s *Server) initAuthStore() error {
 			return err
 		}
 	}
+	fmt.Printf("[Auth] store initialized users=%d sessions=%d usersFile=%s sessionsFile=%s\n",
+		len(s.authUsers), len(s.authSessions), s.usersFilePath, s.sessionsFilePath)
 
 	return nil
 }
@@ -243,9 +253,48 @@ func (s *Server) activeAdminSessionExistsLocked() bool {
 	return false
 }
 
+// findActiveAdminSessionLocked returns any currently active admin session.
+// Caller must hold s.authMu.
+func (s *Server) findActiveAdminSessionLocked() (string, authSessionRecord, bool) {
+	now := time.Now()
+	for token, session := range s.authSessions {
+		if session.Role != roleAdmin {
+			continue
+		}
+		expiresAt, err := time.Parse(time.RFC3339, session.ExpiresAt)
+		if err != nil {
+			continue
+		}
+		if now.Before(expiresAt) {
+			return token, session, true
+		}
+	}
+	return "", authSessionRecord{}, false
+}
+
+// revokeActiveAdminSessionsByUsernameLocked removes all active admin sessions for the given username.
+// Caller must hold s.authMu.
+func (s *Server) revokeActiveAdminSessionsByUsernameLocked(username string) int {
+	now := time.Now()
+	removed := 0
+	for token, session := range s.authSessions {
+		if session.Role != roleAdmin || session.Username != username {
+			continue
+		}
+		expiresAt, err := time.Parse(time.RFC3339, session.ExpiresAt)
+		if err != nil || now.After(expiresAt) {
+			continue
+		}
+		delete(s.authSessions, token)
+		removed++
+	}
+	return removed
+}
+
 func (s *Server) login(username, password string) (authPrincipal, error) {
 	username, err := validateUsername(username)
 	if err != nil {
+		fmt.Printf("[Auth] login invalid username raw=%q err=%v\n", username, err)
 		return authPrincipal{}, err
 	}
 
@@ -254,13 +303,24 @@ func (s *Server) login(username, password string) (authPrincipal, error) {
 
 	user, ok := s.authUsers[username]
 	if !ok || !user.Enabled {
+		fmt.Printf("[Auth] login denied username=%s reason=user_not_found_or_disabled\n", username)
 		return authPrincipal{}, errors.New("invalid username or password")
 	}
 	if !verifyPassword(user.PasswordHash, password) {
+		fmt.Printf("[Auth] login denied username=%s reason=password_mismatch\n", username)
 		return authPrincipal{}, errors.New("invalid username or password")
 	}
-	if user.Role == roleAdmin && s.activeAdminSessionExistsLocked() {
-		return authPrincipal{}, errors.New("another admin session is active")
+	if user.Role == roleAdmin {
+		if conflictToken, conflictSession, ok := s.findActiveAdminSessionLocked(); ok {
+			if conflictSession.Username == user.Username {
+				// Same admin account re-login is treated as session takeover to avoid stale lock after tab/browser close.
+				removed := s.revokeActiveAdminSessionsByUsernameLocked(user.Username)
+				fmt.Printf("[Auth] admin relogin takeover user=%s removedSessions=%d conflictToken=%s\n", user.Username, removed, conflictToken)
+			} else {
+				fmt.Printf("[Auth] admin login blocked user=%s activeAdmin=%s token=%s\n", user.Username, conflictSession.Username, conflictToken)
+				return authPrincipal{}, errors.New("another admin session is active")
+			}
+		}
 	}
 
 	token, err := generateSessionToken()
@@ -279,6 +339,7 @@ func (s *Server) login(username, password string) (authPrincipal, error) {
 	if err := s.saveSessionsToFileLocked(); err != nil {
 		return authPrincipal{}, err
 	}
+	fmt.Printf("[Auth] login success username=%s role=%s token=%s expiresAt=%s\n", user.Username, user.Role, shortToken(token), record.ExpiresAt)
 	return authPrincipal{
 		Token:              token,
 		Username:           user.Username,
@@ -297,8 +358,10 @@ func (s *Server) logout(token string) error {
 
 	if _, exists := s.authSessions[token]; exists {
 		delete(s.authSessions, token)
+		fmt.Printf("[Auth] logout token=%s\n", shortToken(token))
 		return s.saveSessionsToFileLocked()
 	}
+	fmt.Printf("[Auth] logout ignored token=%s reason=not_found\n", shortToken(token))
 	return nil
 }
 
@@ -440,6 +503,7 @@ func (s *Server) createUser(req authCreateUserRequest) (authUserSummary, error) 
 	if err := s.saveUsersToFileLocked(); err != nil {
 		return authUserSummary{}, err
 	}
+	fmt.Printf("[Auth] user created username=%s role=%s enabled=%t\n", record.Username, record.Role, record.Enabled)
 	return authUserSummary{
 		Username:           record.Username,
 		Role:               record.Role,
@@ -509,6 +573,8 @@ func (s *Server) updateUser(username string, req authUpdateUserRequest) (authUse
 	if err := s.saveUsersToFileLocked(); err != nil {
 		return authUserSummary{}, err
 	}
+	fmt.Printf("[Auth] user updated username=%s role=%s enabled=%t mustChangePassword=%t resetPassword=%t\n",
+		user.Username, user.Role, user.Enabled, user.MustChangePassword, strings.TrimSpace(req.ResetPassword) != "")
 	return authUserSummary{
 		Username:           user.Username,
 		Role:               user.Role,
@@ -545,6 +611,7 @@ func (s *Server) changePassword(principal authPrincipal, req authChangePasswordR
 	if err := s.saveUsersToFileLocked(); err != nil {
 		return err
 	}
+	fmt.Printf("[Auth] password changed username=%s\n", user.Username)
 	return nil
 }
 

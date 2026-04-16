@@ -1,3 +1,4 @@
-Docker 特殊规则：
-- 允许涉及 /etc/docker、/usr/lib/systemd/system、docker.service 这类系统路径。
-- 但仍需优先复用全局用户、组和软件目录，并明确说明哪些路径是 Docker 的固定系统约束。
+﻿Docker 模板补充约束 (Docker-specific guidance)：
+- 允许使用系统路径（如 `/etc/docker`、systemd 路径）
+- user/group 和通用目录仍优先来自 `.Global`
+- 服务参数优先来自 `.Instance.Vars`

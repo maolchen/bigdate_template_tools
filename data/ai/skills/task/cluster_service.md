@@ -1,5 +1,4 @@
-集群模板规则：
-- 不允许新增节点；serviceTop.nodes 只能从当前已配置节点别名中选择，或使用 ["*"]。
-- 需要节点列表时，优先使用模板函数和当前上下文，不要手工硬编码节点集合。
-- 如果用户要求 3 节点或多节点，但当前配置节点数量不足，必须在 followUpQuestions 里要求确认，不要编造节点。
-- 如果需要实例唯一标识，优先考虑 {{ .Instance.AutoID }}。
+﻿用于集群服务模板 (for cluster services)：
+- 不要编造 `nodes` 中不存在的别名 (do not invent node aliases)
+- 拓扑约束不明确时先提问 (ask follow-up questions)
+- 优先使用 helper 生成 endpoints/nodes，不要硬编码主机列表

@@ -3,6 +3,8 @@ package server
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -12,11 +14,78 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"config-generator/checker"
 	"config-generator/config"
 	"config-generator/generator"
 )
+
+type rootConfigVersionResponse struct {
+	Path          string `json:"path"`
+	MTime         string `json:"mtime"`
+	MTimeUnixNano int64  `json:"mtimeUnixNano"`
+	Size          int64  `json:"size"`
+	SHA256        string `json:"sha256"`
+}
+
+type syncMainConfigResponse struct {
+	Success bool                      `json:"success"`
+	Message string                    `json:"message"`
+	Sync    userConfigSyncLog         `json:"sync"`
+	Config  *config.Config            `json:"config"`
+	Version rootConfigVersionResponse `json:"version"`
+}
+
+type syncPreviewResponse struct {
+	Success bool              `json:"success"`
+	Sync    userConfigSyncLog `json:"sync"`
+}
+
+type templateEditorTreeNode struct {
+	Name     string                   `json:"name"`
+	Path     string                   `json:"path"`
+	Type     string                   `json:"type"`
+	Children []templateEditorTreeNode `json:"children,omitempty"`
+}
+
+type templateEditorFileRequest struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+type templateEditorItemRequest struct {
+	Path    string `json:"path"`
+	Type    string `json:"type"`
+	Content string `json:"content"`
+}
+
+type templateEditorFileResponse struct {
+	Path      string `json:"path"`
+	Content   string `json:"content"`
+	Readonly  bool   `json:"readonly"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+// readRootConfigVersion returns root config.yaml version metadata for polling.
+func (s *Server) readRootConfigVersion() (rootConfigVersionResponse, error) {
+	info, err := os.Stat(s.configPath)
+	if err != nil {
+		return rootConfigVersionResponse{}, err
+	}
+	content, err := os.ReadFile(s.configPath)
+	if err != nil {
+		return rootConfigVersionResponse{}, err
+	}
+	sum := sha256.Sum256(content)
+	return rootConfigVersionResponse{
+		Path:          s.configPath,
+		MTime:         info.ModTime().UTC().Format(time.RFC3339Nano),
+		MTimeUnixNano: info.ModTime().UnixNano(),
+		Size:          info.Size(),
+		SHA256:        hex.EncodeToString(sum[:]),
+	}, nil
+}
 
 // handleConfig handles current user's active config get/save.
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +101,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+		cfg, _, _, err := s.loadConfigForPrincipal(principal)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -41,7 +110,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(cfg)
 
 	case http.MethodPut:
-		_, activePath, activeTemplateID, err := s.loadUserActiveConfig(principal.Username)
+		_, activePath, activeTemplateID, err := s.loadConfigForPrincipal(principal)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -59,6 +128,20 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		s.cfg = &newConfig
 		fmt.Printf("[Config] save requested user=%s template=%s nodes=%d services=%d\n", principal.Username, activeTemplateID, len(newConfig.Nodes), len(newConfig.ServiceTop))
+
+		if principal.Role == roleAdmin {
+			userCount, syncLog := s.syncRootConfigToAllUsers(&newConfig)
+			fmt.Printf("[Config] admin saved root and synced users=%d %s\n", userCount, formatSyncLog(syncLog))
+		} else {
+			backupSync, err := s.syncUserBackupsFromMainConfig(principal.Username, &newConfig)
+			if err != nil {
+				fmt.Printf("[Config] user backup sync failed user=%s err=%v\n", principal.Username, err)
+			} else if _, err := s.refreshUserTemplateIndex(principal.Username, userMainTemplateID, nil); err != nil {
+				fmt.Printf("[Config] refresh template index after backup sync failed user=%s err=%v\n", principal.Username, err)
+			} else {
+				fmt.Printf("[Config] user backup sync done user=%s %s\n", principal.Username, formatSyncLog(backupSync))
+			}
+		}
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
@@ -85,7 +168,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.configMu.Lock()
-	cfg, _, activeTemplateID, err := s.loadUserActiveConfig(principal.Username)
+	cfg, _, activeTemplateID, err := s.loadConfigForPrincipal(principal)
 	s.configMu.Unlock()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -291,7 +374,7 @@ func (s *Server) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.configMu.Lock()
-	cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+	cfg, _, _, err := s.loadConfigForPrincipal(principal)
 	s.configMu.Unlock()
 	if err != nil {
 		fmt.Printf("[Config] reload failed user=%s: %v\n", principal.Username, err)
@@ -306,6 +389,507 @@ func (s *Server) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
 		"message": "配置已重新加载",
 		"config":  cfg,
 	})
+}
+
+// handleConfigVersion returns root config.yaml version for client-side polling.
+func (s *Server) handleConfigVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	version, err := s.readRootConfigVersion()
+	if err != nil {
+		fmt.Printf("[Config] version failed user=%s path=%s err=%v\n", principal.Username, s.configPath, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fmt.Printf("[Config] version user=%s mtime=%s size=%d\n", principal.Username, version.MTime, version.Size)
+	json.NewEncoder(w).Encode(version)
+}
+
+// handleSyncMainPreview returns a non-destructive diff summary between root config
+// and current principal config. It is used by the frontend modal to present
+// concrete add/remove changes before the user decides whether to apply delete sync.
+func (s *Server) handleSyncMainPreview(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+
+	rootCfg, err := config.LoadConfig(s.configPath)
+	if err != nil {
+		fmt.Printf("[Config] sync-preview load root failed user=%s err=%v\n", principal.Username, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	cfg, _, _, err := s.loadConfigForPrincipal(principal)
+	if err != nil {
+		fmt.Printf("[Config] sync-preview load current failed user=%s err=%v\n", principal.Username, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	diff := diffConfigChangesFromMain(rootCfg, cfg)
+	fmt.Printf("[Config] sync-preview user=%s %s\n", principal.Username, formatSyncLog(diff))
+	json.NewEncoder(w).Encode(syncPreviewResponse{
+		Success: true,
+		Sync:    diff,
+	})
+}
+
+// handleSyncMainConfig synchronizes root config incremental additions.
+// For admin: propagate root additions to all non-admin user workspaces.
+// For normal user: synchronize root additions into current user workspace.
+func (s *Server) handleSyncMainConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	s.configMu.Lock()
+	rootCfg, err := config.LoadConfig(s.configPath)
+	if err != nil {
+		s.configMu.Unlock()
+		fmt.Printf("[Config] sync-main load root failed user=%s err=%v\n", principal.Username, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	syncLog := newUserConfigSyncLog()
+	var cfg *config.Config
+	activePath := s.configPath
+	message := "main config sync finished"
+
+	if principal.Role == roleAdmin {
+		userCount, total := s.syncRootConfigToAllUsers(rootCfg)
+		syncLog = total
+		cfg = rootCfg
+		message = fmt.Sprintf("root sync applied to %d user workspaces", userCount)
+		fmt.Printf("[Config] sync-main admin=%s users=%d %s\n", principal.Username, userCount, formatSyncLog(total))
+	} else {
+		if err := s.ensureUserBaseConfig(principal.Username); err != nil {
+			s.configMu.Unlock()
+			fmt.Printf("[Config] sync-main ensure base failed user=%s err=%v\n", principal.Username, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := s.migrateLegacyActiveTemplateToMain(principal.Username); err != nil {
+			s.configMu.Unlock()
+			fmt.Printf("[Config] sync-main migrate active failed user=%s err=%v\n", principal.Username, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		cfg, activePath, _, err = s.loadUserActiveConfig(principal.Username)
+		if err != nil {
+			s.configMu.Unlock()
+			fmt.Printf("[Config] sync-main load active failed user=%s err=%v\n", principal.Username, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		changed, appliedLog := syncMissingServicesFromMain(rootCfg, cfg)
+		syncLog = appliedLog
+		if changed {
+			if err := config.SaveConfig(activePath, cfg); err != nil {
+				s.configMu.Unlock()
+				fmt.Printf("[Config] sync-main save active failed user=%s path=%s err=%v\n", principal.Username, activePath, err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		fmt.Printf("[Config] sync-main apply user=%s changed=%t %s\n", principal.Username, changed, formatSyncLog(syncLog))
+	}
+
+	version, err := s.readRootConfigVersion()
+	if err != nil {
+		s.configMu.Unlock()
+		fmt.Printf("[Config] sync-main version failed user=%s err=%v\n", principal.Username, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.cfg = cfg
+	s.configMu.Unlock()
+
+	fmt.Printf("[Config] sync-main user=%s activePath=%s %s\n", principal.Username, activePath, formatSyncLog(syncLog))
+	json.NewEncoder(w).Encode(syncMainConfigResponse{
+		Success: true,
+		Message: message,
+		Sync:    syncLog,
+		Config:  cfg,
+		Version: version,
+	})
+}
+
+// handleSyncMainDelete applies only deletion-type sync from root config into current user active config.
+// This endpoint is intentionally dangerous and should be protected by client-side confirmation.
+func (s *Server) handleSyncMainDelete(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	if principal.Role == roleAdmin {
+		http.Error(w, "admin is not supported for delete-sync endpoint", http.StatusForbidden)
+		return
+	}
+
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+
+	rootCfg, err := config.LoadConfig(s.configPath)
+	if err != nil {
+		fmt.Printf("[Config] sync-main-delete load root failed user=%s err=%v\n", principal.Username, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	userCfg, activePath, _, err := s.loadUserActiveConfig(principal.Username)
+	if err != nil {
+		fmt.Printf("[Config] sync-main-delete load active failed user=%s err=%v\n", principal.Username, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	changed, deleteLog := removeDeletedFromMain(rootCfg, userCfg)
+	if changed {
+		if err := config.SaveConfig(activePath, userCfg); err != nil {
+			fmt.Printf("[Config] sync-main-delete save failed user=%s path=%s err=%v\n", principal.Username, activePath, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	version, err := s.readRootConfigVersion()
+	if err != nil {
+		fmt.Printf("[Config] sync-main-delete version failed user=%s err=%v\n", principal.Username, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.cfg = userCfg
+	fmt.Printf("[Config] sync-main-delete user=%s path=%s changed=%t %s\n",
+		principal.Username, activePath, changed, formatSyncLog(deleteLog))
+
+	json.NewEncoder(w).Encode(syncMainConfigResponse{
+		Success: true,
+		Message: "main delete sync finished",
+		Sync:    deleteLog,
+		Config:  userCfg,
+		Version: version,
+	})
+}
+
+func (s *Server) buildTemplateEditorTree() ([]templateEditorTreeNode, error) {
+	root := filepath.Clean(s.templatesDir)
+	var buildNode func(fullPath string, relativePath string) (templateEditorTreeNode, error)
+	buildNode = func(fullPath string, relativePath string) (templateEditorTreeNode, error) {
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			return templateEditorTreeNode{}, err
+		}
+		node := templateEditorTreeNode{
+			Name: info.Name(),
+			Path: filepath.ToSlash(relativePath),
+		}
+		if info.IsDir() {
+			node.Type = "dir"
+			entries, err := os.ReadDir(fullPath)
+			if err != nil {
+				return templateEditorTreeNode{}, err
+			}
+			children := make([]templateEditorTreeNode, 0, len(entries))
+			for _, entry := range entries {
+				childRel := filepath.ToSlash(filepath.Join(relativePath, entry.Name()))
+				childFull := filepath.Join(fullPath, entry.Name())
+				child, err := buildNode(childFull, childRel)
+				if err != nil {
+					continue
+				}
+				children = append(children, child)
+			}
+			sort.SliceStable(children, func(i, j int) bool {
+				if children[i].Type == children[j].Type {
+					return children[i].Name < children[j].Name
+				}
+				return children[i].Type == "dir"
+			})
+			node.Children = children
+			return node, nil
+		}
+		node.Type = "file"
+		return node, nil
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []templateEditorTreeNode{}, nil
+		}
+		return nil, err
+	}
+	result := make([]templateEditorTreeNode, 0, len(entries))
+	for _, entry := range entries {
+		rel := filepath.ToSlash(entry.Name())
+		full := filepath.Join(root, entry.Name())
+		node, err := buildNode(full, rel)
+		if err != nil {
+			continue
+		}
+		result = append(result, node)
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Type == result[j].Type {
+			return result[i].Name < result[j].Name
+		}
+		return result[i].Type == "dir"
+	})
+	return result, nil
+}
+
+func (s *Server) normalizeTemplateEditorPath(input string) (string, string, error) {
+	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(input)))
+	clean = strings.TrimPrefix(clean, "./")
+	if clean == "." || clean == "" {
+		return "", "", fmt.Errorf("path is required")
+	}
+	if strings.HasPrefix(clean, "/") || strings.Contains(clean, "..") {
+		return "", "", fmt.Errorf("invalid template path")
+	}
+	full := filepath.Join(s.templatesDir, filepath.FromSlash(clean))
+	templatesRoot := filepath.Clean(s.templatesDir)
+	if !strings.HasPrefix(filepath.Clean(full), templatesRoot) {
+		return "", "", fmt.Errorf("template path out of root")
+	}
+	return clean, full, nil
+}
+
+// handleTemplateEditorTree returns templates directory tree for online editor.
+func (s *Server) handleTemplateEditorTree(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	nodes, err := s.buildTemplateEditorTree()
+	if err != nil {
+		fmt.Printf("[TemplateEditor] tree failed user=%s err=%v\n", principal.Username, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{
+		"root":     "templates",
+		"readonly": principal.Role != roleAdmin,
+		"nodes":    nodes,
+	})
+}
+
+// handleTemplateEditorFile reads/saves one template file. Save is admin-only.
+func (s *Server) handleTemplateEditorFile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		rawPath := strings.TrimSpace(r.URL.Query().Get("path"))
+		normalizedPath, fullPath, err := s.normalizeTemplateEditorPath(rawPath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		content, err := os.ReadFile(fullPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "template file not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		info, _ := os.Stat(fullPath)
+		updatedAt := ""
+		if info != nil {
+			updatedAt = info.ModTime().Format(time.RFC3339)
+		}
+		json.NewEncoder(w).Encode(templateEditorFileResponse{
+			Path:      normalizedPath,
+			Content:   string(content),
+			Readonly:  principal.Role != roleAdmin,
+			UpdatedAt: updatedAt,
+		})
+	case http.MethodPut:
+		if principal.Role != roleAdmin {
+			http.Error(w, "only admin can edit templates", http.StatusForbidden)
+			return
+		}
+		var req templateEditorFileRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		normalizedPath, fullPath, err := s.normalizeTemplateEditorPath(req.Path)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if !strings.HasSuffix(normalizedPath, ".tmpl") {
+			http.Error(w, "only .tmpl file is editable", http.StatusBadRequest)
+			return
+		}
+		if err := s.validateDraftTemplate(req.Content); err != nil {
+			http.Error(w, fmt.Sprintf("%s template parse failed: %v", normalizedPath, err), http.StatusBadRequest)
+			return
+		}
+		if err := validateDraftTemplateContract(normalizedPath, req.Content); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := os.WriteFile(fullPath, []byte(req.Content), 0644); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		fmt.Printf("[TemplateEditor] save user=%s path=%s bytes=%d\n", principal.Username, normalizedPath, len(req.Content))
+		info, _ := os.Stat(fullPath)
+		updatedAt := ""
+		if info != nil {
+			updatedAt = info.ModTime().Format(time.RFC3339)
+		}
+		json.NewEncoder(w).Encode(templateEditorFileResponse{
+			Path:      normalizedPath,
+			Content:   req.Content,
+			Readonly:  false,
+			UpdatedAt: updatedAt,
+		})
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleTemplateEditorItem creates or deletes template files/directories. Admin-only.
+func (s *Server) handleTemplateEditorItem(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	principal, err := requestPrincipal(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	if principal.Role != roleAdmin {
+		http.Error(w, "only admin can change template tree", http.StatusForbidden)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPost:
+		var req templateEditorItemRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		normalizedPath, fullPath, err := s.normalizeTemplateEditorPath(req.Path)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		switch req.Type {
+		case "dir":
+			if err := os.MkdirAll(fullPath, 0755); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		case "file":
+			if !strings.HasSuffix(normalizedPath, ".tmpl") {
+				http.Error(w, "template file must end with .tmpl", http.StatusBadRequest)
+				return
+			}
+			if _, err := os.Stat(fullPath); err == nil {
+				http.Error(w, "template file already exists", http.StatusConflict)
+				return
+			}
+			if err := s.validateDraftTemplate(req.Content); err != nil {
+				http.Error(w, fmt.Sprintf("%s template parse failed: %v", normalizedPath, err), http.StatusBadRequest)
+				return
+			}
+			if err := validateDraftTemplateContract(normalizedPath, req.Content); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if err := os.WriteFile(fullPath, []byte(req.Content), 0644); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		default:
+			http.Error(w, "type must be file or dir", http.StatusBadRequest)
+			return
+		}
+		fmt.Printf("[TemplateEditor] create user=%s type=%s path=%s\n", principal.Username, req.Type, normalizedPath)
+		json.NewEncoder(w).Encode(map[string]any{"success": true, "path": normalizedPath, "type": req.Type})
+	case http.MethodDelete:
+		rawPath := strings.TrimSpace(r.URL.Query().Get("path"))
+		normalizedPath, fullPath, err := s.normalizeTemplateEditorPath(rawPath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if _, err := os.Stat(fullPath); err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "template item not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := os.RemoveAll(fullPath); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		fmt.Printf("[TemplateEditor] delete user=%s path=%s\n", principal.Username, normalizedPath)
+		json.NewEncoder(w).Encode(map[string]any{"success": true, "path": normalizedPath})
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // handleDescriptions handles service description get/save.
@@ -329,7 +913,7 @@ func (s *Server) handleDescriptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+	cfg, _, _, err := s.loadConfigForPrincipal(principal)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -373,7 +957,7 @@ func (s *Server) handleGlobalDescriptions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+	cfg, _, _, err := s.loadConfigForPrincipal(principal)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

@@ -1,0 +1,67 @@
+#!/bin/bash
+# ============================================================
+# Spark3 健康检查脚本
+# 服务：spark3
+# 角色：{{ .Instance.Vars.role }}
+# ============================================================
+
+set -e
+
+# ==================== 变量定义 ====================
+SPARK_ROLE="{{ .Instance.Vars.role }}"
+MASTER_HOST="{{ .Instance.Vars.spark_master_addr }}"
+MASTER_PORT="{{ .Instance.Vars.master_port }}"
+MASTER_WEBUI_PORT="{{ .Instance.Vars.master_webui_port }}"
+SPARK_HOME="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
+
+# ==================== 日志函数 ====================
+log_info() {
+    echo "[INFO] $1"
+}
+
+log_error() {
+    echo "[ERROR] $1"
+}
+
+log_success() {
+    echo "[SUCCESS] $1"
+}
+
+# ==================== 主流程 ====================
+main() {
+    log_info "检查 Spark3 健康状态..."
+    
+    # 1. 检查进程
+    if jps | grep -q "{{ if eq .Instance.Vars.role "master" }}Master{{ else }}Worker{{ end }}"; then
+        log_success "进程检查通过"
+    else
+        log_error "进程未运行"
+        exit 1
+    fi
+    
+    # 2. Master 节点额外检查 WebUI
+    {{- if eq .Instance.Vars.role "master" }}
+    log_info "检查 Master WebUI..."
+    if curl -s "http://${MASTER_HOST}:${MASTER_WEBUI_PORT}" > /dev/null; then
+        log_success "WebUI 访问正常"
+    else
+        log_error "WebUI 无法访问"
+        exit 1
+    fi
+    {{- end }}
+    
+    # 3. Worker 节点检查与 Master 连接
+    {{- if eq .Instance.Vars.role "worker" }}
+    log_info "检查与 Master 连接..."
+    if nc -z "${MASTER_HOST}" "${MASTER_PORT}" 2>/dev/null; then
+        log_success "Master 连接正常"
+    else
+        log_error "无法连接到 Master"
+        exit 1
+    fi
+    {{- end }}
+    
+    log_success "Spark3 健康检查通过"
+}
+
+main "$@"

@@ -26,7 +26,9 @@ function groupOutputFiles(files: string[]): OutputResult {
 }
 
 export async function fetchConfig(): Promise<AppConfig> {
-  const response = await fetch(`${API_BASE}/config`);
+  const response = await fetch(`${API_BASE}/config`, {
+    credentials: 'include',
+  });
   if (!response.ok) throw new Error(await response.text() || '获取配置失败');
   return response.json();
 }
@@ -34,6 +36,7 @@ export async function fetchConfig(): Promise<AppConfig> {
 export async function saveConfig(config: AppConfig): Promise<{ success: boolean; message: string }> {
   const response = await fetch(`${API_BASE}/config`, {
     method: 'PUT',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
@@ -44,6 +47,7 @@ export async function saveConfig(config: AppConfig): Promise<{ success: boolean;
 export async function generateConfig(): Promise<GenerateResult> {
   const response = await fetch(`${API_BASE}/generate`, {
     method: 'POST',
+    credentials: 'include',
   });
   if (!response.ok) throw new Error(await response.text() || '生成配置失败');
   const data = await response.json();
@@ -65,7 +69,9 @@ export async function generateConfig(): Promise<GenerateResult> {
 }
 
 export async function fetchOutput(): Promise<OutputResult> {
-  const response = await fetch(`${API_BASE}/output`);
+  const response = await fetch(`${API_BASE}/output`, {
+    credentials: 'include',
+  });
   if (!response.ok) throw new Error(await response.text() || '获取输出文件失败');
   const data = await response.json();
 
@@ -80,7 +86,9 @@ export async function fetchOutput(): Promise<OutputResult> {
 }
 
 export async function fetchOutputFile(path: string): Promise<{ path: string; content: string }> {
-  const response = await fetch(`${API_BASE}/output/file?path=${encodeURIComponent(path)}`);
+  const response = await fetch(`${API_BASE}/output/file?path=${encodeURIComponent(path)}`, {
+    credentials: 'include',
+  });
   if (!response.ok) throw new Error(await response.text() || '获取文件内容失败');
 
   const contentType = response.headers.get('content-type') ?? '';
@@ -99,13 +107,104 @@ export function downloadOutput(): void {
 export async function reloadConfig(): Promise<{ success: boolean; message: string; config: AppConfig }> {
   const response = await fetch(`${API_BASE}/config/reload`, {
     method: 'POST',
+    credentials: 'include',
   });
   if (!response.ok) throw new Error(await response.text() || '重新加载配置失败');
   return response.json();
 }
 
+export interface RootConfigVersion {
+  path: string;
+  mtime: string;
+  mtimeUnixNano: number;
+  size: number;
+  sha256: string;
+}
+
+export interface TemplateEditorTreeNode {
+  name: string;
+  path: string;
+  type: 'dir' | 'file';
+  children?: TemplateEditorTreeNode[];
+}
+
+export interface TemplateEditorFile {
+  path: string;
+  content: string;
+  readonly: boolean;
+  updatedAt: string;
+}
+
+export async function fetchRootConfigVersion(): Promise<RootConfigVersion> {
+  const response = await fetch(`${API_BASE}/config/version`, {
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await response.text() || '获取主配置版本失败');
+  return response.json();
+}
+
+export interface ConfigSyncSummary {
+  addedGlobalKeys: string[];
+  removedGlobalKeys: string[];
+  globalAdded: number;
+  globalRemoved: number;
+  addedServices: string[];
+  removedServices: string[];
+  addedServiceTopServices: string[];
+  removedServiceTopServices: string[];
+  addedServerConfigServices: string[];
+  removedServerConfigServices: string[];
+  serviceTopAdded: number;
+  serviceTopRemoved: number;
+  serverConfigAdded: number;
+  serverConfigRemoved: number;
+}
+
+export async function fetchSyncMainPreview(): Promise<{
+  success: boolean;
+  sync: ConfigSyncSummary;
+}> {
+  const response = await fetch(`${API_BASE}/config/sync-preview`, {
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await response.text() || '获取主配置差异失败');
+  return response.json();
+}
+
+export async function syncMainConfig(): Promise<{
+  success: boolean;
+  message: string;
+  sync: ConfigSyncSummary;
+  config: AppConfig;
+  version: RootConfigVersion;
+}> {
+  const response = await fetch(`${API_BASE}/config/sync-main`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await response.text() || '同步主配置失败');
+  return response.json();
+}
+
+export async function syncMainDelete(): Promise<{
+  success: boolean;
+  message: string;
+  sync: ConfigSyncSummary;
+  config: AppConfig;
+  version: RootConfigVersion;
+}> {
+  const response = await fetch(`${API_BASE}/config/sync-main-delete`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await response.text() || '清理删除项失败');
+  return response.json();
+}
+
 export async function fetchTemplates(): Promise<TemplatesResult> {
-  const response = await fetch(`${API_BASE}/templates`);
+  const response = await fetch(`${API_BASE}/templates`, {
+    credentials: 'include',
+  });
   if (!response.ok) throw new Error(await response.text() || '获取模板列表失败');
   return response.json();
 }
@@ -113,6 +212,7 @@ export async function fetchTemplates(): Promise<TemplatesResult> {
 export async function saveDescriptions(serviceName: string, descriptions: Record<string, string>): Promise<{ success: boolean; message: string }> {
   const response = await fetch(`${API_BASE}/descriptions/${encodeURIComponent(serviceName)}`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(descriptions),
   });
@@ -121,7 +221,9 @@ export async function saveDescriptions(serviceName: string, descriptions: Record
 }
 
 export async function fetchDescriptions(serviceName: string): Promise<Record<string, string>> {
-  const response = await fetch(`${API_BASE}/descriptions/${encodeURIComponent(serviceName)}`);
+  const response = await fetch(`${API_BASE}/descriptions/${encodeURIComponent(serviceName)}`, {
+    credentials: 'include',
+  });
   if (!response.ok) throw new Error(await response.text() || '获取说明失败');
   return response.json();
 }
@@ -129,6 +231,7 @@ export async function fetchDescriptions(serviceName: string): Promise<Record<str
 export async function saveGlobalDescriptions(descriptions: Record<string, string>): Promise<{ success: boolean; message: string }> {
   const response = await fetch(`${API_BASE}/descriptions/global`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(descriptions),
   });
@@ -137,7 +240,9 @@ export async function saveGlobalDescriptions(descriptions: Record<string, string
 }
 
 export async function fetchGlobalDescriptions(): Promise<Record<string, string>> {
-  const response = await fetch(`${API_BASE}/descriptions/global`);
+  const response = await fetch(`${API_BASE}/descriptions/global`, {
+    credentials: 'include',
+  });
   if (!response.ok) throw new Error(await response.text() || '获取说明失败');
   return response.json();
 }
@@ -149,6 +254,7 @@ export async function checkReferences(params: {
 }): Promise<{ hasReferences: boolean; references: Array<{ path: string; service: string; details: string[] }> }> {
   const response = await fetch(`${API_BASE}/check-references`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
@@ -159,14 +265,68 @@ export async function checkReferences(params: {
 export interface ConfigTemplateEntry {
   id: string;
   fileName: string;
+  kind?: 'main' | 'backup';
   remark: string;
   nodeSummary: string;
   updatedAt: string;
   isActive: boolean;
 }
 
+export async function fetchTemplateEditorTree(): Promise<{
+  root: string;
+  readonly: boolean;
+  nodes: TemplateEditorTreeNode[];
+}> {
+  const response = await fetch(`${API_BASE}/templates/editor/tree`, {
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await response.text() || '获取模板目录失败');
+  return response.json();
+}
+
+export async function fetchTemplateEditorFile(path: string): Promise<TemplateEditorFile> {
+  const response = await fetch(`${API_BASE}/templates/editor/file?path=${encodeURIComponent(path)}`, {
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await response.text() || '获取模板文件失败');
+  return response.json();
+}
+
+export async function saveTemplateEditorFile(path: string, content: string): Promise<TemplateEditorFile> {
+  const response = await fetch(`${API_BASE}/templates/editor/file`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  });
+  if (!response.ok) throw new Error(await response.text() || '保存模板文件失败');
+  return response.json();
+}
+
+export async function createTemplateEditorItem(path: string, type: 'file' | 'dir', content = ''): Promise<{ success: boolean; path: string; type: 'file' | 'dir' }> {
+  const response = await fetch(`${API_BASE}/templates/editor/item`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, type, content }),
+  });
+  if (!response.ok) throw new Error(await response.text() || '创建模板项失败');
+  return response.json();
+}
+
+export async function deleteTemplateEditorItem(path: string): Promise<{ success: boolean; path: string }> {
+  const response = await fetch(`${API_BASE}/templates/editor/item?path=${encodeURIComponent(path)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(await response.text() || '删除模板项失败');
+  return response.json();
+}
+
 export async function fetchConfigTemplates(): Promise<ConfigTemplateEntry[]> {
-  const response = await fetch(`${API_BASE}/config-templates`);
+  const response = await fetch(`${API_BASE}/config-templates`, {
+    credentials: 'include',
+  });
   if (!response.ok) throw new Error(await response.text() || '获取配置模板失败');
   return response.json();
 }
@@ -174,6 +334,7 @@ export async function fetchConfigTemplates(): Promise<ConfigTemplateEntry[]> {
 export async function createConfigTemplate(id: string, remark: string): Promise<ConfigTemplateEntry[]> {
   const response = await fetch(`${API_BASE}/config-templates`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id, remark }),
   });
@@ -186,6 +347,8 @@ export async function switchConfigTemplate(id: string): Promise<{
   success: boolean;
   activeTemplateId: string;
   sync: {
+    addedGlobalKeys: string[];
+    globalAdded: number;
     addedServices: string[];
     serviceTopAdded: number;
     serverConfigAdded: number;
@@ -194,6 +357,7 @@ export async function switchConfigTemplate(id: string): Promise<{
 }> {
   const response = await fetch(`${API_BASE}/config-templates/${encodeURIComponent(id)}/switch`, {
     method: 'POST',
+    credentials: 'include',
   });
   if (!response.ok) throw new Error(await response.text() || '切换配置模板失败');
   return response.json();
@@ -202,6 +366,7 @@ export async function switchConfigTemplate(id: string): Promise<{
 export async function deleteConfigTemplate(id: string): Promise<ConfigTemplateEntry[]> {
   const response = await fetch(`${API_BASE}/config-templates/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+    credentials: 'include',
   });
   if (!response.ok) throw new Error(await response.text() || '删除配置模板失败');
   const data = await response.json();

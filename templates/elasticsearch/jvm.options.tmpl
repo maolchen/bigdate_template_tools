@@ -1,15 +1,20 @@
-## =============================================================================
-## Elasticsearch JVM 配置模板
-## 服务：elasticsearch
-## 版本：{{ .Instance.Vars.version }}
-## 节点：{{ .Instance.NodeAlias }}
-## =============================================================================
+# =============================================================================
+# Elasticsearch JVM 参数配置模板
+# 服务：elasticsearch
+# 版本：{{ .Instance.Vars.version }}
+# 节点：{{ .Instance.Node.Hostname }}
+# =============================================================================
 
 # -----------------------------------------------------------------------------
-# 堆内存配置（默认 4G，可通过 .Instance.Vars 覆盖）
+# 堆内存配置（默认 4G，生产环境需根据物理内存调整）
 # -----------------------------------------------------------------------------
 -Xms{{ .Instance.Vars.jvm_heap_size }}
 -Xmx{{ .Instance.Vars.jvm_heap_size }}
+
+# -----------------------------------------------------------------------------
+# 使用 G1 GC
+# -----------------------------------------------------------------------------
+-XX:+UseG1GC
 
 # -----------------------------------------------------------------------------
 # 堆转储配置
@@ -19,27 +24,9 @@
 -XX:ErrorFile={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}/hs_err_pid%p.log
 
 # -----------------------------------------------------------------------------
-# GC 配置（G1 GC）
+# 日志配置
 # -----------------------------------------------------------------------------
--XX:+UseG1GC
--XX:G1ReservePercent=25
--XX:InitiatingHeapOccupancyPercent=30
-
-# -----------------------------------------------------------------------------
-# 本地代码库路径
-# -----------------------------------------------------------------------------
--Djava.library.path={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/modules/jdk/lib
-
-# -----------------------------------------------------------------------------
-# 临时目录
-# -----------------------------------------------------------------------------
--Djava.io.tmpdir={{ .Global.temp_dir }}
-
-# -----------------------------------------------------------------------------
-# 区域设置
-# -----------------------------------------------------------------------------
--Dfile.encoding=UTF-8
--Dsun.jnu.encoding=UTF-8
+-Xlog:gc*,gc+age=trace,safepoint:file={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}/gc.log:utctime,pid,tags:filecount=32,filesize=64m
 
 # -----------------------------------------------------------------------------
 # 性能优化
@@ -47,23 +34,25 @@
 -XX:+AlwaysPreTouch
 -Xss1m
 -Djava.awt.headless=true
+-Dfile.encoding=UTF-8
 -Djna.nosys=true
-
-# -----------------------------------------------------------------------------
-# 日志配置
-# -----------------------------------------------------------------------------
+-XX:-OmitStackTraceInFastThrow
+-Dio.netty.noUnsafe=true
+-Dio.netty.noKeySetOptimization=true
+-Dio.netty.recycler.maxCapacityPerThread=0
 -Dlog4j.shutdownHookEnabled=false
 -Dlog4j2.disable.jmx=true
 -Djava.locale.providers=SPI,COMPAT
 
 # -----------------------------------------------------------------------------
-# 应用堆转储前 GC（可选，生产环境根据情况开启）
+# 临时目录
 # -----------------------------------------------------------------------------
-# -XX:+PrintGCDetails
-# -XX:+PrintGCDateStamps
-# -XX:+PrintTenuringDistribution
-# -XX:+PrintGCApplicationStoppedTime
-# -Xloggc:{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}/gc.log
-# -XX:+UseGCLogFileRotation
-# -XX:NumberOfGCLogFiles=32
-# -XX:GCLogFileSize=64m
+-Djava.io.tmpdir={{ .Global.temp_dir }}
+
+# -----------------------------------------------------------------------------
+# 内存锁定（配合 bootstrap.memory_lock: true）
+# -----------------------------------------------------------------------------
+-XX:+UnlockDiagnosticVMOptions
+-XX:+PrintDetailsAtSafepoint
+-XX:+PrintSafepointStatistics
+-XX:+PrintSafepointStatisticsCount=1

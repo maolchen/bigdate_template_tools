@@ -13,9 +13,10 @@ import type { AppConfig } from '../api/config';
 interface OverviewPageProps {
   config: AppConfig;
   onReload?: () => void;
+  hidePageTitle?: boolean;
 }
 
-export function OverviewPage({ config, onReload }: OverviewPageProps) {
+export function OverviewPage({ config, onReload, hidePageTitle = false }: OverviewPageProps) {
   const nodeCount = Object.keys(config.nodes).length;
   const serviceCount = Object.keys(config.serviceTop).length;
   const configCount = Object.keys(config.serverConfig).length;
@@ -71,10 +72,10 @@ export function OverviewPage({ config, onReload }: OverviewPageProps) {
   
   return (
     <div className="overview-page">
-      <div className="mb-6 overview-intro">
+      {!hidePageTitle && <div className="mb-6 overview-intro">
         <h2 className="text-2xl font-bold text-gray-800">配置概览</h2>
         <p className="text-gray-500 mt-1">查看当前配置的整体状态和统计信息</p>
-      </div>
+      </div>}
       
       {/* 快速操作 */}
       <div className="card card-hero mb-6">

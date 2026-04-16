@@ -1,11 +1,11 @@
 # =============================================================================
-# Elasticsearch systemd 服务文件模板
+# Elasticsearch systemd 服务模板
 # 服务：elasticsearch
 # 版本：{{ .Instance.Vars.version }}
-# 节点：{{ .Instance.NodeAlias }}
+# 节点：{{ .Instance.Node.Hostname }}
 # =============================================================================
-# 注意：此文件将部署到 /etc/systemd/system/elasticsearch.service
-# 系统目录约束：systemd 服务文件必须位于 /etc/systemd/system/
+# 部署路径：/etc/systemd/system/elasticsearch.service
+# 需要 root 权限部署
 # =============================================================================
 
 [Unit]
@@ -14,68 +14,43 @@ Documentation=https://www.elastic.co/guide/en/elasticsearch/reference/current/in
 Wants=network-online.target
 After=network-online.target
 
-# 依赖检查（可选）
-# After=zookeeper.service
-# Wants=zookeeper.service
-
 [Service]
-# -----------------------------------------------------------------------------
-# 用户与组（优先使用 .Global 变量）
-# -----------------------------------------------------------------------------
+Type=notify
+
+# 运行用户（复用 .Global 变量）
 User={{ .Global.user }}
 Group={{ .Global.group }}
 
-# -----------------------------------------------------------------------------
 # 环境变量
-# -----------------------------------------------------------------------------
-Environment=JAVA_HOME={{ .Global.java_home }}
-Environment=ES_HOME={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}
-Environment=ES_DATA={{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}
-Environment=ES_LOGS={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}
-Environment=ES_CONF={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config
+Environment="JAVA_HOME={{ .Global.java_home }}"
+Environment="ES_HOME={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
+Environment="ES_DATA={{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}"
+Environment="ES_LOGS={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}"
+Environment="ES_CONF={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config"
 
-# -----------------------------------------------------------------------------
 # 工作目录
-# -----------------------------------------------------------------------------
 WorkingDirectory={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}
 
-# -----------------------------------------------------------------------------
 # 启动命令
-# -----------------------------------------------------------------------------
 ExecStart={{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/bin/elasticsearch
 
-# -----------------------------------------------------------------------------
+# 优雅停止
+ExecStop=/bin/kill -SIGTERM $MAINPID
+TimeoutStopSec=300
+
 # 资源限制
-# -----------------------------------------------------------------------------
 LimitNOFILE=65535
 LimitNPROC=4096
 LimitMEMLOCK=infinity
 
-# -----------------------------------------------------------------------------
-# 内存锁定（需要 bootstrap.memory_lock: true）
-# -----------------------------------------------------------------------------
-LimitAS=infinity
+# 内存锁定（防止 swap）
+MemoryLock=infinity
 
-# -----------------------------------------------------------------------------
 # 重启策略
-# -----------------------------------------------------------------------------
 Restart=on-failure
-RestartSec=30
-StartTimeout=300
-TimeoutStopSec=300
+RestartSec=10s
 
-# -----------------------------------------------------------------------------
-# 安全配置
-# -----------------------------------------------------------------------------
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths={{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}
-ReadWritePaths={{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}
-
-# -----------------------------------------------------------------------------
 # 日志
-# -----------------------------------------------------------------------------
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=elasticsearch

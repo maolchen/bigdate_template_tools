@@ -1,4 +1,4 @@
-import type { ServiceConfigItem, ServiceTopoItem } from './config';
+﻿import type { ServiceConfigItem, ServiceTopoItem } from './config';
 
 const API_BASE = '/api';
 
@@ -18,7 +18,7 @@ export interface AIProviderModel {
 
 export async function fetchAISessions(): Promise<AISessionSummary[]> {
   const response = await fetch(`${API_BASE}/ai/template/session`);
-  if (!response.ok) throw new Error(await response.text() || '获取历史会话失败');
+  if (!response.ok) throw new Error(await response.text() || '鑾峰彇鍘嗗彶浼氳瘽澶辫触');
   const data = await response.json();
   return Array.isArray(data) ? data : [];
 }
@@ -31,7 +31,7 @@ export async function updateAISessionMeta(sessionId: string, payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(await response.text() || '更新会话名称失败');
+  if (!response.ok) throw new Error(await response.text() || '鏇存柊浼氳瘽鍚嶇О澶辫触');
   return normalizeSession(await response.json());
 }
 
@@ -48,7 +48,7 @@ export async function deleteAISessionDrafts(sessionId: string, payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(await response.text() || '删除模板失败');
+  if (!response.ok) throw new Error(await response.text() || '鍒犻櫎妯℃澘澶辫触');
   const data = await response.json();
   return {
     deletedDrafts: Array.isArray(data?.deletedDrafts) ? data.deletedDrafts : [],
@@ -61,7 +61,7 @@ async function deleteAISessionLegacy(sessionId: string): Promise<{ deletedSessio
   const response = await fetch(`${API_BASE}/ai/template/session/${encodeURIComponent(sessionId)}`, {
     method: 'DELETE',
   });
-  if (!response.ok) throw new Error(await response.text() || '删除历史会话失败');
+  if (!response.ok) throw new Error(await response.text() || '鍒犻櫎鍘嗗彶浼氳瘽澶辫触');
   return response.json();
 }
 
@@ -76,7 +76,7 @@ export async function deleteAISession(sessionId: string): Promise<{ deletedSessi
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: sessionId }),
   });
-  if (!fallback.ok) throw new Error(await fallback.text() || '鍒犻櫎鍘嗗彶浼氳瘽澶辫触');
+  if (!fallback.ok) throw new Error(await fallback.text() || '閸掔娀娅庨崢鍡楀蕉娴兼俺鐦芥径杈Е');
   return fallback.json();
 }
 
@@ -101,7 +101,7 @@ export interface AIDraftFile {
 }
 
 export interface AIPlannedAction {
-  type: 'mkdir' | 'write_file';
+  type: 'mkdir' | 'write_file' | 'remove';
   path: string;
   reason: string;
 }
@@ -116,6 +116,14 @@ export interface AIConfigIssue {
   service: string;
   field: string;
   message: string;
+}
+
+export interface AIConfigNextAction {
+  severity: 'info' | 'warning' | 'error';
+  service: string;
+  field: string;
+  action: string;
+  detail: string;
 }
 
 export interface AISkillRef {
@@ -193,6 +201,7 @@ export interface AITemplateMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+  model?: string;
   pending?: boolean;
   failed?: boolean;
   streamStatus?: string[];
@@ -261,7 +270,7 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, ti
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('AI 响应超时，请稍后重试，或减少本次生成内容');
+      throw new Error("AI 响应超时，请稍后重试，或减少本次生成内容");
     }
     throw error;
   } finally {
@@ -284,10 +293,11 @@ function normalizePromptPreview(preview: AIPromptPreview): AIPromptPreview {
 function normalizeSession(session: AITemplateSession): AITemplateSession {
   return {
     ...session,
-    title: session.title || '新会话',
+    title: session.title || "新会话",
     messages: Array.isArray(session.messages)
       ? session.messages.map((message) => ({
         ...message,
+        model: typeof message.model === "string" ? message.model : "",
         streamStatus: Array.isArray(message.streamStatus) ? message.streamStatus : [],
         promptTrace: normalizePromptTrace(message.promptTrace),
       }))
@@ -308,13 +318,13 @@ function normalizeSession(session: AITemplateSession): AITemplateSession {
 
 export async function fetchAISettings(): Promise<AISettings> {
   const response = await fetch(`${API_BASE}/ai/settings`);
-  if (!response.ok) throw new Error(await response.text() || '获取 AI 设置失败');
+  if (!response.ok) throw new Error(await response.text() || '鑾峰彇 AI 璁剧疆澶辫触');
   return response.json();
 }
 
 export async function fetchAIModels(): Promise<AIProviderModel[]> {
   const response = await fetch(`${API_BASE}/ai/models`);
-  if (!response.ok) throw new Error(await response.text() || '获取模型列表失败');
+  if (!response.ok) throw new Error(await response.text() || '鑾峰彇妯″瀷鍒楄〃澶辫触');
   const data = await response.json();
   return Array.isArray(data) ? data : [];
 }
@@ -330,7 +340,7 @@ export async function saveAISettings(payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(await response.text() || '保存 AI 设置失败');
+  if (!response.ok) throw new Error(await response.text() || '淇濆瓨 AI 璁剧疆澶辫触');
   return response.json();
 }
 
@@ -345,13 +355,13 @@ export async function testAISettings(payload?: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload ?? {}),
   });
-  if (!response.ok) throw new Error(await response.text() || '测试连接失败');
+  if (!response.ok) throw new Error(await response.text() || '娴嬭瘯杩炴帴澶辫触');
   return response.json();
 }
 
 export async function fetchAIRules(): Promise<{ content: string }> {
   const response = await fetch(`${API_BASE}/ai/rules`);
-  if (!response.ok) throw new Error(await response.text() || '获取模板规则失败');
+  if (!response.ok) throw new Error(await response.text() || '鑾峰彇妯℃澘瑙勫垯澶辫触');
   return response.json();
 }
 
@@ -360,7 +370,7 @@ export async function fetchAIPromptCatalog(): Promise<{
   examples: AIExampleCatalogItem[];
 }> {
   const response = await fetch(`${API_BASE}/ai/catalog`);
-  if (!response.ok) throw new Error(await response.text() || '获取 AI 规则目录失败');
+  if (!response.ok) throw new Error(await response.text() || '鑾峰彇 AI 瑙勫垯鐩綍澶辫触');
   return response.json();
 }
 
@@ -373,13 +383,13 @@ export async function saveAISkillFile(payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(await response.text() || '保存 skill 文件失败');
+  if (!response.ok) throw new Error(await response.text() || '淇濆瓨 skill 鏂囦欢澶辫触');
   return response.json();
 }
 
 export async function fetchCustomAISkills(): Promise<AICustomSkill[]> {
   const response = await fetch(`${API_BASE}/ai/skills`);
-  if (!response.ok) throw new Error(await response.text() || '获取自定义 skill 失败');
+  if (!response.ok) throw new Error(await response.text() || '鑾峰彇鑷畾涔?skill 澶辫触');
   return response.json();
 }
 
@@ -396,7 +406,7 @@ export async function createCustomAISkill(payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(await response.text() || '创建自定义 skill 失败');
+  if (!response.ok) throw new Error(await response.text() || '鍒涘缓鑷畾涔?skill 澶辫触');
   return response.json();
 }
 
@@ -412,7 +422,7 @@ export async function updateCustomAISkill(skillId: string, payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(await response.text() || '更新自定义 skill 失败');
+  if (!response.ok) throw new Error(await response.text() || '鏇存柊鑷畾涔?skill 澶辫触');
   return response.json();
 }
 
@@ -420,7 +430,7 @@ export async function deleteCustomAISkill(skillId: string): Promise<{ success: b
   const response = await fetch(`${API_BASE}/ai/skills/${encodeURIComponent(skillId)}`, {
     method: 'DELETE',
   });
-  if (!response.ok) throw new Error(await response.text() || '删除自定义 skill 失败');
+  if (!response.ok) throw new Error(await response.text() || '鍒犻櫎鑷畾涔?skill 澶辫触');
   return response.json();
 }
 
@@ -430,7 +440,7 @@ export async function saveAIRules(content: string): Promise<{ success: boolean; 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
   });
-  if (!response.ok) throw new Error(await response.text() || '保存模板规则失败');
+  if (!response.ok) throw new Error(await response.text() || '淇濆瓨妯℃澘瑙勫垯澶辫触');
   return response.json();
 }
 
@@ -438,13 +448,13 @@ export async function createAISession(): Promise<AITemplateSession> {
   const response = await fetch(`${API_BASE}/ai/template/session`, {
     method: 'POST',
   });
-  if (!response.ok) throw new Error(await response.text() || '创建会话失败');
+  if (!response.ok) throw new Error(await response.text() || '鍒涘缓浼氳瘽澶辫触');
   return normalizeSession(await response.json());
 }
 
 export async function fetchAISession(sessionId: string): Promise<AITemplateSession> {
   const response = await fetch(`${API_BASE}/ai/template/session/${encodeURIComponent(sessionId)}`);
-  if (!response.ok) throw new Error(await response.text() || '获取会话失败');
+  if (!response.ok) throw new Error(await response.text() || '鑾峰彇浼氳瘽澶辫触');
   return normalizeSession(await response.json());
 }
 
@@ -460,7 +470,11 @@ export async function sendAISessionMessage(sessionId: string, payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   }, 180000);
-  if (!response.ok) throw new Error(await response.text() || '发送消息失败');
+  if (!response.ok) {
+    const serverMessage = await response.text();
+    const modelName = payload.model?.trim() || 'default';
+    throw new Error(`模型 ${modelName} 请求失败: ${serverMessage || '发送消息失败'}`);
+  }
   return normalizeSession(await response.json());
 }
 
@@ -485,9 +499,13 @@ export async function sendAISessionMessageStream(sessionId: string, payload: {
       Accept: 'text/event-stream',
     },
     body: JSON.stringify(payload),
-  }, 300000);
-  if (!response.ok) throw new Error(await response.text() || '发送消息失败');
-  if (!response.body) throw new Error('浏览器不支持流式响应');
+  }, 130000);
+  if (!response.ok) {
+    const serverMessage = await response.text();
+    const modelName = payload.model?.trim() || 'default';
+    throw new Error(`模型 ${modelName} 请求失败: ${serverMessage || '发送消息失败'}`);
+  }
+  if (!response.body) throw new Error("浏览器不支持流式响应");
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -522,7 +540,10 @@ export async function sendAISessionMessageStream(sessionId: string, payload: {
     if (event.type === 'status') handlers.onStatus?.(event);
     if (event.type === 'trace') handlers.onTrace?.(event);
     if (event.type === 'delta') handlers.onDelta?.(event);
-    if (event.type === 'error') throw new Error(event.message || '发送消息失败');
+    if (event.type === 'error') {
+      const modelName = payload.model?.trim() || 'default';
+      throw new Error(`模型 ${modelName} 请求失败: ${event.message || '发送消息失败'}`);
+    }
     if (event.type === 'complete' && event.session) {
       completedSession = event.session;
       handlers.onComplete?.(event.session, event);
@@ -569,7 +590,7 @@ export async function previewAISessionMessage(sessionId: string, payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(await response.text() || '获取发送前预览失败');
+  if (!response.ok) throw new Error(await response.text() || '鑾峰彇鍙戦€佸墠棰勮澶辫触');
   return normalizePromptPreview(await response.json());
 }
 
@@ -581,7 +602,7 @@ export async function uploadAISessionAttachment(sessionId: string, file: File): 
     method: 'POST',
     body: formData,
   });
-  if (!response.ok) throw new Error(await response.text() || '上传附件失败');
+  if (!response.ok) throw new Error(await response.text() || '涓婁紶闄勪欢澶辫触');
   return response.json();
 }
 
@@ -589,7 +610,7 @@ export async function deleteAISessionAttachment(sessionId: string, attachmentId:
   const response = await fetch(`${API_BASE}/ai/template/session/${encodeURIComponent(sessionId)}/attachment/${encodeURIComponent(attachmentId)}`, {
     method: 'DELETE',
   });
-  if (!response.ok) throw new Error(await response.text() || '删除附件失败');
+  if (!response.ok) throw new Error(await response.text() || '鍒犻櫎闄勪欢澶辫触');
   const data = await response.json();
   return normalizeSession(data.session);
 }
@@ -603,12 +624,25 @@ export async function saveAISessionDrafts(sessionId: string, payload: {
   configApplied: boolean;
   appliedServices: string[];
   configIssues: AIConfigIssue[];
+  nextActions: AIConfigNextAction[];
+  message?: string;
+  session?: AITemplateSession;
 }> {
   const response = await fetch(`${API_BASE}/ai/template/session/${encodeURIComponent(sessionId)}/save`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(await response.text() || '保存模板失败');
-  return response.json();
+  if (!response.ok) throw new Error(await response.text() || '淇濆瓨妯℃澘澶辫触');
+  const data = await response.json();
+  return {
+    savedFiles: Array.isArray(data?.savedFiles) ? data.savedFiles : [],
+    createdDirs: Array.isArray(data?.createdDirs) ? data.createdDirs : [],
+    configApplied: Boolean(data?.configApplied),
+    appliedServices: Array.isArray(data?.appliedServices) ? data.appliedServices : [],
+    configIssues: Array.isArray(data?.configIssues) ? data.configIssues : [],
+    nextActions: Array.isArray(data?.nextActions) ? data.nextActions : [],
+    message: typeof data?.message === 'string' ? data.message : undefined,
+    session: data?.session ? normalizeSession(data.session) : undefined,
+  };
 }

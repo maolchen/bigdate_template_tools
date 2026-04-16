@@ -1167,7 +1167,7 @@ func (s *Server) handleAISessionPreview(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+	cfg, _, _, err := s.loadConfigForPrincipal(principal)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1217,7 +1217,7 @@ func (s *Server) handleAISessionMessage(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	cfg, _, _, err := s.loadUserActiveConfig(principal.Username)
+	cfg, _, _, err := s.loadConfigForPrincipal(principal)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1406,6 +1406,69 @@ func redactBaseURL(raw string) string {
 	return parsed.Scheme + "://" + parsed.Host
 }
 
+func sortedServiceNames(services map[string]struct{}) []string {
+	names := make([]string, 0, len(services))
+	for serviceName := range services {
+		names = append(names, serviceName)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func countConfigIssueSeverity(issues []aiConfigIssue) (errorsCount, warningsCount, infosCount int) {
+	for _, issue := range issues {
+		switch strings.ToLower(strings.TrimSpace(issue.Severity)) {
+		case "error":
+			errorsCount++
+		case "warning":
+			warningsCount++
+		default:
+			infosCount++
+		}
+	}
+	return
+}
+
+func suggestActionForConfigIssue(issue aiConfigIssue) (string, string) {
+	serviceName := strings.TrimSpace(issue.Service)
+	if serviceName == "" {
+		serviceName = "当前服务"
+	}
+	field := strings.TrimSpace(issue.Field)
+	switch {
+	case field == "serviceTop":
+		return "补齐 serviceTop 节点拓扑", fmt.Sprintf("服务 %s 缺少 serviceTop。请在“配置管理 > 服务拓扑”补齐 nodes/description/id_auto_derive 后重试。", serviceName)
+	case field == "serverConfig":
+		return "确认 serverConfig 骨架", fmt.Sprintf("服务 %s 将自动创建 serverConfig 骨架。同步成功后再到“配置管理 > 服务配置”补齐 vars 值。", serviceName)
+	case strings.HasPrefix(field, "vars."):
+		varName := strings.TrimPrefix(field, "vars.")
+		if strings.TrimSpace(varName) == "" {
+			varName = "未命名变量"
+		}
+		return "补齐 vars 变量值", fmt.Sprintf("服务 %s 的变量 %s 需要确认取值。请到“配置管理 > 服务配置”补值后重试。", serviceName, varName)
+	default:
+		if strings.EqualFold(issue.Severity, "error") {
+			return "处理阻塞项", issue.Message
+		}
+		return "确认配置建议", issue.Message
+	}
+}
+
+func buildConfigNextActions(issues []aiConfigIssue) []aiConfigNextAction {
+	actions := make([]aiConfigNextAction, 0, len(issues))
+	for _, issue := range issues {
+		action, detail := suggestActionForConfigIssue(issue)
+		actions = append(actions, aiConfigNextAction{
+			Severity: issue.Severity,
+			Service:  issue.Service,
+			Field:    issue.Field,
+			Action:   action,
+			Detail:   detail,
+		})
+	}
+	return actions
+}
+
 // handleAISessionUpload stores one text/image attachment as pending context for the next message.
 func (s *Server) handleAISessionUpload(w http.ResponseWriter, r *http.Request, session *aiSession) {
 	w.Header().Set("Content-Type", "application/json")
@@ -1467,7 +1530,7 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 		http.Error(w, "仅管理员可以保存模板到正式目录", http.StatusForbidden)
 		return
 	}
-	activeCfg, activePath, activeTemplateID, err := s.loadUserActiveConfig(principal.Username)
+	activeCfg, activePath, activeTemplateID, err := s.loadConfigForPrincipal(principal)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1499,9 +1562,30 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 	appliedServices := make([]string, 0)
 	selectedServices := selectServicesFromDrafts(req.Files)
 	selectedConfigIssues := selectConfigIssues(session.ConfigIssues, selectedServices)
+	selectedPatch := selectConfigPatchServices(session.ConfigPatch, selectedServices)
+	selectedServiceNames := sortedServiceNames(selectedServices)
+	fmt.Printf("[AI] save context session=%s user=%s template=%s selectedServices=%v cachedIssues=%d\n",
+		session.ID, principal.Username, activeTemplateID, selectedServiceNames, len(selectedConfigIssues))
 	if req.ApplyConfigPatch {
-		selectedPatch := selectConfigPatchServices(session.ConfigPatch, selectedServices)
+		// Re-check config issues against current config on every save-with-sync to avoid stale blocking.
+		livePatch, liveIssues := s.enrichConfigPatchForDrafts(req.Files, selectedPatch)
+		selectedPatch = selectConfigPatchServices(livePatch, selectedServices)
+		selectedConfigIssues = selectConfigIssues(liveIssues, selectedServices)
+		replaceSessionPatchAndIssuesForServices(session, selectedServices, selectedPatch, selectedConfigIssues)
+		fmt.Printf("[AI] save recheck session=%s services=%v liveIssues=%d patchTop=%d patchCfg=%d\n",
+			session.ID, selectedServiceNames, len(selectedConfigIssues), len(selectedPatch.ServiceTop), len(selectedPatch.ServerConfig))
+		for _, issue := range selectedConfigIssues {
+			fmt.Printf("[AI] save recheck issue session=%s severity=%s service=%s field=%s message=%s\n",
+				session.ID, issue.Severity, issue.Service, issue.Field, issue.Message)
+		}
 		if hasBlockingConfigIssues(selectedConfigIssues) {
+			errorsCount, warningsCount, infosCount := countConfigIssueSeverity(selectedConfigIssues)
+			fmt.Printf("[AI] save blocked session=%s user=%s template=%s services=%v issues=%d errors=%d warnings=%d infos=%d\n",
+				session.ID, principal.Username, activeTemplateID, selectedServiceNames, len(selectedConfigIssues), errorsCount, warningsCount, infosCount)
+			for _, issue := range selectedConfigIssues {
+				fmt.Printf("[AI] save blocked issue session=%s severity=%s service=%s field=%s message=%s\n",
+					session.ID, issue.Severity, issue.Service, issue.Field, issue.Message)
+			}
 			for idx := range session.DraftFiles {
 				for _, savedPath := range savedFiles {
 					if session.DraftFiles[idx].Path == savedPath {
@@ -1522,7 +1606,8 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 				"configApplied":   false,
 				"appliedServices": appliedServices,
 				"configIssues":    selectedConfigIssues,
-				"message":         "模板已保存，但配置补丁存在阻塞问题，请先修正后再同步配置",
+				"nextActions":     buildConfigNextActions(selectedConfigIssues),
+				"message":         "Template saved, but config sync is blocked. Please resolve severity=error issues and retry.",
 			})
 			return
 		}
@@ -1532,6 +1617,10 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 			fmt.Printf("[AI] save config failed session=%s err=%v\n", session.ID, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if principal.Role == roleAdmin {
+			userCount, syncLog := s.syncRootConfigToAllUsers(activeCfg)
+			fmt.Printf("[AI] save config root synced users=%d %s\n", userCount, formatSyncLog(syncLog))
 		}
 		fmt.Printf("[AI] save config synced user=%s template=%s services=%d\n", principal.Username, activeTemplateID, len(appliedServices))
 		configApplied = true
@@ -1559,6 +1648,7 @@ func (s *Server) handleAISessionSave(w http.ResponseWriter, r *http.Request, ses
 		"configApplied":   configApplied,
 		"appliedServices": appliedServices,
 		"configIssues":    selectedConfigIssues,
+		"nextActions":     buildConfigNextActions(selectedConfigIssues),
 	})
 }
 

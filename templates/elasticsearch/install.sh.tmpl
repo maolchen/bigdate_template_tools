@@ -3,7 +3,7 @@
 # Elasticsearch 安装脚本模板
 # 服务：elasticsearch
 # 版本：{{ .Instance.Vars.version }}
-# 节点：{{ .Instance.NodeAlias }}
+# 节点：{{ .Instance.Node.Hostname }}
 # =============================================================================
 
 set -e
@@ -17,9 +17,14 @@ ES_PACKAGE_URL="{{ .Instance.Vars.package_url }}"
 ES_INSTALL_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}"
 ES_DATA_DIR="{{ .Global.data_base_dir }}/{{ .Instance.Vars.data_subdir }}"
 ES_LOG_DIR="{{ .Global.data_base_dir }}/{{ .Instance.Vars.log_subdir }}"
+ES_CONF_DIR="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/config"
 ES_USER="{{ .Global.user }}"
 ES_GROUP="{{ .Global.group }}"
 JAVA_HOME="{{ .Global.java_home }}"
+
+# 配置文件目录（部署工具渲染后放置位置）
+# 优先级：环境变量 ES_CONFIG_DIR > 脚本所在目录（同级）> 默认值
+ES_CONFIG_DIR="${ES_CONFIG_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
 # -----------------------------------------------------------------------------
 # 日志函数
@@ -63,6 +68,13 @@ check_prerequisites() {
         exit 1
     fi
     
+    # 检查配置文件目录
+    if [ ! -d "${ES_CONFIG_DIR}" ]; then
+        log_error "配置文件目录不存在：${ES_CONFIG_DIR}"
+        log_error "请确保部署工具已将渲染后的配置文件放置在此目录"
+        exit 1
+    fi
+    
     # 检查当前用户
     if [ "$(whoami)" = "root" ] && [ "${ES_USER}" != "root" ]; then
         log_warn "当前以 root 运行，但服务将使用用户：${ES_USER}"
@@ -86,10 +98,14 @@ setup_directories() {
     # 创建日志目录
     mkdir -p "${ES_LOG_DIR}"
     
+    # 创建配置目录
+    mkdir -p "${ES_CONF_DIR}"
+    
     # 设置权限
     run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_INSTALL_DIR}"
     run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_DATA_DIR}"
     run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_LOG_DIR}"
+    run_as_root chown -R "${ES_USER}:${ES_GROUP}" "${ES_CONF_DIR}"
     
     log_success "目录结构创建完成"
 }
@@ -141,6 +157,82 @@ install_binary() {
 }
 
 # -----------------------------------------------------------------------------
+# 部署配置文件（关键步骤）
+# -----------------------------------------------------------------------------
+deploy_config_files() {
+    log_info "部署配置文件..."
+    log_info "配置源目录：${ES_CONFIG_DIR}"
+    
+    # 备份现有配置（如果存在）
+    if [ -f "${ES_CONF_DIR}/elasticsearch.yml" ]; then
+        local backup_config="${ES_CONF_DIR}/elasticsearch.yml.backup.$(date +%Y%m%d%H%M%S)"
+        cp "${ES_CONF_DIR}/elasticsearch.yml" "${backup_config}"
+        log_info "备份原有配置：${backup_config}"
+    fi
+    
+    if [ -f "${ES_CONF_DIR}/jvm.options" ]; then
+        local backup_jvm="${ES_CONF_DIR}/jvm.options.backup.$(date +%Y%m%d%H%M%S)"
+        cp "${ES_CONF_DIR}/jvm.options" "${backup_jvm}"
+        log_info "备份原有 JVM 配置：${backup_jvm}"
+    fi
+    
+    # 部署 elasticsearch.yml（从渲染后的同级目录）
+    if [ -f "${ES_CONFIG_DIR}/elasticsearch.yml" ]; then
+        log_info "部署 elasticsearch.yml 配置..."
+        cp "${ES_CONFIG_DIR}/elasticsearch.yml" "${ES_CONF_DIR}/elasticsearch.yml"
+        log_success "elasticsearch.yml 部署完成"
+    else
+        log_error "未找到渲染后的 elasticsearch.yml：${ES_CONFIG_DIR}/elasticsearch.yml"
+        log_error "请检查部署工具是否正确渲染了配置文件"
+        exit 1
+    fi
+    
+    # 部署 jvm.options（从渲染后的同级目录）
+    if [ -f "${ES_CONFIG_DIR}/jvm.options" ]; then
+        log_info "部署 jvm.options 配置..."
+        cp "${ES_CONFIG_DIR}/jvm.options" "${ES_CONF_DIR}/jvm.options"
+        log_success "jvm.options 部署完成"
+    else
+        log_error "未找到渲染后的 jvm.options：${ES_CONFIG_DIR}/jvm.options"
+        log_error "请检查部署工具是否正确渲染了配置文件"
+        exit 1
+    fi
+    
+    # 设置配置文件权限
+    run_as_root chown "${ES_USER}:${ES_GROUP}" "${ES_CONF_DIR}/elasticsearch.yml"
+    run_as_root chown "${ES_USER}:${ES_GROUP}" "${ES_CONF_DIR}/jvm.options"
+    run_as_root chmod 640 "${ES_CONF_DIR}/elasticsearch.yml"
+    run_as_root chmod 640 "${ES_CONF_DIR}/jvm.options"
+    
+    log_success "配置文件部署完成"
+}
+
+# -----------------------------------------------------------------------------
+# 部署 logrotate 配置
+# -----------------------------------------------------------------------------
+deploy_logrotate() {
+    log_info "部署 logrotate 配置..."
+    
+    local logrotate_dest="/etc/logrotate.d/elasticsearch"
+    
+    if [ -f "${ES_CONFIG_DIR}/logrotate.conf" ]; then
+        # 备份现有配置
+        if [ -f "${logrotate_dest}" ]; then
+            local backup_logrotate="${logrotate_dest}.backup.$(date +%Y%m%d%H%M%S)"
+            run_as_root cp "${logrotate_dest}" "${backup_logrotate}"
+            log_info "备份原有 logrotate 配置：${backup_logrotate}"
+        fi
+        
+        # 部署新配置（从渲染后的同级目录）
+        run_as_root cp "${ES_CONFIG_DIR}/logrotate.conf" "${logrotate_dest}"
+        run_as_root chmod 644 "${logrotate_dest}"
+        log_success "logrotate 配置部署完成"
+    else
+        log_warn "未找到渲染后的 logrotate.conf，跳过部署"
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # 配置系统参数（需要 root）
 # -----------------------------------------------------------------------------
 configure_system() {
@@ -157,7 +249,6 @@ configure_system() {
         log_info "已添加 vm.max_map_count 到 /etc/sysctl.conf"
     fi
     
-    # 设置文件描述符限制（通过 systemd 配置更可靠）
     log_info "系统参数配置完成（部分配置需重启生效）"
 }
 
@@ -195,15 +286,24 @@ init_security() {
 register_service() {
     log_info "注册 systemd 服务..."
     
-    local service_template="{{ .Global.install_base_dir }}/{{ .Instance.Vars.install_subdir }}/templates/elasticsearch.service.tmpl"
     local service_file="/etc/systemd/system/elasticsearch.service"
     
-    # 如果模板存在则渲染（实际由部署工具处理）
-    if [ -f "${service_template}" ]; then
-        log_info "服务模板存在：${service_template}"
+    # 从渲染后的同级目录部署服务文件
+    if [ -f "${ES_CONFIG_DIR}/elasticsearch.service" ]; then
+        # 备份现有配置
+        if [ -f "${service_file}" ]; then
+            local backup_service="${service_file}.backup.$(date +%Y%m%d%H%M%S)"
+            run_as_root cp "${service_file}" "${backup_service}"
+            log_info "备份原有 service 配置：${backup_service}"
+        fi
+        
+        run_as_root cp "${ES_CONFIG_DIR}/elasticsearch.service" "${service_file}"
+        run_as_root chmod 644 "${service_file}"
+        run_as_root systemctl daemon-reload
+        log_success "systemd 服务注册完成"
+    else
+        log_warn "未找到渲染后的 elasticsearch.service，跳过部署"
     fi
-    
-    log_success "服务注册完成（需部署工具渲染 systemd 模板）"
 }
 
 # -----------------------------------------------------------------------------
@@ -214,20 +314,25 @@ main() {
     log_info "版本：${ES_VERSION}"
     log_info "安装目录：${ES_INSTALL_DIR}"
     log_info "数据目录：${ES_DATA_DIR}"
-    log_info "节点：{{ .Instance.NodeAlias }}"
+    log_info "配置目录：${ES_CONF_DIR}"
+    log_info "配置源目录：${ES_CONFIG_DIR}"
+    log_info "节点：{{ .Instance.Node.Hostname }}"
     
     check_prerequisites
     setup_directories
     install_binary
+    deploy_config_files
+    deploy_logrotate
     configure_system
     init_security
     register_service
     
     log_success "========== Elasticsearch 安装完成 =========="
     log_info "请执行以下操作："
-    log_info "1. 检查配置文件：${ES_INSTALL_DIR}/config/elasticsearch.yml"
-    log_info "2. 启动服务：systemctl start elasticsearch"
-    log_info "3. 查看状态：systemctl status elasticsearch"
+    log_info "1. 检查配置文件：${ES_CONF_DIR}/elasticsearch.yml"
+    log_info "2. 检查 JVM 配置：${ES_CONF_DIR}/jvm.options"
+    log_info "3. 启动服务：systemctl start elasticsearch"
+    log_info "4. 查看状态：systemctl status elasticsearch"
 }
 
 main "$@"

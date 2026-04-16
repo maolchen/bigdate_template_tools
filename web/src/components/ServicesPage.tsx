@@ -264,8 +264,8 @@ function ServiceTopoTab({ config, onChange }: ServicesPageProps) {
 
       {/* 弹窗 - 覆盖主内容区 */}
       {isModalOpen && (
-        <div className="modal-fullscreen">
-          <div className="modal-fullscreen-content modal-form-card">
+        <div className="modal-fullscreen service-modal-overlay">
+          <div className="modal-fullscreen-content modal-form-card service-modal-content">
             <div className="modal-header">
               <h3 className="font-bold text-gray-800 text-lg">
                 {editingService ? '编辑服务拓扑' : '添加服务拓扑'}
@@ -574,8 +574,8 @@ function ServiceConfigTab({ config, onChange }: ServicesPageProps) {
 
         {/* 弹窗 - 覆盖主内容区 */}
         {isModalOpen && (
-          <div className="modal-fullscreen">
-            <div className="modal-fullscreen-content modal-form-card">
+          <div className="modal-fullscreen service-modal-overlay">
+            <div className="modal-fullscreen-content modal-form-card service-modal-content">
               <div className="modal-header">
                 <h3 className="font-bold text-gray-800 text-lg">
                   {editingConfig ? '编辑服务配置' : '添加服务配置'}

@@ -1,10 +1,11 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Download, FileCode, FileJson, FileArchive, Check } from 'lucide-react';
 import type { AppConfig } from '../api/config';
 import { downloadOutput } from '../api/config';
 
 interface ExportPageProps {
   config: AppConfig;
+  hidePageTitle?: boolean;
 }
 
 // 简单的 YAML 导出函数
@@ -58,7 +59,7 @@ function configToYaml(config: AppConfig): string {
   return lines.join('\n');
 }
 
-export function ExportPage({ config }: ExportPageProps) {
+export function ExportPage({ config, hidePageTitle = false }: ExportPageProps) {
   const [downloaded, setDownloaded] = useState<string | null>(null);
   
   const handleDownloadYaml = () => {
@@ -233,15 +234,17 @@ export function ExportPage({ config }: ExportPageProps) {
   
   return (
     <div>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">导出配置</h2>
-        <p className="text-gray-500 mt-1">将配置导出为不同格式的文件</p>
-      </div>
+      {!hidePageTitle && (
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">导出配置</h2>
+          <p className="text-gray-500 mt-1">将配置导出为不同格式的文件</p>
+        </div>
+      )}
       
       {/* 导出选项 */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-2 gap-6 export-grid">
         {/* 生成的部署脚本 */}
-        <div className="card" style={{ borderColor: 'var(--success)', borderWidth: '2px' }}>
+        <div className="card export-card" style={{ borderColor: 'var(--success)', borderWidth: '2px' }}>
           <div className="card-body">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(16,185,129,0.1)' }}>
@@ -253,7 +256,7 @@ export function ExportPage({ config }: ExportPageProps) {
                   <span className="badge badge-green ml-2">推荐</span>
                 </h3>
                 <p className="text-sm text-gray-500 mt-1">
-                  包含所有生成的 Shell 安装脚本和配置文件，可直接部署使用
+                  包含所有生成的 Shell 安装脚本和配置文件，可直接部署使用；需要先在「生成配置」页面生成脚本
                 </p>
               </div>
             </div>
@@ -274,12 +277,11 @@ export function ExportPage({ config }: ExportPageProps) {
                 </>
               )}
             </button>
-            <p className="text-xs text-gray-400 mt-2 text-center">需要先在「生成配置」页面生成脚本</p>
           </div>
         </div>
         
         {/* YAML 配置 */}
-        <div className="card">
+        <div className="card export-card" style={{ borderColor: 'var(--primary)', borderWidth: '2px' }}>
           <div className="card-body">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
@@ -316,7 +318,7 @@ export function ExportPage({ config }: ExportPageProps) {
         </div>
         
         {/* JSON 配置 */}
-        <div className="card">
+        <div className="card export-card" style={{ borderColor: '#9333ea', borderWidth: '2px' }}>
           <div className="card-body">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
@@ -354,7 +356,7 @@ export function ExportPage({ config }: ExportPageProps) {
         </div>
         
         {/* Hosts 文件 */}
-        <div className="card">
+        <div className="card export-card" style={{ borderColor: '#f97316', borderWidth: '2px' }}>
           <div className="card-body">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
@@ -391,7 +393,7 @@ export function ExportPage({ config }: ExportPageProps) {
         </div>
 
         {/* 节点配置表 */}
-        <div className="card">
+        <div className="card export-card" style={{ borderColor: '#22c55e', borderWidth: '2px' }}>
           <div className="card-body">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
@@ -429,7 +431,7 @@ export function ExportPage({ config }: ExportPageProps) {
         </div>
 
         {/* 服务拓扑分布表 */}
-        <div className="card">
+        <div className="card export-card" style={{ borderColor: '#06b6d4', borderWidth: '2px' }}>
           <div className="card-body">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-lg bg-cyan-50 flex items-center justify-center flex-shrink-0">
@@ -467,7 +469,7 @@ export function ExportPage({ config }: ExportPageProps) {
         </div>
 
         {/* 完整配置报告 */}
-        <div className="card" style={{ borderColor: 'var(--primary)', borderWidth: '2px' }}>
+        <div className="card export-card" style={{ borderColor: 'var(--primary)', borderWidth: '2px' }}>
           <div className="card-body">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">

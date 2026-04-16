@@ -164,6 +164,20 @@ func TestSaveDraftFiles(t *testing.T) {
 	}}); err == nil {
 		t.Fatal("expected invalid template content to fail")
 	}
+
+	if _, _, err := server.saveDraftFiles([]aiDraftFile{{
+		Path:    "templates/elasticsearch/check.sh.tmpl",
+		Content: "NODE={{ .Instance.NodeAlias }}\n",
+	}}); err == nil {
+		t.Fatal("expected forbidden placeholder .Instance.NodeAlias to fail")
+	}
+
+	if _, _, err := server.saveDraftFiles([]aiDraftFile{{
+		Path:    "templates/elasticsearch/check.sh.tmpl",
+		Content: "NODE={{ .Instance.Node.HostName }}\n",
+	}}); err == nil {
+		t.Fatal("expected forbidden placeholder .Instance.Node.HostName to fail")
+	}
 }
 
 func TestListAISessionsAndUpdateTitle(t *testing.T) {
@@ -327,11 +341,14 @@ func TestValidatePlannedActionsAliases(t *testing.T) {
 		{Type: "create_template", Path: "templates/elasticsearch/start.sh.tmpl"},
 		{Type: "render_template", Path: "templates/elasticsearch/stop.sh.tmpl"},
 		{Type: "create_folder", Path: "templates/elasticsearch/scripts"},
+		{Type: "update", Path: "templates/elasticsearch/check.sh.tmpl"},
+		{Type: "remove", Path: "templates/elasticsearch/legacy.conf.tmpl"},
+		{Type: "delete_file", Path: "templates/elasticsearch/old-check.sh.tmpl"},
 	})
 	if err != nil {
 		t.Fatalf("validatePlannedActions returned error: %v", err)
 	}
-	if len(actions) != 7 {
+	if len(actions) != 10 {
 		t.Fatalf("unexpected action count: %d", len(actions))
 	}
 	if actions[0].Type != "mkdir" {
@@ -354,6 +371,15 @@ func TestValidatePlannedActionsAliases(t *testing.T) {
 	}
 	if actions[6].Type != "mkdir" {
 		t.Fatalf("expected seventh action to normalize to mkdir, got %s", actions[6].Type)
+	}
+	if actions[7].Type != "write_file" {
+		t.Fatalf("expected eighth action to normalize to write_file, got %s", actions[7].Type)
+	}
+	if actions[8].Type != "remove" {
+		t.Fatalf("expected ninth action to normalize to remove, got %s", actions[8].Type)
+	}
+	if actions[9].Type != "remove" {
+		t.Fatalf("expected tenth action to normalize to remove, got %s", actions[9].Type)
 	}
 }
 

@@ -95,8 +95,8 @@ func newDefaultAIClient() AIClient {
 
 // ChatCompletion sends a non-streaming chat/completions request via openai-go.
 func (c *openAISDKClient) ChatCompletion(baseURL, apiKey string, reqBody openAIChatRequest) (string, error) {
-	fmt.Printf("[AI] client=sdk request baseUrl=%s model=%s messages=%d maxTokens=%d\n",
-		redactBaseURL(baseURL), reqBody.Model, len(reqBody.Messages), reqBody.MaxTokens)
+	fmt.Printf("[AI] client=sdk request baseUrl=%s model=%s hasApiKey=%t summary=%s\n",
+		redactBaseURL(baseURL), reqBody.Model, strings.TrimSpace(apiKey) != "", summarizeChatRequestForLog(reqBody))
 
 	params, err := buildSDKChatCompletionParams(reqBody)
 	if err != nil {
@@ -134,14 +134,16 @@ func (c *openAISDKClient) ChatCompletion(baseURL, apiKey string, reqBody openAIC
 		}
 		return "", errors.New("AI 接口未返回有效内容")
 	}
+	fmt.Printf("[AI] client=sdk response finishReason=%s contentBytes=%d preview=%q\n",
+		resp.Choices[0].FinishReason, len(content), previewLogText(content, 160))
 
 	return content, nil
 }
 
 // StreamChatCompletion streams assistant deltas from openai-go and aggregates the final response text.
 func (c *openAISDKClient) StreamChatCompletion(baseURL, apiKey string, reqBody openAIChatRequest, onDelta func(string)) (string, error) {
-	fmt.Printf("[AI] client=sdk stream request baseUrl=%s model=%s messages=%d maxTokens=%d\n",
-		redactBaseURL(baseURL), reqBody.Model, len(reqBody.Messages), reqBody.MaxTokens)
+	fmt.Printf("[AI] client=sdk stream request baseUrl=%s model=%s hasApiKey=%t summary=%s\n",
+		redactBaseURL(baseURL), reqBody.Model, strings.TrimSpace(apiKey) != "", summarizeChatRequestForLog(reqBody))
 
 	params, err := buildSDKChatCompletionParams(reqBody)
 	if err != nil {
@@ -155,7 +157,8 @@ func (c *openAISDKClient) StreamChatCompletion(baseURL, apiKey string, reqBody o
 	client := openai.NewClient(
 		option.WithAPIKey(apiKey),
 		option.WithBaseURL(normalizeBaseURL(baseURL)),
-		option.WithHTTPClient(&http.Client{Timeout: 0}),
+		// Avoid hanging forever when provider side blocks without returning stream chunks.
+		option.WithHTTPClient(&http.Client{Timeout: 120 * time.Second}),
 	)
 
 	stream := client.Chat.Completions.NewStreaming(context.Background(), params)
@@ -184,9 +187,11 @@ func (c *openAISDKClient) StreamChatCompletion(baseURL, apiKey string, reqBody o
 	}
 
 	if err := stream.Err(); err != nil {
+		fmt.Printf("[AI] client=sdk stream error model=%s err=%v\n", reqBody.Model, err)
 		return "", err
 	}
-	fmt.Printf("[AI] client=sdk stream response bytes=%d finish_reason=%s\n", builder.Len(), finishReason)
+	fmt.Printf("[AI] client=sdk stream response bytes=%d finish_reason=%s preview=%q\n",
+		builder.Len(), finishReason, previewLogText(builder.String(), 160))
 
 	if finishReason == "length" || finishReason == "max_tokens" {
 		return "", errors.New("AI 输出被截断，请减少一次生成内容，或提高模型输出上限后重试")
@@ -206,7 +211,7 @@ func (c *openAISDKClient) StreamChatCompletion(baseURL, apiKey string, reqBody o
 // buildSDKChatCompletionParams converts the internal OpenAI-compatible request to SDK parameters.
 func buildSDKChatCompletionParams(reqBody openAIChatRequest) (openai.ChatCompletionNewParams, error) {
 	if len(reqBody.Messages) == 0 {
-		return openai.ChatCompletionNewParams{}, errors.New("AI 请求消息不能为空")
+		return openai.ChatCompletionNewParams{}, errors.New("AI 璇锋眰娑堟伅涓嶈兘涓虹┖")
 	}
 
 	params := openai.ChatCompletionNewParams{
@@ -240,7 +245,7 @@ func buildSDKChatCompletionParams(reqBody openAIChatRequest) (openai.ChatComplet
 			OfText: &shared.ResponseFormatTextParam{},
 		}
 	default:
-		return openai.ChatCompletionNewParams{}, fmt.Errorf("SDK 暂不支持的 response_format 类型: %s", reqBody.ResponseFormat["type"])
+		return openai.ChatCompletionNewParams{}, fmt.Errorf("SDK 鏆備笉鏀寔鐨?response_format 绫诲瀷: %s", reqBody.ResponseFormat["type"])
 	}
 
 	return params, nil
@@ -297,7 +302,7 @@ func buildSDKChatMessage(message openAIChatMessage) (openai.ChatCompletionMessag
 			},
 		}, nil
 	default:
-		return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("SDK 暂不支持的消息角色: %s", message.Role)
+		return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("SDK 鏆備笉鏀寔鐨勬秷鎭鑹? %s", message.Role)
 	}
 }
 
@@ -340,7 +345,7 @@ func buildSDKUserMessageContent(parts []openAIMessagePart) (openai.ChatCompletio
 			})
 		case "image_url":
 			if part.ImageURL == nil || strings.TrimSpace(part.ImageURL.URL) == "" {
-				return openai.ChatCompletionUserMessageParamContentUnion{}, errors.New("图片消息缺少 image_url")
+				return openai.ChatCompletionUserMessageParamContentUnion{}, errors.New("鍥剧墖娑堟伅缂哄皯 image_url")
 			}
 			converted = append(converted, openai.ChatCompletionContentPartUnionParam{
 				OfImageURL: &openai.ChatCompletionContentPartImageParam{
@@ -351,7 +356,7 @@ func buildSDKUserMessageContent(parts []openAIMessagePart) (openai.ChatCompletio
 				},
 			})
 		default:
-			return openai.ChatCompletionUserMessageParamContentUnion{}, fmt.Errorf("SDK 暂不支持的消息内容类型: %s", part.Type)
+			return openai.ChatCompletionUserMessageParamContentUnion{}, fmt.Errorf("SDK 鏆備笉鏀寔鐨勬秷鎭唴瀹圭被鍨? %s", part.Type)
 		}
 	}
 
@@ -370,7 +375,7 @@ func joinTextOnlyMessageContent(parts []openAIMessagePart, role string) (string,
 	for _, part := range parts {
 		partType := normalizeMessagePartType(part.Type)
 		if partType != "text" {
-			return "", fmt.Errorf("角色 %s 暂不支持非文本内容: %s", role, part.Type)
+			return "", fmt.Errorf("瑙掕壊 %s 鏆備笉鏀寔闈炴枃鏈唴瀹? %s", role, part.Type)
 		}
 		texts = append(texts, part.Text)
 	}
@@ -387,6 +392,7 @@ func normalizeMessagePartType(raw string) string {
 
 // listCompatibleAIModels retrieves model metadata from an OpenAI-compatible /models endpoint.
 func listCompatibleAIModels(baseURL, apiKey string) ([]aiProviderModel, error) {
+	fmt.Printf("[AI] models request baseUrl=%s hasApiKey=%t\n", redactBaseURL(baseURL), strings.TrimSpace(apiKey) != "")
 	req, err := http.NewRequest(http.MethodGet, normalizeBaseURL(baseURL)+"/models", nil)
 	if err != nil {
 		return nil, err
@@ -408,7 +414,7 @@ func listCompatibleAIModels(baseURL, apiKey string) ([]aiProviderModel, error) {
 	var parsed openAIModelsResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		if resp.StatusCode >= http.StatusBadRequest {
-			return nil, fmt.Errorf("AI 接口返回错误: %s", strings.TrimSpace(string(body)))
+			return nil, fmt.Errorf("AI 鎺ュ彛杩斿洖閿欒: %s", strings.TrimSpace(string(body)))
 		}
 		return nil, err
 	}
@@ -417,7 +423,7 @@ func listCompatibleAIModels(baseURL, apiKey string) ([]aiProviderModel, error) {
 		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
 			return nil, errors.New(parsed.Error.Message)
 		}
-		return nil, fmt.Errorf("AI 模型列表获取失败: HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("AI 妯″瀷鍒楄〃鑾峰彇澶辫触: HTTP %d", resp.StatusCode)
 	}
 
 	models := make([]aiProviderModel, 0, len(parsed.Data))
@@ -436,17 +442,23 @@ func listCompatibleAIModels(baseURL, apiKey string) ([]aiProviderModel, error) {
 	sort.SliceStable(models, func(i, j int) bool {
 		return models[i].ID < models[j].ID
 	})
+	if len(models) == 0 {
+		fmt.Printf("[AI] models response count=0\n")
+	} else {
+		fmt.Printf("[AI] models response count=%d first=%s\n", len(models), models[0].ID)
+	}
 	return models, nil
 }
 
 // ChatCompletion sends a raw OpenAI-compatible HTTP request and parses the standard response envelope.
 func (c *httpCompatibleAIClient) ChatCompletion(baseURL, apiKey string, reqBody openAIChatRequest) (string, error) {
-	fmt.Printf("[AI] client=http request baseUrl=%s model=%s messages=%d maxTokens=%d\n",
-		redactBaseURL(baseURL), reqBody.Model, len(reqBody.Messages), reqBody.MaxTokens)
+	fmt.Printf("[AI] client=http request baseUrl=%s model=%s hasApiKey=%t summary=%s\n",
+		redactBaseURL(baseURL), reqBody.Model, strings.TrimSpace(apiKey) != "", summarizeChatRequestForLog(reqBody))
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", err
 	}
+	fmt.Printf("[AI] client=http request payloadBytes=%d\n", len(payload))
 
 	req, err := http.NewRequest(http.MethodPost, normalizeBaseURL(baseURL)+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
@@ -491,7 +503,10 @@ func (c *httpCompatibleAIClient) ChatCompletion(baseURL, apiKey string, reqBody 
 		return "", errors.New("AI 输出被截断，请减少一次生成内容，或提高模型输出上限后重试")
 	}
 
-	return parsed.Choices[0].Message.Content, nil
+	content := parsed.Choices[0].Message.Content
+	fmt.Printf("[AI] client=http response finishReason=%s contentBytes=%d preview=%q\n",
+		parsed.Choices[0].FinishReason, len(content), previewLogText(content, 160))
+	return content, nil
 }
 
 // StreamChatCompletion provides a compatibility stream path by returning one final delta from HTTP mode.
