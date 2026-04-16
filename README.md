@@ -135,12 +135,14 @@
 ### 1. 安装前端依赖
 
 ```bash
+# node v20.19.0
 pnpm install
 ```
 
 ### 2. 启动 Web 服务
 
 ```bash
+# go1.22.6
 go run main.go --web
 ```
 
